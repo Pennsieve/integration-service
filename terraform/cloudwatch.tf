@@ -7,7 +7,7 @@ resource "aws_cloudwatch_metric_alarm" "event_integration_dlq_cloudwatch_metric_
   namespace                 = "AWS/SQS"
   period                    = "60"
   statistic                 = "Average"
-  threshold                 = "50"
+  threshold                 = "1"
   alarm_description         = "This metric monitors SQS DLQ for messages"
   insufficient_data_actions = []
   alarm_actions             = [data.terraform_remote_state.account.outputs.data_management_victor_ops_sns_topic_id]
@@ -28,7 +28,7 @@ resource "aws_cloudwatch_metric_alarm" "webhook_integration_dlq_cloudwatch_metri
   namespace                 = "AWS/SQS"
   period                    = "60"
   statistic                 = "Average"
-  threshold                 = "50"
+  threshold                 = "1"
   alarm_description         = "This metric monitors SQS DLQ for messages"
   insufficient_data_actions = []
   alarm_actions             = [data.terraform_remote_state.account.outputs.data_management_victor_ops_sns_topic_id]

@@ -20,7 +20,7 @@ resource "aws_lambda_function" "event_integration_consumer_lambda" {
 
 data "archive_file" "event_lambda_archive" {
   type        = "zip"
-  source_dir  = "${path.module}/lambda"
+  source_dir  = "${path.module}/event_lambda"
   output_path = "${path.module}/event_lambda.zip"
 }
 
@@ -46,6 +46,6 @@ resource "aws_lambda_function" "webhook_integration_consumer_lambda" {
 
 data "archive_file" "webhook_lambda_archive" {
   type        = "zip"
-  source_dir  = "${path.module}/lambda"
+  source_dir  = "${path.module}/webhook_lambda"
   output_path = "${path.module}/webhook_lambda.zip"
 }
