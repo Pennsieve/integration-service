@@ -1,6 +1,6 @@
 ## EVENT-INTEGRATION-LAMBDA
 resource "aws_iam_role" "event_integration_consumer_lambda_role" {
-  name = "${var.environment_name}-${var.service_name}-event-integration-consumer-lambda-role-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
+  name = "${var.environment_name}-${var.service_name}-event-consumer-lambda-role-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
 
   assume_role_policy = <<EOF
 {
@@ -20,7 +20,7 @@ EOF
 }
 
 resource "aws_iam_policy" "event_integration_consumer_lambda_iam_policy" {
-  name   = "${var.environment_name}-${var.service_name}-event-integration-consumer-lambda-iam-policy-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
+  name   = "${var.environment_name}-${var.service_name}-event-consumer-lambda-iam-policy-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
   path   = "/"
   policy = data.aws_iam_policy_document.event_integration_consumer_lambda_iam_policy_document.json
 }
@@ -95,7 +95,7 @@ resource "aws_iam_role_policy_attachment" "event_integration_consumer_lambda_iam
 
 ## WEBHOOK-INTEGRATION LAMBDA
 resource "aws_iam_role" "webhook_integration_consumer_lambda_role" {
-  name = "${var.environment_name}-${var.service_name}-webhook-integration-consumer-lambda-role-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
+  name = "${var.environment_name}-${var.service_name}-webhook-consumer-lambda-role-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
 
   assume_role_policy = <<EOF
 {
@@ -115,7 +115,7 @@ EOF
 }
 
 resource "aws_iam_policy" "webhook_integration_consumer_lambda_iam_policy" {
-  name   = "${var.environment_name}-${var.service_name}-webhook-integration-consumer-lambda-iam-policy-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
+  name   = "${var.environment_name}-${var.service_name}-webhook-consumer-lambda-iam-policy-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
   path   = "/"
   policy = data.aws_iam_policy_document.event_integration_consumer_lambda_iam_policy_document.json
 }

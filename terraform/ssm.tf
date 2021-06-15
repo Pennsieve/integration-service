@@ -2,13 +2,13 @@
 resource "aws_ssm_parameter" "integrations_postgres_host" {
   name = "/${var.environment_name}/${var.service_name}/integrations-postgres-host"
   type = "String"
-  value = var.doi_postgres_host
+  value = var.pennsieve_postgres_host
 }
 
 resource "aws_ssm_parameter" "integrations_postgres_db" {
   name = "/${var.environment_name}/${var.service_name}/integrations-postgres-db"
   type = "String"
-  value = var.doi_postgres_db
+  value = var.pennsieve_postgres_db
 }
 
 resource "aws_ssm_parameter" "integrations_postgres_user" {

@@ -9,8 +9,8 @@ variable "service_name" {}
 variable "vpc_name" {}
 
 # Postgres
-variable "doi_postgres_host" {}
+variable "pennsieve_postgres_host" {}
 
-variable "doi_postgres_db" {
+variable "pennsieve_postgres_db" {
   default = "pennsieve_postgres"
 }

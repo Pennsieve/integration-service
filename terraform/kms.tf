@@ -1,6 +1,6 @@
 resource "aws_kms_alias" "event-integration_sqs_kms_key_alias" {
   name          = "alias/${var.environment_name}-event-integration-queue-key-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
-  target_key_id = aws_kms_key.event_integration_sqs_kms_key
+  target_key_id = aws_kms_key.event_integration_sqs_kms_key.arn
 }
 
 resource "aws_kms_key" "event_integration_sqs_kms_key" {
