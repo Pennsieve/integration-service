@@ -24,6 +24,43 @@ resource "aws_lambda_event_source_mapping" "event_integration_source_mapping" {
   maximum_batching_window_in_seconds = 30
 }
 
+# Grant SNS to post to SQS queue
+resource "aws_sqs_queue_policy" "integration_events_sns_topic_policy" {
+  queue_url = aws_sqs_queue.event_integration_queue.id
+
+  policy = <<POLICY
+  {
+  "Version": "2012-10-17",
+  "Id": "sqspolicy",
+  "Statement": [
+    {
+      "Sid":"1",
+      "Effect": "Allow",
+      "Principal": {
+         "Service": "sns.amazonaws.com"
+      },
+      "Action": ["sqs:SendMessage"],
+      "Resource": "${aws_sqs_queue.event_integration_queue.arn}",
+      "Condition": {
+        "ArnEquals": {
+          "aws:SourceArn": "${aws_sns_topic.integration_events_sns_topic.arn}"
+        }
+      }
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "lambda:CreateEventSourceMapping",
+        "lambda:ListEventSourceMappings",
+        "lambda:ListFunctions"
+      ],
+      "Resource": "${aws_sqs_queue.event_integration_queue.arn}"
+    }
+  ]
+}
+POLICY
+}
+
 ## Event Queue that contains Event/Webhook messages that will be consumed by lambda and pushed to integrations.
 ## Use the same KMS key as event-integration
 resource "aws_sqs_queue" "webhook_integration_queue" {

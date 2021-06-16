@@ -1,4 +1,6 @@
-## EVENT-INTEGRATION-LAMBDA
+##############################
+# EVENT-INTEGRATION-LAMBDA   #
+##############################
 resource "aws_iam_role" "event_integration_consumer_lambda_role" {
   name = "${var.environment_name}-${var.service_name}-event-consumer-lambda-role-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
 
@@ -27,7 +29,7 @@ resource "aws_iam_policy" "event_integration_consumer_lambda_iam_policy" {
 
 data "aws_iam_policy_document" "event_integration_consumer_lambda_iam_policy_document" {
   statement {
-    sid    = "CloudwatchLogPermissions"
+    sid    = "EventIntegrationConsumerPermissions"
     effect = "Allow"
     actions = [
       "logs:CreateLogGroup",
@@ -42,8 +44,9 @@ data "aws_iam_policy_document" "event_integration_consumer_lambda_iam_policy_doc
   statement {
     sid       = "KMSDecryptPermissions"
     effect    = "Allow"
-    actions   = ["kms:Decrypt"]
-    resources = ["arn:aws:kms:${data.aws_region.current_region.name}:${data.aws_caller_identity.current.account_id}:key/alias/aws/ssm"]
+    actions   = ["kms:Decrypt", "kms:GenerateDataKey*"]
+    resources = [aws_kms_alias.event-integration_sqs_kms_key_alias.arn,
+      "arn:aws:kms:${data.aws_region.current_region.name}:${data.aws_caller_identity.current.account_id}:key/alias/aws/ssm"]
   }
 
   statement {
@@ -60,30 +63,45 @@ data "aws_iam_policy_document" "event_integration_consumer_lambda_iam_policy_doc
   }
 
   statement {
-    sid    = "SQSPermissions"
+    sid    = "LambdaReadFromEventsPermission"
     effect = "Allow"
 
     actions = [
       "sqs:ReceiveMessage",
+      "sqs:DeleteMessage",
+      "sqs:GetQueueAttributes"
     ]
 
     resources = [
       aws_sqs_queue.event_integration_queue.arn,
-      "${aws_sqs_queue.event_integration_queue.arn}/*"
+      "${aws_sqs_queue.event_integration_queue.arn}/*",
     ]
   }
 
   statement {
-    sid    = "SQSPermissions"
+    sid    = "LambdaWritetoWebhooksPermission"
     effect = "Allow"
 
     actions = [
-      "sqs:SendMessage"
+      "sqs:SendMessage",
+      "sqs:DeleteMessage",
+      "sqs:GetQueueAttributes"
     ]
 
     resources = [
       aws_sqs_queue.webhook_integration_queue.arn,
       "${aws_sqs_queue.webhook_integration_queue.arn}/*"
+    ]
+  }
+
+  statement {
+    sid = "AllowAccessToQueueKMSkey"
+    effect = "Allow"
+    actions = [
+      "kms:Decrypt",
+    ]
+    resources = [
+      aws_kms_key.event_integration_sqs_kms_key.arn
     ]
   }
 }
@@ -93,7 +111,9 @@ resource "aws_iam_role_policy_attachment" "event_integration_consumer_lambda_iam
   policy_arn = aws_iam_policy.event_integration_consumer_lambda_iam_policy.arn
 }
 
-## WEBHOOK-INTEGRATION LAMBDA
+##############################
+# WEBHOOK-INTEGRATION LAMBDA #
+##############################
 resource "aws_iam_role" "webhook_integration_consumer_lambda_role" {
   name = "${var.environment_name}-${var.service_name}-webhook-consumer-lambda-role-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
 
@@ -117,12 +137,12 @@ EOF
 resource "aws_iam_policy" "webhook_integration_consumer_lambda_iam_policy" {
   name   = "${var.environment_name}-${var.service_name}-webhook-consumer-lambda-iam-policy-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
   path   = "/"
-  policy = data.aws_iam_policy_document.event_integration_consumer_lambda_iam_policy_document.json
+  policy = data.aws_iam_policy_document.webhook_integration_consumer_lambda_iam_policy_document.json
 }
 
 data "aws_iam_policy_document" "webhook_integration_consumer_lambda_iam_policy_document" {
   statement {
-    sid    = "CloudwatchLogPermissions"
+    sid    = "WebhookIntegrationConsumerPermissions"
     effect = "Allow"
     actions = [
       "logs:CreateLogGroup",
@@ -155,12 +175,25 @@ data "aws_iam_policy_document" "webhook_integration_consumer_lambda_iam_policy_d
   }
 
   statement {
+    sid = "AllowAccessToQueueKMSkey"
+    effect = "Allow"
+    actions = [
+      "kms:Decrypt",
+    ]
+    resources = [
+      aws_kms_key.event_integration_sqs_kms_key.arn
+    ]
+  }
+
+  statement {
     sid    = "SQSPermissions"
     effect = "Allow"
 
     actions = [
       "sqs:ReceiveMessage",
-      "sqs:SendMessage"
+      "sqs:SendMessage",
+      "sqs:DeleteMessage",
+      "sqs:GetQueueAttributes"
     ]
 
     resources = [
@@ -176,9 +209,9 @@ resource "aws_iam_role_policy_attachment" "webhook_integration_consumer_lambda_i
   policy_arn = aws_iam_policy.webhook_integration_consumer_lambda_iam_policy.arn
 }
 
-######################
-# SQS Queue Policies #
-######################
+##########################
+# SQS Queue Key Policies #
+##########################
 
 data "aws_iam_policy_document" "event_integration_queue_kms_key_policy_document" {
   statement {
@@ -193,20 +226,20 @@ data "aws_iam_policy_document" "event_integration_queue_kms_key_policy_document"
     }
   }
 
-//  statement {
-//    sid    = "Enable Cloudwatch Event Permissions"
-//    effect = "Allow"
-//
-//    actions = [
-//      "kms:GenerateDataKey",
-//      "kms:Decrypt",
-//    ]
-//
-//    resources = ["*"]
-//
-//    principals {
-//      type        = "Service"
-//      identifiers = ["events.amazonaws.com"]
-//    }
-//  }
+  statement {
+    sid    = "Enable SNS "
+    effect = "Allow"
+
+    actions = [
+      "kms:GenerateDataKey",
+      "kms:Decrypt",
+    ]
+
+    resources = ["*"]
+
+    principals {
+      type        = "Service"
+      identifiers = ["sns.amazonaws.com", "events.amazonaws.com"]
+    }
+  }
 }

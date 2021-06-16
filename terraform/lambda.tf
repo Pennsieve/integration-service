@@ -3,7 +3,7 @@
 resource "aws_lambda_function" "event_integration_consumer_lambda" {
   description      = "A description"
   function_name    = "${var.environment_name}-${var.service_name}-event-integration-consumer-lambda-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
-  handler          = "lambda.lambda_handler"
+  handler          = "event_lambda.lambda_handler"
   runtime          = "python3.8"
   role             = aws_iam_role.event_integration_consumer_lambda_role.arn
   timeout          = 3
@@ -29,7 +29,7 @@ data "archive_file" "event_lambda_archive" {
 resource "aws_lambda_function" "webhook_integration_consumer_lambda" {
   description      = "A description"
   function_name    = "${var.environment_name}-${var.service_name}-webhook-integration-consumer-lambda-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
-  handler          = "lambda.lambda_handler"
+  handler          = "webhook_lambda.lambda_handler"
   runtime          = "python3.8"
   role             = aws_iam_role.webhook_integration_consumer_lambda_role.arn
   timeout          = 3
