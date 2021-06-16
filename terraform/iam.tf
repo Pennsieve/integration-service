@@ -69,7 +69,8 @@ data "aws_iam_policy_document" "event_integration_consumer_lambda_iam_policy_doc
     actions = [
       "sqs:ReceiveMessage",
       "sqs:DeleteMessage",
-      "sqs:GetQueueAttributes"
+      "sqs:GetQueueAttributes",
+      "sqs:GetQueueUrl"
     ]
 
     resources = [
@@ -85,7 +86,8 @@ data "aws_iam_policy_document" "event_integration_consumer_lambda_iam_policy_doc
     actions = [
       "sqs:SendMessage",
       "sqs:DeleteMessage",
-      "sqs:GetQueueAttributes"
+      "sqs:GetQueueAttributes",
+      "sqs:GetQueueUrl"
     ]
 
     resources = [
@@ -99,9 +101,12 @@ data "aws_iam_policy_document" "event_integration_consumer_lambda_iam_policy_doc
     effect = "Allow"
     actions = [
       "kms:Decrypt",
+      "kms:Encrypt",
+      "kms:GenerateDataKey"
     ]
     resources = [
-      aws_kms_key.event_integration_sqs_kms_key.arn
+      aws_kms_key.event_integration_sqs_kms_key.arn,
+      aws_kms_alias.event-integration_sqs_kms_key_alias.arn
     ]
   }
 }
@@ -193,7 +198,8 @@ data "aws_iam_policy_document" "webhook_integration_consumer_lambda_iam_policy_d
       "sqs:ReceiveMessage",
       "sqs:SendMessage",
       "sqs:DeleteMessage",
-      "sqs:GetQueueAttributes"
+      "sqs:GetQueueAttributes",
+      "sqs:GetQueueUrl"
     ]
 
     resources = [
@@ -224,6 +230,23 @@ data "aws_iam_policy_document" "event_integration_queue_kms_key_policy_document"
       type        = "AWS"
       identifiers = ["arn:aws:iam::${data.terraform_remote_state.account.outputs.aws_account_id}:root"]
     }
+  }
+
+  statement {
+    sid       = "Allow specific lambda to use this key"
+    effect    = "Allow"
+
+    actions    = [
+      "kms:Encrypt",
+      "kms:Decrypt",
+      "kms:GenerateDataKey*"
+    ]
+
+    principals {
+      type = "AWS"
+      identifiers   = [aws_iam_role.event_integration_consumer_lambda_role.arn]
+    }
+
   }
 
   statement {
