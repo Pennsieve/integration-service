@@ -9,17 +9,17 @@ queue = sqs_resource.get_queue_by_name(QueueName=os.environ.get("WEBHOOK_SQS_QUE
 sqs = boto3.client('sqs')
 
 def lambda_handler(event, _context):
-    logger.info('## PLATFORM EVENT HANDLER LAMBDA EVENT')
+    logger.info('## PLATFORM EVENT HANDLER LAMBDA EVENT: {} events'.format(len(event['Records'])))
 
-    for record in event['Records']:
-        # Send message to SQS queue
-        response = sqs.send_message(
-            QueueUrl=queue.url,
-            DelaySeconds=1,
-            MessageAttributes={},
-            MessageBody=record['body']
-        )
-
-        logger.info(response['MessageId'])
+    # for record in event['Records']:
+    #     # Send message to SQS queue
+    #     response = sqs.send_message(
+    #         QueueUrl=queue.url,
+    #         DelaySeconds=1,
+    #         MessageAttributes={},
+    #         MessageBody=record['body']
+    #     )
+    #
+    #     logger.info(response['MessageId'])
 
     return event
