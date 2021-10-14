@@ -37,6 +37,11 @@ data "aws_iam_policy_document" "event_integration_consumer_lambda_iam_policy_doc
       "logs:PutDestination",
       "logs:PutLogEvents",
       "logs:DescribeLogStreams",
+      "ec2:CreateNetworkInterface",
+      "ec2:DescribeNetworkInterfaces",
+      "ec2:DeleteNetworkInterface",
+      "ec2:AssignPrivateIpAddresses",
+      "ec2:UnassignPrivateIpAddresses"
     ]
     resources = ["*"]
   }
