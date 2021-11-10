@@ -11,44 +11,10 @@ from collections import defaultdict
 
 
 
-#url = 'https://enqynvfz4l12r.x.pipedream.net'
-#myobj = {'somekey': 'somevalue'}
-
 http = urllib3.PoolManager()
-#r = http.request('GET', url)
-
-#print(r.data)
-#print("RS: " + r.status)
-
-#r = http.request(method='POST', url=url+'/sample/post/request/', body=myobj)
-#print("RD: "+r.data)
-#print("RS: " +r.status)
-callid=0
 
 
-
-def message_Slack():
-    callid=0
-    http = urllib3.PoolManager()
-
-    headers = {"Content-type" : "application/json"}
-
-    r = http.request(method='POST', url='https://hooks.slack.com/services/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',
-                     headers=headers,
-                     body='{"text":"Hello '+str(callid)+'"}')
-
-
-    r = http.request(method='POST', url='https://hooks.slack.com/services/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',
-                     headers=headers,
-                     body='{"text":"Hello '+str(callid)+'"}')
-#https://hooks.slack.com/services/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
-    print(r.data)
-    print(r.status)
-
-#print('RD'+r.data)
-#print('RS'+r.status)
 def connect():
-
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
 
@@ -73,16 +39,15 @@ def connect():
 
 
 
-def query_builder(organizationId, datasetId, event_type):
-#    return "(SELECT wh.name, wh.secret, wh.api_url, wh.is_disabled, wet.event_name, wi.dataset_id \
+def query_builder(organizationId, datasetId, event_category):
     return "(SELECT wh.api_url, wet.event_name, wi.dataset_id \
         FROM \""+organizationId+"\".webhooks AS wh \
         INNER JOIN \""+organizationId+"\".webhook_event_subscriptions as wes ON  wh.id=wes.webhook_id \
         INNER JOIN \""+organizationId+"\".dataset_integrations as wi ON  wh.id=wi.webhook_id \
         INNER JOIN \""+organizationId+"\".webhook_event_types as wet ON wes.webhook_event_type_id=wet.id \
-        WHERE wi.dataset_id="+datasetId+ ")"
-#        AND wet.event_name=\'"+event_type+ "\' \
-#        AND wh.is_disabled=False)"
+        WHERE wi.dataset_id="+datasetId+" \
+        AND wet.event_name=\'"+event_category+ "\' \
+        AND wh.is_disabled=False)"
 
 
 def query(conn, command):
@@ -96,16 +61,8 @@ def query(conn, command):
         print(e.diag)
     results = cur.fetchall()
     cur.close()
-#    data = [dict(row) for row in cur.fetchall()]
     data = [dict(row) for row in results]
-    print(str(data))
     return data
-
-#psycopg.connect("dbname="+dbname['Parameter']['Value']+ " "
-
-#parameters = ssm.describe_parameters()['Parameters']
-#logger.info('Descr Params: '+str(parameters))
-
 
 sqs_resource = boto3.resource('sqs')
 queue = sqs_resource.get_queue_by_name(QueueName=os.environ.get("WEBHOOK_SQS_QUEUE_NAME"))
@@ -114,19 +71,9 @@ ssm = boto3.client('ssm')
 
 
 def lambda_handler(event, _context):
-    # logger.info('## PLATFORM EVENT HANDLER LAMBDA EVENT: {} events'.format(len(event['Records'])))
-#    datasetID='N:dataset:1fa8c657-cce8-4c55-8733-bb1b7f2bcf3d'
-#    event_type='METADATA'
-    message_Slack()
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
     logger.info('## EVENT : {}'.format(event))
-
-    print(str(event))
-#    records=event['Records']
-#    print(str([x['Message']['datasetId'] for x in messages]))
-#    print(str([x['Message']['organizationId'] for x in messages]))
-#    print(str([x['Message']['event_type'] for x in messages]))
 
     conn=connect()
 
@@ -134,15 +81,8 @@ def lambda_handler(event, _context):
     org_commands=defaultdict(list) # (key, value) = (organizationID (datasetId, event_type)
     for record in event['Records']:
         message=json.loads(record['body'].replace('\\n',''))#.replace('null','None')) 
-        print(str(message))
         message=json.loads(message['Message'])
-#        webhook_messages[]=message['eventDetail']
-        print(str(message))
-        #query+=str(message)+" UNION ALL "
-        #print(query)
-#        org_commands[message['organizationId']].append((message['datasetId'], message['eventType'], message['eventDetail']))
         org_commands[message['organizationId']].append((message['datasetId'], message['eventCategory'], message['eventDetail']))
-    print('comm:'+ str(org_commands))
 
 
     for organizationId, dataEvents in org_commands.items():
@@ -150,48 +90,37 @@ def lambda_handler(event, _context):
         webhook_messages=defaultdict(list) # (key, value) = (organizationID (datasetId, event_type)
 
         print(str(dataEvents))
-        for (datasetId, eventType, eventDetail) in dataEvents:
-            command.append(query_builder(organizationId,datasetId,eventType))
+        for (datasetId, eventCategory, eventDetail) in dataEvents:
+            command.append(query_builder(organizationId,datasetId,eventCategory))
             command.append(" UNION ALL ")
-            print(command)
-            webhook_messages[(datasetId,eventType)].append(eventDetail)
-        #message=[x['Message'] for x in messages]
-        print("WHM: "+str(webhook_messages))
+            #creating a message for specific dataset and eventCategory
+            webhook_messages[(datasetId,eventCategory)].append(eventDetail)
         command.pop()
-        print("Q: "+str(command))
-        #print('RECORDS: '+str(query(conn, command[0])))
 
         #merging all queries for a given organization
+        #extracting datasetIds, eventCategory and URLs from PostgreSQL
         webhooks=query(conn, command[0])
+
+        #appending URLs to 
         for w in webhooks:
-            print(str(w['dataset_id'])+ '|' + str(w['event_name']) + '|' + str(w['api_url']))
-            webhook_messages[(w['dataset_id'], w['event_name'])].append(w['api_url'])
-        print("WHM2: "+ str(webhook_messages))
+            if  (str(w['dataset_id']), w['event_name']) in webhook_messages.keys():
+                webhook_messages[(str(w['dataset_id']), w['event_name'])].append(w['api_url'])
 
-        #now assigning messages from lambda to particular webhooks
+    #now assigning messages from lambda to particular webhooks
 
-
-    for record in event['Records']:
-        # Send message to SQS queue
-
-        print("R:"+str(record))
-        print("B:"+str(record['body']))
+        http = urllib3.PoolManager()
+        headers = {"Content-type" : "application/json"}
 
 
-        response = sqs.send_message(
-            QueueUrl=queue.url,
-            DelaySeconds=1,
-            MessageAttributes={},
-            MessageBody=record['body']
-        )
-    
-        logger.info(response['MessageId'])
-        logger.info(str(event))
-
-
-
-
-
+        for record in webhook_messages.values():
+            # Send message to SQS queue
+            print("Sending message "+ str(record[0])+ " to " +str(record[1]))
+            r = http.request(method='POST', url=record[1],
+                         headers=headers,
+                         body='{"text": "' + str(record[0])+'"}')
+            logger.info("Message sent to " + record[1])
+            logger.info(r.data)
+            logger.info(r.status)
 
     return event
 
