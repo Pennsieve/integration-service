@@ -16,6 +16,7 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 logger.info("Lambda CONSTRUCTOR invoked at " + str(datetime.now()))
 webhook_cache = {}
+env = os.environ.get("ENV")
 
 """
 Generic RDS query wrapper.
@@ -47,12 +48,12 @@ Handles a connection to a RDS
 
 
 def connect():
-    dbname = ssm.get_parameter(Name='/dev/integration-service/integrations-postgres-db')['Parameter']['Value']
-    dbuser = ssm.get_parameter(Name='/dev/integration-service/integrations-postgres-user')['Parameter']['Value']
-    dbpass = ssm.get_parameter(Name='/dev/integration-service/integrations-postgres-password', WithDecryption=True)[
+    dbname = ssm.get_parameter(Name='/{}/integration-service/integrations-postgres-db'.format(env))['Parameter']['Value']
+    dbuser = ssm.get_parameter(Name='/{}/integration-service/integrations-postgres-user'.format(env))['Parameter']['Value']
+    dbpass = ssm.get_parameter(Name='/{}/integration-service/integrations-postgres-password'.format(env), WithDecryption=True)[
         'Parameter'][
         'Value']
-    dbhost = ssm.get_parameter(Name='/dev/integration-service/integrations-postgres-host')['Parameter']['Value']
+    dbhost = ssm.get_parameter(Name='/{}/integration-service/integrations-postgres-host'.format(env))['Parameter']['Value']
 
     try:
         conn = psycopg2.connect(

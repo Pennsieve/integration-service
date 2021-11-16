@@ -18,6 +18,7 @@ resource "aws_lambda_function" "event_integration_consumer_lambda" {
 
   environment {
     variables = {
+      ENV = "${var.environment_name}"
       PENNSIEVE_DOMAIN = data.terraform_remote_state.account.outputs.domain_name,
 #      WEBHOOK_SQS_QUEUE_NAME = aws_sqs_queue.webhook_integration_queue.name
     }
