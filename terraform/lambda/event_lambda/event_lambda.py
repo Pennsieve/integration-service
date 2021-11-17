@@ -94,8 +94,8 @@ def map_events(events):
     mapped_events = defaultdict(list)
     force_refresh = False
     for record in events['Records']:
-        message = json.loads(record['body'].replace('\\n', ''))  # making sure to replace newlines
-        message = json.loads(message['Message'])  # loading a message from lambda
+        event_body = json.loads(record['body'])  # making sure to replace newlines
+        message = json.loads(event_body['Message'])  # loading a message from lambda
         mapped_events[message['organizationId']].append(
             (message['datasetId'], message['eventCategory'], message))
         if message['eventType'] == 'CREATE_DATASET':
@@ -133,6 +133,28 @@ def map_webhook_messages(mapped_events, force_refresh):
     return webhook_messages
 
 
+""" 
+Check API endpoint and parse messages if known application with special requirements
+"""
+
+
+def webhook_body_parser(url, message):
+    if url.startswith("https://hooks.slack.com/"):
+        message_json = slack_parser(message)
+    else:
+        message_json = json.dumps(message)
+
+    return message_json
+
+"""
+Slack message parser
+TODO: put in separate file and create pretty messages
+"""
+
+def slack_parser(message):
+    return '{"text": \'' + json.dumps(message) + '\'}'
+
+
 """
 Receives webhook_messages, a dict with (datasetId,eventCategory) as keys and a dict with 'message' and 'url' as values.
 """
@@ -143,11 +165,15 @@ def broadcast_messages(webhook_messages):
     for record in webhook_messages.values():
         for url in record['url']:
             for message in record['message']:
+
+                message_json = webhook_body_parser(url, message)
+
                 try:
                     response = http.request(method='POST', url=url,
                                             headers=headers,
-                                            body='{"text": "' + str(message) + '"}',
+                                            body=message_json,
                                             timeout=urllib3.Timeout(connect=0.25))
+
                 except urllib3.exceptions.HTTPError as errh:
                     logger.warning("An Http Error occurred:" + repr(errh))
                 except urllib3.exceptions.ConnectionError as errc:
