@@ -14,3 +14,9 @@ variable "pennsieve_postgres_host" {}
 variable "pennsieve_postgres_db" {
   default = "pennsieve_postgres"
 }
+
+variable "lambda_bucket" {
+  default = "pennsieve-cc-lambda-functions-use1"
+}
+
+variable "image_tag" {}
