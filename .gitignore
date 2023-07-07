@@ -31,5 +31,7 @@ override.tf.json
 
 .DS_Store
 
-# Ignore lambda zip files
-*.zip
+# Ignore Lambda Bin folder
+lambda/bin
+
+__pycache__
