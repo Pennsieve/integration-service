@@ -36,3 +36,6 @@ lambda/bin
 
 # Ignore the Lambda runtime emulator
 lambda/service/aws-lambda-rie
+
+# vscode files
+.vscode/launch.json
