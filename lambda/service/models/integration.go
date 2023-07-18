@@ -1,12 +1,12 @@
-package model
+package models
 
 type Integration struct {
-	SessionToken  string            `json:"sessionToken"`
-	DatasetID     string            `json:"datasetId"`
-	ApplicationID int64             `json:"applicationId"`
-	Params        ApplicationParams `json:"params"`
+	SessionToken   string         `json:"sessionToken"`
+	DatasetID      string         `json:"datasetId"`
+	ApplicationID  int64          `json:"applicationId"`
+	TriggerPayload TriggerPayload `json:"payload"`
 }
 
-type ApplicationParams struct {
+type TriggerPayload struct {
 	PackageIDs []int64 `json:"packageIds"`
 }

@@ -11,7 +11,7 @@ import (
 func TestIntegrationServiceHandler(t *testing.T) {
 	ctx := context.Background()
 	request := events.APIGatewayV2HTTPRequest{
-		Body: "{ \"sessionToken\": \"xyz12345\",  \"datasetId\": \"data123\"}",
+		Body: "{ \"sessionToken\": \"ae5t678999-a345fgg\", \"datasetI\": \"dataset123\", \"applicationId\": 1, \"payload\": {\"packageIds\": [1,2,3]}}",
 	}
 	expectedStatusCode := 200
 
