@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 
@@ -26,7 +25,7 @@ func IntegrationServiceHandler(ctx context.Context, request events.APIGatewayV2H
 		return events.APIGatewayV2HTTPResponse{
 			StatusCode: 500,
 			Body:       "IntegrationServiceHandler",
-		}, errors.New("error unmarshaling body")
+		}, ErrUnmarshaling
 	}
 
 	// get application data
@@ -38,13 +37,19 @@ func IntegrationServiceHandler(ctx context.Context, request events.APIGatewayV2H
 	applicationTrigger := trigger.NewApplicationTrigger(client,
 		application,
 		integration.TriggerPayload)
+	if applicationTrigger.Validate() != nil {
+		return events.APIGatewayV2HTTPResponse{
+			StatusCode: 409,
+			Body:       "IntegrationServiceHandler",
+		}, ErrApplicationValidation
+	}
 	err = applicationTrigger.Run()
 	if err != nil {
 		log.Println(err)
 		return events.APIGatewayV2HTTPResponse{
 			StatusCode: 500,
 			Body:       "IntegrationServiceHandler",
-		}, err // replace with generic error message
+		}, ErrRunningTrigger
 	}
 
 	response := events.APIGatewayV2HTTPResponse{

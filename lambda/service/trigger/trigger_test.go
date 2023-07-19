@@ -20,6 +20,7 @@ func TestRun(t *testing.T) {
 	triggerPayload := models.TriggerPayload{
 		PackageIDs: []int64{1, 2, 3},
 	}
+	// client to be mocked
 	client := clients.NewApplicationRestClient(&http.Client{}, application.URL)
 	applicationTrigger := trigger.NewApplicationTrigger(client,
 		application,
