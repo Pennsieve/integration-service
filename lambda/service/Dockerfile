@@ -6,6 +6,9 @@ COPY go.mod go.sum ./
 COPY main.go .
 COPY handler ./handler
 COPY models ./models
+COPY store ./store
+COPY trigger ./trigger
+COPY clients ./clients
 RUN go build -o main main.go
 # Copy artifacts to a clean image
 FROM alpine:3.16

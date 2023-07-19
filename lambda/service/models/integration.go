@@ -5,6 +5,7 @@ type Integration struct {
 	DatasetID      string         `json:"datasetId"`
 	ApplicationID  int64          `json:"applicationId"`
 	TriggerPayload TriggerPayload `json:"payload"`
+	TriggerClient  string         `json:"client"`
 }
 
 type TriggerPayload struct {
