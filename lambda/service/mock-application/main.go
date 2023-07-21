@@ -30,12 +30,12 @@ func NewHandler() http.Handler {
 }
 
 func main() {
-	fmt.Println("mock-service")
+	fmt.Println("mock-application")
 	srv := &http.Server{
 		Addr:    ":8081",
 		Handler: NewHandler(),
 	}
 
-	log.Println("Starting mock service ...")
+	log.Println("Starting mock application ...")
 	log.Fatal(srv.ListenAndServe())
 }
