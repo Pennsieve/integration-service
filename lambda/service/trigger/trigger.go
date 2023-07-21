@@ -33,7 +33,8 @@ func (t *ApplicationTrigger) Run(ctx context.Context) error {
 		return err
 	}
 	_, err = t.Client.Execute(ctx, *bytes.NewBuffer(b))
-	// handle responses differently
+	// handle responses:
+	// currently we expect a 2xx response and no errors?
 	if err != nil {
 		return err
 	}

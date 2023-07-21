@@ -17,7 +17,7 @@ func (r *ApplicationStore) GetById(applicationId int64) (models.Application, err
 	return models.Application{
 		ID:         applicationId,
 		Name:       "mockApplication",
-		URL:        "http://mock-service:8081/mock",
+		URL:        "http://mock-application:8081/mock",
 		IsActive:   true,
 		IsInternal: false,
 	}, nil
