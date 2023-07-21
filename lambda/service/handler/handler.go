@@ -9,7 +9,6 @@ import (
 	"log"
 
 	"github.com/aws/aws-lambda-go/events"
-	"github.com/aws/aws-lambda-go/lambdacontext"
 	"github.com/pennsieve/integration-service/service/clients"
 	"github.com/pennsieve/integration-service/service/models"
 	"github.com/pennsieve/integration-service/service/store"
@@ -17,14 +16,6 @@ import (
 )
 
 func IntegrationServiceHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	var awsRequestID string
-	if lc, ok := lambdacontext.FromContext(ctx); ok {
-		awsRequestID = lc.AwsRequestID
-	} else {
-		log.Println("awsRequestID not found")
-	}
-	fmt.Println("awsRequestID", awsRequestID)
-
 	var integration models.Integration
 	if err := json.Unmarshal([]byte(request.Body), &integration); err != nil {
 		log.Println(err)
