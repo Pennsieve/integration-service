@@ -3,13 +3,7 @@ WORKDIR /service
 # Copy dependencies list
 COPY go.mod go.sum ./
 # Build
-COPY main.go . 
-COPY handler ./handler
-COPY models ./models
-COPY store ./store
-COPY trigger ./trigger
-COPY clients ./clients
-COPY utils ./utils
+COPY . ./
 RUN go build -o main main.go
 # Copy artifacts to a clean image
 FROM alpine:3.16
