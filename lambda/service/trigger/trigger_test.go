@@ -1,10 +1,10 @@
 package trigger_test
 
 import (
-	"net/http"
+	"context"
 	"testing"
 
-	"github.com/pennsieve/integration-service/service/clients"
+	"github.com/pennsieve/integration-service/service/mocks"
 	"github.com/pennsieve/integration-service/service/models"
 	"github.com/pennsieve/integration-service/service/trigger"
 )
@@ -20,12 +20,11 @@ func TestRun(t *testing.T) {
 	triggerPayload := models.TriggerPayload{
 		PackageIDs: []int64{1, 2, 3},
 	}
-	// client to be mocked
-	client := clients.NewApplicationRestClient(&http.Client{}, application.URL)
-	applicationTrigger := trigger.NewApplicationTrigger(client,
-		application,
-		triggerPayload)
-	err := applicationTrigger.Run()
+
+	mockClient := mocks.NewMockClient()
+	applicationTrigger := trigger.NewApplicationTrigger(mockClient, application, triggerPayload)
+	ctx := context.Background()
+	err := applicationTrigger.Run(ctx)
 	if err != nil {
 		t.Error(err)
 	}

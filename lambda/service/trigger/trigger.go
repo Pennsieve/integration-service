@@ -2,6 +2,7 @@ package trigger
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"log"
@@ -11,7 +12,7 @@ import (
 )
 
 type Trigger interface {
-	Run() error
+	Run(ctx context.Context) error
 	Validate() error
 }
 
@@ -26,12 +27,13 @@ func NewApplicationTrigger(client clients.Client, application models.Application
 }
 
 // runs trigger
-func (t *ApplicationTrigger) Run() error {
+func (t *ApplicationTrigger) Run(ctx context.Context) error {
 	b, err := json.Marshal(t.Payload)
 	if err != nil {
 		return err
 	}
-	_, err = t.Client.Execute(*bytes.NewBuffer(b))
+	_, err = t.Client.Execute(ctx, *bytes.NewBuffer(b))
+	// handle responses differently
 	if err != nil {
 		return err
 	}

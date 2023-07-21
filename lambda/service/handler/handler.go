@@ -9,6 +9,7 @@ import (
 	"log"
 
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-lambda-go/lambdacontext"
 	"github.com/pennsieve/integration-service/service/clients"
 	"github.com/pennsieve/integration-service/service/models"
 	"github.com/pennsieve/integration-service/service/store"
@@ -16,11 +17,16 @@ import (
 )
 
 func IntegrationServiceHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	body := []byte(request.Body)
-	var integration models.Integration
+	var awsRequestID string
+	if lc, ok := lambdacontext.FromContext(ctx); ok {
+		awsRequestID = lc.AwsRequestID
+	} else {
+		log.Println("awsRequestID not found")
+	}
+	fmt.Println("awsRequestID", awsRequestID)
 
-	err := json.Unmarshal(body, &integration)
-	if err != nil {
+	var integration models.Integration
+	if err := json.Unmarshal([]byte(request.Body), &integration); err != nil {
 		log.Println(err)
 		return events.APIGatewayV2HTTPResponse{
 			StatusCode: 500,
@@ -34,8 +40,7 @@ func IntegrationServiceHandler(ctx context.Context, request events.APIGatewayV2H
 
 	// trigger integration
 	client := clients.NewApplicationRestClient(&http.Client{}, application.URL)
-	applicationTrigger := trigger.NewApplicationTrigger(client,
-		application,
+	applicationTrigger := trigger.NewApplicationTrigger(client, application,
 		integration.TriggerPayload)
 	if applicationTrigger.Validate() != nil {
 		return events.APIGatewayV2HTTPResponse{
@@ -43,8 +48,8 @@ func IntegrationServiceHandler(ctx context.Context, request events.APIGatewayV2H
 			Body:       "IntegrationServiceHandler",
 		}, ErrApplicationValidation
 	}
-	err = applicationTrigger.Run()
-	if err != nil {
+
+	if err := applicationTrigger.Run(ctx); err != nil {
 		log.Println(err)
 		return events.APIGatewayV2HTTPResponse{
 			StatusCode: 500,

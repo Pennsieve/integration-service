@@ -1,7 +1,10 @@
 package clients
 
-import "bytes"
+import (
+	"bytes"
+	"context"
+)
 
 type Client interface {
-	Execute(b bytes.Buffer) ([]byte, error)
+	Execute(context.Context, bytes.Buffer) ([]byte, error)
 }

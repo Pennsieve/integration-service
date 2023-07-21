@@ -2,9 +2,11 @@ package clients
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"log"
 	"net/http"
+	"time"
 )
 
 type ApplicationRestClient struct {
@@ -16,9 +18,13 @@ func NewApplicationRestClient(client *http.Client, url string) Client {
 	return &ApplicationRestClient{client, url}
 }
 
-func (c *ApplicationRestClient) Execute(b bytes.Buffer) ([]byte, error) {
+func (c *ApplicationRestClient) Execute(ctx context.Context, b bytes.Buffer) ([]byte, error) {
+	requestDuration := 180 * time.Second
 	req, err := http.NewRequest("POST", c.ApplicationURL, &b)
-	// add request headers here
+	tiggerContext, cancel := context.WithTimeout(ctx, requestDuration)
+	defer cancel()
+
+	req = req.WithContext(tiggerContext)
 	if err != nil {
 		log.Println(err)
 		return nil, err
