@@ -10,13 +10,20 @@ import (
 
 func TestIntegrationServiceHandler(t *testing.T) {
 	ctx := context.Background()
-	request := events.APIGatewayV2HTTPRequest{
-		Body: "{ \"sessionToken\": \"ae5t678999-a345fgg\", \"datasetI\": \"dataset123\", \"applicationId\": 1, \"payload\": {\"packageIds\": [1,2,3]}}",
+	requestContext := events.APIGatewayV2HTTPRequestContext{
+		HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+			Method: "POST",
+		},
 	}
-	expectedStatusCode := 200
+	request := events.APIGatewayV2HTTPRequest{
+		RouteKey:       "POST /IncorrectIntegrationsRoute",
+		Body:           "{ \"sessionToken\": \"ae5t678999-a345fgg\", \"datasetI\": \"dataset123\", \"applicationId\": 1, \"payload\": {\"packageIds\": [1,2,3]}}",
+		RequestContext: requestContext,
+	}
 
-	response, err := handler.IntegrationServiceHandler(ctx, request)
-	if err != nil {
+	expectedStatusCode := 404
+	response, _ := handler.IntegrationServiceHandler(ctx, request)
+	if response.StatusCode != expectedStatusCode {
 		t.Errorf("expected status code %v, got %v", expectedStatusCode, response.StatusCode)
 	}
 }
