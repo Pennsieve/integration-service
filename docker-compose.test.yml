@@ -1,0 +1,26 @@
+version: '3'
+
+networks:
+  api-tests:
+    driver: bridge
+
+services:
+  # Test Container for running tests locally
+  local_tests:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    volumes:
+      - $PWD:/go/src/github.com/pennsieve/integration-service
+    networks:
+      - api-tests
+
+    # Test Container for running tests on CI
+  ci_tests:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    volumes:
+      - $PWD:/go/src/github.com/pennsieve/integration-service
+    networks:
+      - api-tests    
