@@ -29,7 +29,7 @@ test-ci:
 	docker-compose -f docker-compose.test.yml down --remove-orphans
 	mkdir -p data plugins conf logs
 	chmod -R 777 conf
-	@IMAGE_TAG=$(IMAGE_TAG) docker-compose -f docker-compose.test.yml up --exit-code-from=ci-tests ci-tests
+	@IMAGE_TAG=$(IMAGE_TAG) docker-compose -f docker-compose.test.yml up --exit-code-from=ci_tests ci_tests
 
 # Spin down active docker containers.
 docker-clean:
