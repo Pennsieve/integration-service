@@ -20,15 +20,15 @@ func NewApplicationRestClient(client *http.Client, url string) Client {
 
 func (c *ApplicationRestClient) Execute(ctx context.Context, b bytes.Buffer) ([]byte, error) {
 	requestDuration := 180 * time.Second
-	req, err := http.NewRequest("POST", c.ApplicationURL, &b)
-	tiggerContext, cancel := context.WithTimeout(ctx, requestDuration)
-	defer cancel()
-
-	req = req.WithContext(tiggerContext)
+	req, err := http.NewRequest(http.MethodPost, c.ApplicationURL, &b)
 	if err != nil {
 		log.Println(err)
 		return nil, err
 	}
+
+	tiggerContext, cancel := context.WithTimeout(ctx, requestDuration)
+	defer cancel()
+	req = req.WithContext(tiggerContext)
 	resp, err := c.Client.Do(req)
 	if err != nil {
 		log.Println(err)
