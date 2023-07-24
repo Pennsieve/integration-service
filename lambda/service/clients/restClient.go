@@ -26,9 +26,9 @@ func (c *ApplicationRestClient) Execute(ctx context.Context, b bytes.Buffer) ([]
 		return nil, err
 	}
 
-	tiggerContext, cancel := context.WithTimeout(ctx, requestDuration)
+	triggerContext, cancel := context.WithTimeout(ctx, requestDuration)
 	defer cancel()
-	req = req.WithContext(tiggerContext)
+	req = req.WithContext(triggerContext)
 	resp, err := c.Client.Do(req)
 	if err != nil {
 		log.Println(err)
