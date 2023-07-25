@@ -1,0 +1,25 @@
+version: '3.9'
+
+services:
+
+  integration-service:
+    image: pennsieve/integration-service
+    container_name: integration-service
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    entrypoint: aws-lambda-rie /main
+    restart: always
+    ports:
+      - 9000:8080
+  
+  mock-application:
+    image: pennsieve/mock-application
+    container_name: mock-application
+    build:
+      context: ./mock-application/
+      dockerfile: ./Dockerfile
+    restart: always
+    ports:
+      - 8081:8081
+  

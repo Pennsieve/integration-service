@@ -14,11 +14,11 @@ ansiColor('xterm') {
 
   try {
     stage("Run Tests") {
-//       try {
-//         sh "IMAGE_TAG=${imageTag} make test-ci"
-//       } finally {
-//         sh "make docker-clean"
-//       }
+      try {
+        sh "IMAGE_TAG=${imageTag} make test-ci"
+      } finally {
+        sh "make docker-clean"
+      }
     }
 
     if(isMain) {
