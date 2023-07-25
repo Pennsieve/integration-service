@@ -53,7 +53,7 @@ package:
 	@echo "***********************"
 	@echo ""
 	cd $(WORKING_DIR)/lambda/service; \
-  		env GOOS=linux GOARCH=amd64 go build -o $(WORKING_DIR)/lambda/bin/service/pennsieve_integration_service; \
+  		env GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o $(WORKING_DIR)/lambda/bin/service/bootstrap; \
 		cd $(WORKING_DIR)/lambda/bin/service/ ; \
 			zip -r $(WORKING_DIR)/lambda/bin/service/$(SERVICE_PACKAGE_NAME) .
 

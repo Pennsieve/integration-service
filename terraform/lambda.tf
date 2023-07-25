@@ -29,7 +29,7 @@ resource "aws_lambda_function" "event_integration_consumer_lambda" {
 resource "aws_lambda_function" "integration_service_lambda" {
   description      = "Lambda Function which provides the interface for integration applications"
   function_name    = "${var.environment_name}-${var.service_name}-lambda-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
-  handler          = "pennsieve_integration_service"
+  handler          = "bootstrap"
   runtime          = "provided.al2"
   role             = aws_iam_role.integration_service_lambda_role.arn
   timeout          = 30
