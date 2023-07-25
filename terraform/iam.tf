@@ -104,6 +104,58 @@ resource "aws_iam_role_policy_attachment" "event_integration_consumer_lambda_iam
   policy_arn = aws_iam_policy.event_integration_consumer_lambda_iam_policy.arn
 }
 
+## Integration Service
+resource "aws_iam_role" "integration_service_lambda_role" {
+  name = "${var.environment_name}-${var.service_name}-integration-service-lambda-role-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
+
+  assume_role_policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": "sts:AssumeRole",
+      "Principal": {
+        "Service": "lambda.amazonaws.com"
+      },
+      "Effect": "Allow",
+      "Sid": ""
+    }
+  ]
+}
+EOF
+}
+
+resource "aws_iam_policy" "integration_service_lambda_iam_policy" {
+  name   = "${var.environment_name}-${var.service_name}-integration-service-lambda-iam-policy-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
+  path   = "/"
+  policy = data.aws_iam_policy_document.integration_service_lambda_iam_policy_document.json
+}
+
+data "aws_iam_policy_document" "integration_service_lambda_iam_policy_document" {
+  statement {
+    sid    = "EventIntegrationConsumerPermissions"
+    effect = "Allow"
+    actions = [
+      "logs:CreateLogGroup",
+      "logs:CreateLogStream",
+      "logs:PutDestination",
+      "logs:PutLogEvents",
+      "logs:DescribeLogStreams",
+      "ec2:CreateNetworkInterface",
+      "ec2:DescribeNetworkInterfaces",
+      "ec2:DeleteNetworkInterface",
+      "ec2:AssignPrivateIpAddresses",
+      "ec2:UnassignPrivateIpAddresses"
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy_attachment" "integration_service_lambda_iam_policy_attachment" {
+  role       = aws_iam_role.integration_service_lambda_role.name
+  policy_arn = aws_iam_policy.integration_service_lambda_iam_policy.arn
+}
+
 ##########################
 # SQS Queue Key Policies #
 ##########################
