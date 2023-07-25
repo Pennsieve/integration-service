@@ -31,6 +31,7 @@ resource "aws_lambda_function" "integration_service_lambda" {
   function_name    = "${var.environment_name}-${var.service_name}-lambda-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
   handler          = "pennsieve_integration_service"
   runtime          = "provided.al2"
+  architectures    = ["arm64"]
   role             = aws_iam_role.integration_service_lambda_role.arn
   timeout          = 30
   memory_size      = 128
