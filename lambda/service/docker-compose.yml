@@ -3,11 +3,15 @@ version: '3.9'
 services:
 
   integration-service:
+    env_file:
+      - dev.env
     image: pennsieve/integration-service
     container_name: integration-service
     build:
       context: .
       dockerfile: ./Dockerfile
+    depends_on:
+      - pennsievedb
     entrypoint: aws-lambda-rie /main
     restart: always
     ports:
@@ -22,4 +26,10 @@ services:
     restart: always
     ports:
       - 8081:8081
-  
+
+  pennsievedb:
+    image: pennsieve/pennsievedb:V20230531145242-seed
+    container_name: pennsievedb
+    restart: always
+    ports:
+      - "5432:5432"  

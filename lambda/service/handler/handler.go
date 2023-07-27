@@ -11,9 +11,10 @@ import (
 	"github.com/aws/aws-lambda-go/lambdacontext"
 	"github.com/pennsieve/integration-service/service/clients"
 	"github.com/pennsieve/integration-service/service/models"
-	"github.com/pennsieve/integration-service/service/store"
+	"github.com/pennsieve/integration-service/service/repository"
 	"github.com/pennsieve/integration-service/service/trigger"
 	"github.com/pennsieve/integration-service/service/utils"
+	pgQueries "github.com/pennsieve/pennsieve-go-core/pkg/queries/pgdb"
 )
 
 func IntegrationServiceHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
@@ -35,9 +36,26 @@ func IntegrationServiceHandler(ctx context.Context, request events.APIGatewayV2H
 				}, ErrUnmarshaling
 			}
 
-			// TODO: expose an applications endpoint?
-			store := store.NewStore()
-			application, _ := store.GetById(integration.ApplicationID)
+			// TODO: update to non-test connection
+			db, err := pgQueries.ConnectENV()
+			if err != nil {
+				log.Print(err)
+				return events.APIGatewayV2HTTPResponse{
+					StatusCode: 500,
+					Body:       handlerName,
+				}, ErrDatabaseConnection
+			}
+			defer db.Close()
+
+			repository := repository.NewDatabaseRepository(db, integration.OrganizationID)
+			application, err := repository.GetById(ctx, integration.ApplicationID)
+			if err != nil {
+				log.Print(err)
+				return events.APIGatewayV2HTTPResponse{
+					StatusCode: 409,
+					Body:       handlerName,
+				}, ErrNoRecordsFound
+			}
 
 			// create application trigger
 			client := clients.NewApplicationRestClient(&http.Client{}, application.URL)
@@ -45,6 +63,7 @@ func IntegrationServiceHandler(ctx context.Context, request events.APIGatewayV2H
 				integration.TriggerPayload)
 			// validate
 			if applicationTrigger.Validate() != nil {
+				log.Println(err)
 				return events.APIGatewayV2HTTPResponse{
 					StatusCode: 409,
 					Body:       handlerName,
