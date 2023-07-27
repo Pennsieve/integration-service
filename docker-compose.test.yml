@@ -21,6 +21,8 @@ services:
 
     # Test Container for running tests on CI
   ci_tests:
+    env_file:
+      - DockerfileTest.env
     build:
       context: .
       dockerfile: Dockerfile.test
