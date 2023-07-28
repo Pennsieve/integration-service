@@ -47,7 +47,7 @@ func IntegrationServiceHandler(ctx context.Context, request events.APIGatewayV2H
 			}
 			defer db.Close()
 
-			repository := repository.NewDatabaseRepository(db, integration.OrganizationID)
+			repository := repository.NewApplicationRepository(db, integration.OrganizationID)
 			application, err := repository.GetById(ctx, integration.ApplicationID)
 			if err != nil {
 				log.Print(err)

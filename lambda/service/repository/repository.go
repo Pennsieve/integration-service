@@ -3,12 +3,13 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"time"
 )
 
 type DatabaseRepository interface {
 	GetById(context.Context, int64) (Application, error)
-	Insert() (int64, error)
+	Insert(Application) (int64, error)
 }
 
 type ApplicationRepository struct {
@@ -16,12 +17,13 @@ type ApplicationRepository struct {
 	OrganizationID int64
 }
 
-func NewDatabaseRepository(db *sql.DB, organizationId int64) DatabaseRepository {
+func NewApplicationRepository(db *sql.DB, organizationId int64) DatabaseRepository {
 	return &ApplicationRepository{db, organizationId}
 }
 
 func (r *ApplicationRepository) GetById(ctx context.Context, applicationId int64) (Application, error) {
-	query := "SELECT id, name, api_url, is_disabled FROM \"1\".webhooks WHERE id=$1"
+	query := fmt.Sprintf("SELECT id, name, api_url, is_disabled FROM \"%v\".webhooks WHERE id=$1",
+		r.OrganizationID)
 	queryContext, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	var application Application
@@ -42,11 +44,16 @@ func (r *ApplicationRepository) GetById(ctx context.Context, applicationId int64
 }
 
 // TODO: update this method to be generic
-func (r *ApplicationRepository) Insert() (int64, error) {
+func (r *ApplicationRepository) Insert(application Application) (int64, error) {
 	var id int64
+	query := fmt.Sprintf("insert into \"%v\".webhooks (api_url,description,secret,name,display_name,is_private,is_default,is_disabled,created_at,created_by,integration_user_id,has_access) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING ID",
+		r.OrganizationID)
 	if err := r.DB.QueryRow(
-		"insert into \"1\".webhooks (api_url,description,secret,name,display_name,is_private,is_default,is_disabled,created_at,created_by,integration_user_id,has_access) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING ID",
-		"http://mock-application:8081/mock", "This is the Mock Application", "1d611551faddd83b", "CUSTOM_INTEGRATION", "Custom Integration", true, false, false, "2023-05-31 17:11:14.634542", 1, 1, true).Scan(&id); err != nil {
+		query,
+		application.URL, application.Description, application.Secret,
+		application.Name, application.DisplayName, application.IsPrivate,
+		application.IsDefault, application.IsDisabled, application.CreatedAt,
+		application.CreatedBy, application.IntegrationUserID, application.HasAccess).Scan(&id); err != nil {
 		return 0, err
 	}
 	return id, nil

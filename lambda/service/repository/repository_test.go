@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"testing"
+	"time"
 
 	"github.com/pennsieve/integration-service/service/repository"
 	pgQueries "github.com/pennsieve/pennsieve-go-core/pkg/queries/pgdb"
@@ -17,13 +18,27 @@ func TestGetById(t *testing.T) {
 	defer db.Close()
 
 	var organizationId int64 = 1
-	repository := repository.NewDatabaseRepository(db, organizationId)
+	applicationRepository := repository.NewApplicationRepository(db, organizationId)
 
-	applicationID, err := repository.Insert()
+	mockApplication := repository.Application{
+		URL:               "http://mock-application:8081/mock",
+		Description:       "This is the Mock Application",
+		Secret:            "1d611551faddd83b",
+		Name:              "CUSTOM_INTEGRATION",
+		DisplayName:       "Custom Integration",
+		IsPrivate:         true,
+		IsDefault:         false,
+		IsDisabled:        false,
+		CreatedAt:         time.Now(),
+		CreatedBy:         1,
+		IntegrationUserID: 1,
+		HasAccess:         true,
+	}
+	applicationID, err := applicationRepository.Insert(mockApplication)
 	if err != nil {
 		log.Fatalf("error inserting application %v", err)
 	}
-	application, err := repository.GetById(context.Background(), applicationID)
+	application, err := applicationRepository.GetById(context.Background(), applicationID)
 	if err != nil {
 		log.Fatalf("error getting application %v", err)
 	}
