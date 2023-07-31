@@ -43,7 +43,6 @@ func (r *ApplicationRepository) GetById(ctx context.Context, applicationId int64
 
 }
 
-// TODO: update this method to be generic
 func (r *ApplicationRepository) Insert(application Application) (int64, error) {
 	var id int64
 	query := fmt.Sprintf("insert into \"%v\".webhooks (api_url,description,secret,name,display_name,is_private,is_default,is_disabled,created_at,created_by,integration_user_id,has_access) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING ID",

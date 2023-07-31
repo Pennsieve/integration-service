@@ -45,5 +45,4 @@ func TestGetById(t *testing.T) {
 	if application.ID != applicationID {
 		log.Fatalf("expected %v, got %v", applicationID, application.ID)
 	}
-
 }
