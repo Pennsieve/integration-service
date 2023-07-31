@@ -34,15 +34,22 @@ func TestGetById(t *testing.T) {
 		IntegrationUserID: 1,
 		HasAccess:         true,
 	}
-	applicationID, err := applicationRepository.Insert(mockApplication)
+	ctx := context.Background()
+	applicationID, err := applicationRepository.Insert(ctx, mockApplication)
 	if err != nil {
 		log.Fatalf("error inserting application %v", err)
 	}
-	application, err := applicationRepository.GetById(context.Background(), applicationID)
+	application, err := applicationRepository.GetById(ctx, applicationID)
 	if err != nil {
 		log.Fatalf("error getting application %v", err)
 	}
 	if application.ID != applicationID {
 		log.Fatalf("expected %v, got %v", applicationID, application.ID)
+	}
+
+	// delete inserted test application record
+	err = applicationRepository.Delete(ctx, applicationID)
+	if err != nil {
+		log.Fatal(err)
 	}
 }

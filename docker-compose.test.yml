@@ -33,7 +33,6 @@ services:
     networks:
       - api-tests
 
-
   pennsievedb:
     image: pennsieve/pennsievedb:V20230531145242-seed
     container_name: pennsievedb

@@ -4,7 +4,7 @@ go 1.20
 
 require (
 	github.com/aws/aws-lambda-go v1.41.0
-	github.com/pennsieve/pennsieve-go-core v1.7.4
+	github.com/pennsieve/pennsieve-go-core v1.8.0
 )
 
 require (
