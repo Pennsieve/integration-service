@@ -11,7 +11,7 @@ import (
 	"github.com/aws/aws-lambda-go/lambdacontext"
 	"github.com/pennsieve/integration-service/service/clients"
 	"github.com/pennsieve/integration-service/service/models"
-	"github.com/pennsieve/integration-service/service/repository"
+	"github.com/pennsieve/integration-service/service/store"
 	"github.com/pennsieve/integration-service/service/trigger"
 	"github.com/pennsieve/integration-service/service/utils"
 	pgQueries "github.com/pennsieve/pennsieve-go-core/pkg/queries/pgdb"
@@ -46,8 +46,8 @@ func IntegrationServiceHandler(ctx context.Context, request events.APIGatewayV2H
 			}
 			defer db.Close()
 
-			repository := repository.NewApplicationRepository(db, integration.OrganizationID)
-			application, err := repository.GetById(ctx, integration.ApplicationID)
+			store := store.NewApplicationDatabaseStore(db, integration.OrganizationID)
+			application, err := store.GetById(ctx, integration.ApplicationID)
 			if err != nil {
 				log.Print(err)
 				return events.APIGatewayV2HTTPResponse{

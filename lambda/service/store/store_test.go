@@ -1,4 +1,4 @@
-package repository_test
+package store_test
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pennsieve/integration-service/service/repository"
+	"github.com/pennsieve/integration-service/service/store"
 	pgQueries "github.com/pennsieve/pennsieve-go-core/pkg/queries/pgdb"
 )
 
@@ -18,9 +18,9 @@ func TestGetById(t *testing.T) {
 	defer db.Close()
 
 	var organizationId int64 = 1
-	applicationRepository := repository.NewApplicationRepository(db, organizationId)
+	applicationDatabaseStore := store.NewApplicationDatabaseStore(db, organizationId)
 
-	mockApplication := repository.Application{
+	mockApplication := store.Application{
 		URL:               "http://mock-application:8081/mock",
 		Description:       "This is the Mock Application",
 		Secret:            "1d611551faddd83b",
@@ -35,11 +35,11 @@ func TestGetById(t *testing.T) {
 		HasAccess:         true,
 	}
 	ctx := context.Background()
-	applicationID, err := applicationRepository.Insert(ctx, mockApplication)
+	applicationID, err := applicationDatabaseStore.Insert(ctx, mockApplication)
 	if err != nil {
 		log.Fatalf("error inserting application %v", err)
 	}
-	application, err := applicationRepository.GetById(ctx, applicationID)
+	application, err := applicationDatabaseStore.GetById(ctx, applicationID)
 	if err != nil {
 		log.Fatalf("error getting application %v", err)
 	}
@@ -48,7 +48,7 @@ func TestGetById(t *testing.T) {
 	}
 
 	// delete inserted test application record
-	err = applicationRepository.Delete(ctx, applicationID)
+	err = applicationDatabaseStore.Delete(ctx, applicationID)
 	if err != nil {
 		log.Fatal(err)
 	}

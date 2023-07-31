@@ -6,12 +6,12 @@ import (
 
 	"github.com/pennsieve/integration-service/service/mocks"
 	"github.com/pennsieve/integration-service/service/models"
-	"github.com/pennsieve/integration-service/service/repository"
+	"github.com/pennsieve/integration-service/service/store"
 	"github.com/pennsieve/integration-service/service/trigger"
 )
 
 func TestValidate(t *testing.T) {
-	application := repository.Application{
+	application := store.Application{
 		ID:         1,
 		Name:       "mockApplication",
 		URL:        "http://mock-application:8081/mock",
@@ -31,7 +31,7 @@ func TestValidate(t *testing.T) {
 }
 
 func TestRun(t *testing.T) {
-	application := repository.Application{
+	application := store.Application{
 		ID:         1,
 		Name:       "mockApplication",
 		URL:        "http://mock-application:8081/mock",

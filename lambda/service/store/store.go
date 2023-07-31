@@ -1,4 +1,4 @@
-package repository
+package store
 
 import (
 	"context"
@@ -7,22 +7,22 @@ import (
 	"time"
 )
 
-type DatabaseRepository interface {
+type DatabaseStore interface {
 	GetById(context.Context, int64) (Application, error)
 	Insert(context.Context, Application) (int64, error)
 	Delete(context.Context, int64) error
 }
 
-type ApplicationDatabaseRepository struct {
+type ApplicationDatabaseStore struct {
 	DB             *sql.DB
 	OrganizationID int64
 }
 
-func NewApplicationRepository(db *sql.DB, organizationId int64) DatabaseRepository {
-	return &ApplicationDatabaseRepository{db, organizationId}
+func NewApplicationDatabaseStore(db *sql.DB, organizationId int64) DatabaseStore {
+	return &ApplicationDatabaseStore{db, organizationId}
 }
 
-func (r *ApplicationDatabaseRepository) GetById(ctx context.Context, applicationId int64) (Application, error) {
+func (r *ApplicationDatabaseStore) GetById(ctx context.Context, applicationId int64) (Application, error) {
 	query := fmt.Sprintf("SELECT id, name, api_url, is_disabled FROM \"%v\".webhooks WHERE id=$1",
 		r.OrganizationID)
 	queryContext, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -43,7 +43,7 @@ func (r *ApplicationDatabaseRepository) GetById(ctx context.Context, application
 	return application, nil
 }
 
-func (r *ApplicationDatabaseRepository) Insert(ctx context.Context, application Application) (int64, error) {
+func (r *ApplicationDatabaseStore) Insert(ctx context.Context, application Application) (int64, error) {
 	var id int64
 	query := fmt.Sprintf("insert into \"%v\".webhooks (api_url,description,secret,name,display_name,is_private,is_default,is_disabled,created_at,created_by,integration_user_id,has_access) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING ID",
 		r.OrganizationID)
@@ -61,7 +61,7 @@ func (r *ApplicationDatabaseRepository) Insert(ctx context.Context, application 
 	return id, nil
 }
 
-func (r *ApplicationDatabaseRepository) Delete(ctx context.Context, applicationId int64) error {
+func (r *ApplicationDatabaseStore) Delete(ctx context.Context, applicationId int64) error {
 	query := fmt.Sprintf("DELETE from \"%v\".webhooks WHERE id=$1",
 		r.OrganizationID)
 	queryContext, cancel := context.WithTimeout(ctx, 30*time.Second)

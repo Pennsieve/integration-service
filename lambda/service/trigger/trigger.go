@@ -8,7 +8,7 @@ import (
 
 	"github.com/pennsieve/integration-service/service/clients"
 	"github.com/pennsieve/integration-service/service/models"
-	"github.com/pennsieve/integration-service/service/repository"
+	"github.com/pennsieve/integration-service/service/store"
 )
 
 type Trigger interface {
@@ -18,11 +18,11 @@ type Trigger interface {
 
 type ApplicationTrigger struct {
 	Client      clients.Client
-	Application repository.Application
+	Application store.Application
 	Payload     models.TriggerPayload
 }
 
-func NewApplicationTrigger(client clients.Client, application repository.Application, payload models.TriggerPayload) Trigger {
+func NewApplicationTrigger(client clients.Client, application store.Application, payload models.TriggerPayload) Trigger {
 	return &ApplicationTrigger{client, application, payload}
 }
 
