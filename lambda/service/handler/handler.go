@@ -36,8 +36,7 @@ func IntegrationServiceHandler(ctx context.Context, request events.APIGatewayV2H
 				}, ErrUnmarshaling
 			}
 
-			// TODO: update to non-test connection
-			db, err := pgQueries.ConnectENV()
+			db, err := pgQueries.ConnectRDS()
 			if err != nil {
 				log.Print(err)
 				return events.APIGatewayV2HTTPResponse{
