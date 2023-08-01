@@ -22,10 +22,36 @@ func TestLambdaRouter(t *testing.T) {
 	}
 
 	router := handler.NewLambdaRouter()
-	router.POST("/integrations", handler.PostIntegrationsHandler)
 
+	// POST /integrations
+	router.POST("/integrations", handler.PostIntegrationsHandler)
 	expectedStatusCode := 404
 	response, _ := router.Start(ctx, request)
+	if response.StatusCode != expectedStatusCode {
+		t.Errorf("expected status code %v, got %v", expectedStatusCode, response.StatusCode)
+	}
+
+	// GET /applications
+	requestContext = events.APIGatewayV2HTTPRequestContext{
+		HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+			Method: "GET",
+		},
+	}
+	request = events.APIGatewayV2HTTPRequest{
+		RouteKey:       "GET /applications",
+		Body:           "",
+		RequestContext: requestContext,
+	}
+	var testHandler = func(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+		response := events.APIGatewayV2HTTPResponse{
+			StatusCode: 200,
+			Body:       "testHandler",
+		}
+		return response, nil
+	}
+	expectedStatusCode = 200
+	router.GET("/applications", testHandler)
+	response, _ = router.Start(ctx, request)
 	if response.StatusCode != expectedStatusCode {
 		t.Errorf("expected status code %v, got %v", expectedStatusCode, response.StatusCode)
 	}
