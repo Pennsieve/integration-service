@@ -5,10 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
 
 	"github.com/pennsieve/integration-service/service/clients"
 	"github.com/pennsieve/integration-service/service/models"
+	"github.com/pennsieve/integration-service/service/store"
 )
 
 type Trigger interface {
@@ -18,11 +18,11 @@ type Trigger interface {
 
 type ApplicationTrigger struct {
 	Client      clients.Client
-	Application models.Application
+	Application store.Application
 	Payload     models.TriggerPayload
 }
 
-func NewApplicationTrigger(client clients.Client, application models.Application, payload models.TriggerPayload) Trigger {
+func NewApplicationTrigger(client clients.Client, application store.Application, payload models.TriggerPayload) Trigger {
 	return &ApplicationTrigger{client, application, payload}
 }
 
@@ -43,9 +43,8 @@ func (t *ApplicationTrigger) Run(ctx context.Context) error {
 
 // validates whether a trigger can be executed
 func (t *ApplicationTrigger) Validate() error {
-	if !t.Application.IsActive {
+	if t.Application.IsDisabled {
 		err := errors.New("application should be active")
-		log.Println(err)
 		return err
 	}
 	return nil

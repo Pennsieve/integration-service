@@ -7,9 +7,13 @@ networks:
 services:
   # Test Container for running tests locally
   local_tests:
+    env_file:
+      - DockerfileTest.env
     build:
       context: .
       dockerfile: Dockerfile.test
+    depends_on:
+      - pennsievedb     
     volumes:
       - $PWD:/go/src/github.com/pennsieve/integration-service
     networks:
@@ -17,10 +21,29 @@ services:
 
     # Test Container for running tests on CI
   ci_tests:
+    env_file:
+      - DockerfileTestCI.env
     build:
       context: .
       dockerfile: Dockerfile.test
+    depends_on:
+      - pennsievedb-ci
     volumes:
       - $PWD:/go/src/github.com/pennsieve/integration-service
     networks:
-      - api-tests    
+      - api-tests
+
+  pennsievedb:
+    image: pennsieve/pennsievedb:V20230531145242-seed
+    container_name: pennsievedb
+    restart: always
+    ports:
+      - "5432:5432"
+    networks:
+      - api-tests
+
+  pennsievedb-ci:
+    image: pennsieve/pennsievedb:V20230531145242-seed
+    restart: always
+    networks:
+      - api-tests      
