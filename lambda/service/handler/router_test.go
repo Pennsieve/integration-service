@@ -45,12 +45,29 @@ func TestLambdaRouter(t *testing.T) {
 	var GetApplicationsHandler = func(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 		response := events.APIGatewayV2HTTPResponse{
 			StatusCode: 200,
-			Body:       "testHandler",
+			Body:       "GetApplicationsHandler",
 		}
 		return response, nil
 	}
 	expectedStatusCode = 200
 	router.GET("/applications", GetApplicationsHandler)
+	response, _ = router.Start(ctx, request)
+	if response.StatusCode != expectedStatusCode {
+		t.Errorf("expected status code %v, got %v", expectedStatusCode, response.StatusCode)
+	}
+
+	// Unsupported path
+	requestContext = events.APIGatewayV2HTTPRequestContext{
+		HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+			Method: "DELETE",
+		},
+	}
+	request = events.APIGatewayV2HTTPRequest{
+		RouteKey:       "DELETE /integrations/1",
+		Body:           "",
+		RequestContext: requestContext,
+	}
+	expectedStatusCode = 409
 	response, _ = router.Start(ctx, request)
 	if response.StatusCode != expectedStatusCode {
 		t.Errorf("expected status code %v, got %v", expectedStatusCode, response.StatusCode)
