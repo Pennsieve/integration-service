@@ -9,6 +9,7 @@ import (
 
 type RouterHandlerFunc func(context.Context, events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error)
 
+// Defines the router interface
 type Router interface {
 	POST(string, RouterHandlerFunc)
 	GET(string, RouterHandlerFunc)
