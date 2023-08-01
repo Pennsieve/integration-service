@@ -42,7 +42,7 @@ func TestLambdaRouter(t *testing.T) {
 		Body:           "",
 		RequestContext: requestContext,
 	}
-	var testHandler = func(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	var GetApplicationsHandler = func(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 		response := events.APIGatewayV2HTTPResponse{
 			StatusCode: 200,
 			Body:       "testHandler",
@@ -50,7 +50,7 @@ func TestLambdaRouter(t *testing.T) {
 		return response, nil
 	}
 	expectedStatusCode = 200
-	router.GET("/applications", testHandler)
+	router.GET("/applications", GetApplicationsHandler)
 	response, _ = router.Start(ctx, request)
 	if response.StatusCode != expectedStatusCode {
 		t.Errorf("expected status code %v, got %v", expectedStatusCode, response.StatusCode)
