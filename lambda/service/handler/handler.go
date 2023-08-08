@@ -14,8 +14,15 @@ func IntegrationServiceHandler(ctx context.Context, request events.APIGatewayV2H
 		log.Println("Processing awsRequestID:", lc.AwsRequestID)
 	}
 
-	router := NewLambdaRouter()
-	// register routes based on their supported methods
-	router.POST("/integrations", PostIntegrationsHandler)
-	return router.Start(ctx, request)
+	authorizationHelper := NewClaimsHelper(request)
+	if authorizationHelper.IsAuthorized() {
+		router := NewLambdaRouter()
+		// register routes based on their supported methods
+		router.POST("/integrations", PostIntegrationsHandler)
+		return router.Start(ctx, request)
+	}
+	return events.APIGatewayV2HTTPResponse{
+		StatusCode: 409,
+		Body:       "IntegrationServiceHandler",
+	}, ErrUnsupportedPath
 }

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/pennsieve/integration-service/service/utils"
@@ -37,14 +38,14 @@ func (r *LambdaRouter) GET(routeKey string, handler RouterHandlerFunc) {
 func (r *LambdaRouter) Start(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	routeKey := utils.ExtractRoute(request.RouteKey)
 	switch request.RequestContext.HTTP.Method {
-	case "POST":
+	case http.MethodPost:
 		f, ok := r.postRoutes[routeKey]
 		if ok {
 			return f(ctx, request)
 		} else {
 			return handleError()
 		}
-	case "GET":
+	case http.MethodGet:
 		f, ok := r.getRoutes[routeKey]
 		if ok {
 			return f(ctx, request)
