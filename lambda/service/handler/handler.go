@@ -24,5 +24,5 @@ func IntegrationServiceHandler(ctx context.Context, request events.APIGatewayV2H
 	return events.APIGatewayV2HTTPResponse{
 		StatusCode: 409,
 		Body:       "IntegrationServiceHandler",
-	}, ErrUnsupportedPath
+	}, ErrUnauthorized
 }
