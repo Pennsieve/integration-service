@@ -14,7 +14,7 @@ func IntegrationServiceHandler(ctx context.Context, request events.APIGatewayV2H
 		log.Println("Processing awsRequestID:", lc.AwsRequestID)
 	}
 
-	authorizationHelper := NewClaimsHelper(request)
+	authorizationHelper := NewClaimsAuthorizationHelper(request)
 	if authorizationHelper.IsAuthorized() {
 		router := NewLambdaRouter()
 		// register routes based on their supported methods

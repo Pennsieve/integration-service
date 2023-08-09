@@ -13,17 +13,17 @@ type AuthorizationHelper interface {
 	IsAuthorized() bool
 }
 
-type ClaimsHelper struct {
+type ClaimsAuthorizationHelper struct {
 	claims        *authorizer.Claims
 	requestMethod string
 }
 
-func NewClaimsHelper(request events.APIGatewayV2HTTPRequest) AuthorizationHelper {
+func NewClaimsAuthorizationHelper(request events.APIGatewayV2HTTPRequest) AuthorizationHelper {
 	claims := authorizer.ParseClaims(request.RequestContext.Authorizer.Lambda)
-	return &ClaimsHelper{claims, request.RequestContext.HTTP.Method}
+	return &ClaimsAuthorizationHelper{claims, request.RequestContext.HTTP.Method}
 }
 
-func (a *ClaimsHelper) IsAuthorized() bool {
+func (a *ClaimsAuthorizationHelper) IsAuthorized() bool {
 	switch a.requestMethod {
 	case http.MethodPost, http.MethodDelete:
 		return authorizer.HasRole(*a.claims, permissions.CreateDeleteFiles)
