@@ -7,6 +7,7 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambdacontext"
+	"github.com/pennsieve/integration-service/service/authorization"
 )
 
 func IntegrationServiceHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
@@ -14,7 +15,7 @@ func IntegrationServiceHandler(ctx context.Context, request events.APIGatewayV2H
 		log.Println("Processing awsRequestID:", lc.AwsRequestID)
 	}
 
-	authorizationHelper := NewClaimsAuthorizationHelper(request)
+	authorizationHelper := authorization.NewClaimsAuthorizationHelper(request)
 	if authorizationHelper.IsAuthorized() {
 		router := NewLambdaRouter()
 		// register routes based on their supported methods
