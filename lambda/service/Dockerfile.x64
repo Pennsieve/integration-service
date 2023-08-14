@@ -1,11 +1,11 @@
-FROM golang:1.20.2-alpine3.16 as build
+FROM golang:1.21.0-alpine3.18 as build
 WORKDIR /service
 # Copy files
 COPY . ./
 # Build
 RUN go build -o main main.go
 # Copy artifacts to a clean image
-FROM alpine:3.16
+FROM alpine:3.18
 RUN apk add --update curl
 COPY --from=build /service/main /main
 COPY ./entry_script.sh /entry_script.sh
