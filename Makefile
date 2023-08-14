@@ -22,7 +22,7 @@ test:
 	docker-compose -f docker-compose.test.yml down --remove-orphans
 	mkdir -p data conf
 	chmod -R 777 data conf
-	docker-compose -f docker-compose.test.yml up --exit-code-from local_tests local_tests
+	docker-compose -f docker-compose.test.yml up --build --exit-code-from local_tests local_tests
 	make clean
 
 # Run dockerized tests (used on Jenkins)
@@ -30,7 +30,7 @@ test-ci:
 	docker-compose -f docker-compose.test.yml down --remove-orphans
 	mkdir -p data plugins conf logs
 	chmod -R 777 conf
-	@IMAGE_TAG=$(IMAGE_TAG) docker-compose -f docker-compose.test.yml up --exit-code-from=ci_tests ci_tests
+	@IMAGE_TAG=$(IMAGE_TAG) docker-compose -f docker-compose.test.yml up --build --exit-code-from=ci_tests ci_tests
 
 # Spin down active docker containers.
 docker-clean:
