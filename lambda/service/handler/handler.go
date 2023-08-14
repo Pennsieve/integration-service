@@ -4,8 +4,6 @@ import (
 	"context"
 	"os"
 
-	"log"
-
 	"log/slog"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -19,7 +17,7 @@ func IntegrationServiceHandler(ctx context.Context, request events.APIGatewayV2H
 	slog.SetDefault(logger)
 
 	if lc, ok := lambdacontext.FromContext(ctx); ok {
-		log.Println("Processing awsRequestID:", lc.AwsRequestID)
+		logger.With("awsRequestID", lc.AwsRequestID)
 	}
 
 	authorizationHelper := authorization.NewClaimsAuthorizationHelper(request)
