@@ -1,6 +1,11 @@
 package store
 
-import "time"
+import (
+	"time"
+
+	"github.com/pennsieve/pennsieve-go-core/pkg/models/dataset/role"
+	"github.com/pennsieve/pennsieve-go-core/pkg/models/pgdb"
+)
 
 type Application struct {
 	ID                int64     `db:"id"`
@@ -16,4 +21,17 @@ type Application struct {
 	CreatedBy         int64     `db:"created_by"`
 	IntegrationUserID int64     `db:"integration_user_id"`
 	HasAccess         bool      `db:"has_access"`
+}
+
+type OrganizationUser struct {
+	OrganizationID int64 `db:"organization_id"`
+	UserID         int64 `db:"user_id"`
+	// Role not included: permission_bit used in claims, consistency?
+	PermissionBit pgdb.DbPermission
+}
+
+type DatasetUser struct {
+	DatasetID int64     `db:"dataset_id"`
+	UserID    int64     `db:"user_id"`
+	Role      role.Role `db:"role"`
 }

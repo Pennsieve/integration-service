@@ -1,36 +1,54 @@
 package authorization
 
 import (
-	"log"
-	"net/http"
+	"database/sql"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/pennsieve/pennsieve-go-core/pkg/authorizer"
-	"github.com/pennsieve/pennsieve-go-core/pkg/models/permissions"
 )
 
 type AuthorizationHelper interface {
 	IsAuthorized() bool
+	// to be removed
+	IsAppEnabledInOrg() bool
+	IsAppEnabledInDataset() bool
+	IsInvokingUserOrgRoleGreaterThanAppUserOrgRole() bool
+	IsInvokingUserDatasetRoleGreaterThanAppUserDatasetRole() bool
 }
 
 type ClaimsAuthorizationHelper struct {
-	claims        *authorizer.Claims
-	requestMethod string
+	claims *authorizer.Claims // datasetClaim from authorizer would be nil, as no datasetId passed as queryParam
+	db     *sql.DB
 }
 
-func NewClaimsAuthorizationHelper(request events.APIGatewayV2HTTPRequest) AuthorizationHelper {
+func NewClaimsAuthorizationHelper(request events.APIGatewayV2HTTPRequest, db *sql.DB) AuthorizationHelper {
 	claims := authorizer.ParseClaims(request.RequestContext.Authorizer.Lambda)
-	return &ClaimsAuthorizationHelper{claims, request.RequestContext.HTTP.Method}
+	return &ClaimsAuthorizationHelper{claims, db}
 }
 
 func (a *ClaimsAuthorizationHelper) IsAuthorized() bool {
-	switch a.requestMethod {
-	case http.MethodPost, http.MethodDelete:
-		return authorizer.HasRole(*a.claims, permissions.CreateDeleteFiles)
-	case http.MethodGet:
-		return authorizer.HasRole(*a.claims, permissions.ViewFiles)
-	default:
-		log.Print("unsupported path")
-		return false
-	}
+	// datasetId is optional
+	return a.IsAppEnabledInOrg() && a.IsAppEnabledInDataset() &&
+		a.IsInvokingUserOrgRoleGreaterThanAppUserOrgRole() &&
+		a.IsInvokingUserDatasetRoleGreaterThanAppUserDatasetRole()
+}
+
+func (a *ClaimsAuthorizationHelper) IsAppEnabledInOrg() bool {
+	// Re-confirm/re-visit use of isDisabled field in the webhooks table?
+	return false
+}
+
+func (a *ClaimsAuthorizationHelper) IsAppEnabledInDataset() bool {
+	return false
+}
+
+// is userRole invoking application >= orgRole of application
+func (a *ClaimsAuthorizationHelper) IsInvokingUserOrgRoleGreaterThanAppUserOrgRole() bool {
+	return false
+}
+
+// is userDatasetRole >= datasetRole of application
+func (a *ClaimsAuthorizationHelper) IsInvokingUserDatasetRoleGreaterThanAppUserDatasetRole() bool {
+	// we have to get the datasetRole, similarly to how the authorizer gets it
+	return false
 }
