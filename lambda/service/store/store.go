@@ -11,9 +11,12 @@ type DatabaseStore interface {
 	GetById(context.Context, int64) (Application, error)
 	Insert(context.Context, Application) (int64, error)
 	Delete(context.Context, int64) error
-	GetOrganisationUserById(context.Context, int64) (*OrganizationUser, error)
+	GetOrganizationUserById(context.Context, int64) (*OrganizationUser, error)
 	GetDatasetUserById(context.Context, int64, int64) (*DatasetUser, error)
 	GetDatasetUserByUserId(context.Context, int64, int64) (*DatasetUser, error)
+	// Utility methods
+	InsertOrganizationUser(context.Context, OrganizationUser) (int64, error)
+	DeleteOrganizationUser(context.Context, int64, int64) error
 }
 
 type ApplicationDatabaseStore struct {
@@ -41,9 +44,6 @@ func (r *ApplicationDatabaseStore) GetById(ctx context.Context, applicationId in
 		return Application{}, err
 	}
 
-	if application.ID != applicationId {
-		return Application{}, err
-	}
 	return application, nil
 }
 
@@ -77,7 +77,7 @@ func (r *ApplicationDatabaseStore) Delete(ctx context.Context, applicationId int
 	return nil
 }
 
-func (r *ApplicationDatabaseStore) GetOrganisationUserById(ctx context.Context, applicationId int64) (*OrganizationUser, error) {
+func (r *ApplicationDatabaseStore) GetOrganizationUserById(ctx context.Context, applicationId int64) (*OrganizationUser, error) {
 	query := fmt.Sprintf("SELECT organization_id, user_id, permission_bit from pennsieve.organization_user where organization_id=%[1]v and user_id in (SELECT integration_user_id from \"%[1]v\".webhooks where id=$1)", r.OrganizationID)
 	queryContext, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -90,9 +90,6 @@ func (r *ApplicationDatabaseStore) GetOrganisationUserById(ctx context.Context, 
 		return nil, err
 	}
 
-	if (OrganizationUser{}) == organizationUser { // confirm this works
-		return nil, err
-	}
 	return &organizationUser, nil
 }
 
@@ -109,9 +106,6 @@ func (r *ApplicationDatabaseStore) GetDatasetUserById(ctx context.Context, appli
 		return nil, err
 	}
 
-	if (DatasetUser{}) == dataserUser { // confirm this works
-		return nil, err
-	}
 	return &dataserUser, nil
 }
 
@@ -128,8 +122,33 @@ func (r *ApplicationDatabaseStore) GetDatasetUserByUserId(ctx context.Context, u
 		return nil, err
 	}
 
-	if (DatasetUser{}) == dataserUser { // confirm this works
-		return nil, err
-	}
 	return &dataserUser, nil
+}
+
+// utility store methods
+func (r *ApplicationDatabaseStore) InsertOrganizationUser(ctx context.Context, organizationUser OrganizationUser) (int64, error) {
+	var organization_id int64
+	query := "insert into pennsieve.organization_user (organization_id,user_id,permission_bit) VALUES ($1,$2,$3) RETURNING ORGANIZATION_ID"
+	queryContext, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if err := r.DB.QueryRowContext(
+		queryContext,
+		query,
+		organizationUser.OrganizationID,
+		organizationUser.UserID,
+		organizationUser.PermissionBit).Scan(&organization_id); err != nil {
+		return 0, err
+	}
+	return organization_id, nil
+}
+
+func (r *ApplicationDatabaseStore) DeleteOrganizationUser(ctx context.Context, organization_id int64, user_id int64) error {
+	query := "DELETE from pennsieve.organization_user WHERE organization_id=$1 and user_id=$2"
+	queryContext, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	err := r.DB.QueryRowContext(queryContext, query, organization_id, user_id)
+	if err != nil {
+		return err.Err()
+	}
+	return nil
 }

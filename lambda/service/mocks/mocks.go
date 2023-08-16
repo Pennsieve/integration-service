@@ -20,7 +20,7 @@ func NewMockClient() clients.Client {
 
 type MockApplicationAuthorizer struct{}
 
-func (c *MockApplicationAuthorizer) IsAuthorized() bool {
+func (c *MockApplicationAuthorizer) IsAuthorized(ctx context.Context) bool {
 	return true
 }
 

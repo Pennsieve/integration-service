@@ -38,7 +38,7 @@ func (r *LambdaRouter) GET(routeKey string, handler RouterHandlerFunc) {
 }
 
 func (r *LambdaRouter) Start(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	if r.authorizer.IsAuthorized() {
+	if r.authorizer.IsAuthorized(ctx) {
 		routeKey := utils.ExtractRoute(request.RouteKey)
 		switch request.RequestContext.HTTP.Method {
 		case http.MethodPost:
