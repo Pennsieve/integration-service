@@ -6,6 +6,7 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/pennsieve/integration-service/service/handler"
+	"github.com/pennsieve/integration-service/service/mocks"
 )
 
 func TestLambdaRouter(t *testing.T) {
@@ -21,7 +22,8 @@ func TestLambdaRouter(t *testing.T) {
 		RequestContext: requestContext,
 	}
 
-	router := handler.NewLambdaRouter()
+	applicationAuthorizer := mocks.NewMockApplicationAuthorizer()
+	router := handler.NewLambdaRouter(applicationAuthorizer)
 
 	// POST /integrations
 	router.POST("/integrations", handler.PostIntegrationsHandler)

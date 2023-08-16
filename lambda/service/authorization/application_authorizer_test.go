@@ -25,13 +25,7 @@ func TestIsAuthorized(t *testing.T) {
 		RequestContext: requestContext,
 	}
 
-	db, err := pgQueries.ConnectRDS()
-	if err != nil {
-		log.Fatalf("unable to connect to database: %v\n", err)
-	}
-	defer db.Close()
-
-	authorizer := authorization.NewClaimsAuthorizationHelper(request, db)
+	authorizer := authorization.NewApplicationAuthorizer(request)
 	if authorizer.IsAuthorized() {
 		t.Fatalf("expected authorizer to return false")
 	}
@@ -60,8 +54,8 @@ func TestIsAppEnabledInOrg(t *testing.T) {
 	}
 	defer db.Close()
 
-	authorizer := authorization.NewClaimsAuthorizationHelper(request, db)
-	if authorizer.IsAppEnabledInOrg() {
+	authorizer := authorization.NewApplicationAuthorizer(request)
+	if authorizer.IsAuthorized() {
 		t.Fatalf("expected authorizer to return false")
 	}
 
