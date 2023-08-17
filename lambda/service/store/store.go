@@ -17,6 +17,8 @@ type DatabaseStore interface {
 	// Utility methods
 	InsertOrganizationUser(context.Context, OrganizationUser) (int64, error)
 	DeleteOrganizationUser(context.Context, int64, int64) error
+	InsertDatasetUser(context.Context, DatasetUser) (int64, error)
+	DeleteDatasetUser(context.Context, int64, int64) error
 }
 
 type ApplicationDatabaseStore struct {
@@ -110,7 +112,7 @@ func (r *ApplicationDatabaseStore) GetDatasetUserById(ctx context.Context, appli
 }
 
 func (r *ApplicationDatabaseStore) GetDatasetUserByUserId(ctx context.Context, userId int64, datasetId int64) (*DatasetUser, error) {
-	query := fmt.Sprintf("SELECT dataset_id, user_id, role from \"%[1]v\".dataset_user where dataset_id=%[2]v and user_id=$1)", r.OrganizationID, datasetId)
+	query := fmt.Sprintf("SELECT dataset_id, user_id, role from \"%[1]v\".dataset_user where dataset_id=%[2]v and user_id=$1", r.OrganizationID, datasetId)
 	queryContext, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	var dataserUser DatasetUser
@@ -126,6 +128,7 @@ func (r *ApplicationDatabaseStore) GetDatasetUserByUserId(ctx context.Context, u
 }
 
 // utility store methods
+// refactor - no ID needs to be returned
 func (r *ApplicationDatabaseStore) InsertOrganizationUser(ctx context.Context, organizationUser OrganizationUser) (int64, error) {
 	var organization_id int64
 	query := "insert into pennsieve.organization_user (organization_id,user_id,permission_bit) VALUES ($1,$2,$3) RETURNING ORGANIZATION_ID"
@@ -147,6 +150,36 @@ func (r *ApplicationDatabaseStore) DeleteOrganizationUser(ctx context.Context, o
 	queryContext, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	err := r.DB.QueryRowContext(queryContext, query, organization_id, user_id)
+	if err != nil {
+		return err.Err()
+	}
+	return nil
+}
+
+// refactor
+func (r *ApplicationDatabaseStore) InsertDatasetUser(ctx context.Context, datasetUser DatasetUser) (int64, error) {
+	var dataset_id int64
+	query := fmt.Sprintf("insert into \"%v\".dataset_user (dataset_id,user_id,role) VALUES ($1,$2,$3) RETURNING DATASET_ID",
+		r.OrganizationID)
+	queryContext, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if err := r.DB.QueryRowContext(
+		queryContext,
+		query,
+		datasetUser.DatasetID,
+		datasetUser.UserID,
+		datasetUser.Role).Scan(&dataset_id); err != nil {
+		return 0, err
+	}
+	return dataset_id, nil
+}
+
+func (r *ApplicationDatabaseStore) DeleteDatasetUser(ctx context.Context, dataset_id int64, user_id int64) error {
+	query := fmt.Sprintf("DELETE from \"%v\".dataset_user WHERE dataset_id=$1 and user_id=$2",
+		r.OrganizationID)
+	queryContext, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	err := r.DB.QueryRowContext(queryContext, query, dataset_id, user_id)
 	if err != nil {
 		return err.Err()
 	}

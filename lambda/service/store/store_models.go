@@ -3,7 +3,6 @@ package store
 import (
 	"time"
 
-	"github.com/pennsieve/pennsieve-go-core/pkg/models/dataset/role"
 	"github.com/pennsieve/pennsieve-go-core/pkg/models/pgdb"
 )
 
@@ -31,7 +30,7 @@ type OrganizationUser struct {
 }
 
 type DatasetUser struct {
-	DatasetID int64     `db:"dataset_id"`
-	UserID    int64     `db:"user_id"`
-	Role      role.Role `db:"role"`
+	DatasetID int64  `db:"dataset_id"`
+	UserID    int64  `db:"user_id"`
+	Role      string `db:"role"`
 }

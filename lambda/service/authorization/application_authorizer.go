@@ -9,6 +9,7 @@ import (
 	"github.com/pennsieve/integration-service/service/models"
 	"github.com/pennsieve/integration-service/service/store"
 	"github.com/pennsieve/pennsieve-go-core/pkg/authorizer"
+	"github.com/pennsieve/pennsieve-go-core/pkg/models/dataset/role"
 	"github.com/pennsieve/pennsieve-go-core/pkg/models/organization"
 	"github.com/pennsieve/pennsieve-go-core/pkg/models/user"
 	pgQueries "github.com/pennsieve/pennsieve-go-core/pkg/queries/pgdb"
@@ -44,14 +45,14 @@ func (a *ApplicationAuthorizer) IsAuthorized(ctx context.Context) bool {
 	}
 	store := store.NewApplicationDatabaseStore(db, integration.OrganizationID)
 
-	first := isAppEnabledInOrgWithSufficientPermission(ctx, store, integration.ApplicationID, a.claims.OrgClaim)
+	isAppEnabledInOrg := isAppEnabledInOrgWithSufficientPermission(ctx, store, integration.ApplicationID, a.claims.OrgClaim)
 	// datasetId is optional
 	if integration.DatasetID != 0 {
-		second := isAppEnabledInDatasetWithSufficientPermission(ctx, store, integration.DatasetID, a.claims.UserClaim)
-		return first && second
+		isAppEnabledInDataset := isAppEnabledInDatasetWithSufficientPermission(ctx, store, integration.DatasetID, a.claims.UserClaim, integration.ApplicationID)
+		return isAppEnabledInOrg && isAppEnabledInDataset
 	}
 
-	return first
+	return isAppEnabledInOrg
 }
 
 // is userRole invoking application >= orgRole of application
@@ -74,7 +75,7 @@ func isAppEnabledInOrgWithSufficientPermission(ctx context.Context, store store.
 }
 
 // is userDatasetRole >= datasetRole of application
-func isAppEnabledInDatasetWithSufficientPermission(ctx context.Context, store store.DatabaseStore, datasetId int64, userClaim user.Claim) bool {
+func isAppEnabledInDatasetWithSufficientPermission(ctx context.Context, store store.DatabaseStore, datasetId int64, userClaim user.Claim, applicationId int64) bool {
 	userID := userClaim.Id
 	currentDatasetUser, err := store.GetDatasetUserByUserId(ctx, userID, datasetId)
 	if err != nil {
@@ -82,15 +83,25 @@ func isAppEnabledInDatasetWithSufficientPermission(ctx context.Context, store st
 		return false
 	}
 
-	applicationDatasetUser, err := store.GetDatasetUserById(ctx, userID, datasetId)
+	applicationDatasetUser, err := store.GetDatasetUserById(ctx, applicationId, datasetId)
 	if err != nil {
 		log.Print(err)
 		return false
 	}
 
 	if currentDatasetUser != nil {
-		currentUserOrgRole := currentDatasetUser.Role
-		if currentUserOrgRole >= applicationDatasetUser.Role {
+		currentUserOrgRoleString := currentDatasetUser.Role
+		currentUserOrgRole, ok := role.RoleFromString(currentUserOrgRoleString)
+		if !ok {
+			log.Print(err)
+			return false
+		}
+		applicationDatasetUserRole, ok := role.RoleFromString(applicationDatasetUser.Role)
+		if !ok {
+			log.Print(err)
+			return false
+		}
+		if currentUserOrgRole >= applicationDatasetUserRole {
 			return true
 		}
 		log.Print("userDatasetRoleLessThanAppUserDatasetRole")
