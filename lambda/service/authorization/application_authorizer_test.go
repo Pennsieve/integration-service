@@ -14,7 +14,7 @@ import (
 )
 
 func TestIsAuthorized(t *testing.T) {
-	// should return false
+	// should return false when no records exist in database
 	requestContext := events.APIGatewayV2HTTPRequestContext{
 		HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
 			Method: "POST",
@@ -25,7 +25,7 @@ func TestIsAuthorized(t *testing.T) {
 	}
 	request := events.APIGatewayV2HTTPRequest{
 		RouteKey:       "POST /integrations",
-		Body:           "{ \"sessionToken\": \"ae5t678999-a345fgg\", \"datasetId\": \"dataset123\", \"applicationId\": 1, \"organizationId\": 1, \"payload\": {\"packageIds\": [1,2,3]}}",
+		Body:           "{ \"sessionToken\": \"ae5t678999-a345fgg\", \"datasetId\": \"dataset123\", \"applicationId\": 0, \"organizationId\": 0, \"payload\": {\"packageIds\": [1,2,3]}}",
 		RequestContext: requestContext,
 	}
 
@@ -36,7 +36,7 @@ func TestIsAuthorized(t *testing.T) {
 
 }
 
-func TestIsAppEnabledInOrg(t *testing.T) {
+func TestIsAppEnabledInOrgWithSufficientPermission(t *testing.T) {
 	ctx := context.Background()
 	db, err := pgQueries.ConnectRDS()
 	if err != nil {
@@ -44,28 +44,6 @@ func TestIsAppEnabledInOrg(t *testing.T) {
 	}
 	defer db.Close()
 
-	requestContext := events.APIGatewayV2HTTPRequestContext{
-		HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
-			Method: "POST",
-		},
-		Authorizer: &events.APIGatewayV2HTTPRequestContextAuthorizerDescription{
-			Lambda: make(map[string]interface{}),
-		},
-	}
-
-	failureRequest := events.APIGatewayV2HTTPRequest{
-		RouteKey:       "POST /integrations",
-		Body:           "{ \"sessionToken\": \"ae5t678999-a345fgg\", \"datasetId\": \"dataset123\", \"applicationId\": 0, \"organizationId\": 1, \"payload\": {\"packageIds\": [1,2,3]}}",
-		RequestContext: requestContext,
-	}
-
-	// should return false if application is NOT enabled in org (organizationUser is not returned)
-	authorizer := authorization.NewApplicationAuthorizer(failureRequest)
-	if authorizer.IsAuthorized(ctx) {
-		t.Fatalf("expected authorizer to return false")
-	}
-
-	// should return true if application is enabled in org
 	var organizationId int64 = 1
 	applicationDatabaseStore := store.NewApplicationDatabaseStore(db, organizationId)
 	mockApplication := store.Application{
@@ -87,6 +65,29 @@ func TestIsAppEnabledInOrg(t *testing.T) {
 		log.Fatalf("error inserting application %v", err)
 	}
 
+	requestContext := events.APIGatewayV2HTTPRequestContext{
+		HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+			Method: "POST",
+		},
+		Authorizer: &events.APIGatewayV2HTTPRequestContextAuthorizerDescription{
+			Lambda: make(map[string]interface{}),
+		},
+	}
+
+	failureRequest := events.APIGatewayV2HTTPRequest{
+		RouteKey: "POST /integrations",
+		Body: fmt.Sprintf("{ \"sessionToken\": \"ae5t678999-a345fgg\", \"datasetId\": \"dataset123\", \"applicationId\": %v, \"organizationId\": %v, \"payload\": {\"packageIds\": [1,2,3]}}",
+			mockApplicationID, organizationId),
+		RequestContext: requestContext,
+	}
+
+	// should return false if application exists but is NOT enabled in org (organizationUser is not returned)
+	authorizer := authorization.NewApplicationAuthorizer(failureRequest)
+	if authorizer.IsAuthorized(ctx) {
+		t.Fatalf("expected authorizer to return false")
+	}
+
+	// should return false if application is enabled in org but the invoking user has insufficient rights
 	organizationUser := store.OrganizationUser{
 		OrganizationID: organizationId,
 		UserID:         mockApplication.IntegrationUserID,
@@ -97,15 +98,46 @@ func TestIsAppEnabledInOrg(t *testing.T) {
 		log.Fatalf("error inserting application %v", err)
 	}
 
-	successRequest := events.APIGatewayV2HTTPRequest{
+	failureRequest2 := events.APIGatewayV2HTTPRequest{
 		RouteKey: "POST /integrations",
 		Body: fmt.Sprintf("{ \"sessionToken\": \"ae5t678999-a345fgg\", \"datasetId\": \"dataset123\", \"applicationId\": %v, \"organizationId\": %v, \"payload\": {\"packageIds\": [1,2,3]}}",
 			mockApplicationID, organizationId),
 		RequestContext: requestContext,
 	}
 
-	authorizer2 := authorization.NewApplicationAuthorizer(successRequest)
-	if !authorizer2.IsAuthorized(ctx) {
+	authorizer2 := authorization.NewApplicationAuthorizer(failureRequest2)
+	if authorizer2.IsAuthorized(ctx) {
+		t.Fatalf("expected authorizer to return false")
+	}
+
+	// should return true if application is enabled in org and the invoking user has insufficient rights
+	claims := map[string]interface{}{
+		"org_claim": map[string]interface{}{
+			"Role":            float64(8),
+			"IntId":           float64(1),
+			"NodeId":          "xyz",
+			"EnabledFeatures": nil,
+		},
+	}
+
+	requestContext2 := events.APIGatewayV2HTTPRequestContext{
+		HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+			Method: "POST",
+		},
+		Authorizer: &events.APIGatewayV2HTTPRequestContextAuthorizerDescription{
+			Lambda: claims,
+		},
+	}
+
+	successRequest := events.APIGatewayV2HTTPRequest{
+		RouteKey: "POST /integrations",
+		Body: fmt.Sprintf("{ \"sessionToken\": \"ae5t678999-a345fgg\", \"datasetId\": \"dataset123\", \"applicationId\": %v, \"organizationId\": %v, \"payload\": {\"packageIds\": [1,2,3]}}",
+			mockApplicationID, organizationId),
+		RequestContext: requestContext2,
+	}
+
+	authorizer3 := authorization.NewApplicationAuthorizer(successRequest)
+	if !authorizer3.IsAuthorized(ctx) {
 		// TODO refactor
 		// cleanup
 		err = applicationDatabaseStore.Delete(ctx, mockApplicationID)

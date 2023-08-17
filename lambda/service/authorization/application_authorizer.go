@@ -9,6 +9,7 @@ import (
 	"github.com/pennsieve/integration-service/service/models"
 	"github.com/pennsieve/integration-service/service/store"
 	"github.com/pennsieve/pennsieve-go-core/pkg/authorizer"
+	"github.com/pennsieve/pennsieve-go-core/pkg/models/organization"
 	pgQueries "github.com/pennsieve/pennsieve-go-core/pkg/queries/pgdb"
 )
 
@@ -17,13 +18,14 @@ type ServiceAuthorizer interface {
 }
 
 type ApplicationAuthorizer struct {
-	claims  *authorizer.Claims // datasetClaim from authorizer would be nil, as no datasetId passed as queryParam
-	request events.APIGatewayV2HTTPRequest
+	claims      *authorizer.Claims // datasetClaim from authorizer would be nil, as no datasetId passed as queryParam
+	requestBody string
 }
 
 func NewApplicationAuthorizer(request events.APIGatewayV2HTTPRequest) ServiceAuthorizer {
 	claims := authorizer.ParseClaims(request.RequestContext.Authorizer.Lambda)
-	return &ApplicationAuthorizer{claims, request}
+
+	return &ApplicationAuthorizer{claims, request.Body}
 }
 
 func (a *ApplicationAuthorizer) IsAuthorized(ctx context.Context) bool {
@@ -35,36 +37,36 @@ func (a *ApplicationAuthorizer) IsAuthorized(ctx context.Context) bool {
 	defer db.Close()
 
 	var integration models.Integration
-	if err := json.Unmarshal([]byte(a.request.Body), &integration); err != nil {
+	if err := json.Unmarshal([]byte(a.requestBody), &integration); err != nil {
 		log.Println(err)
 		return false
 	}
 	store := store.NewApplicationDatabaseStore(db, integration.OrganizationID)
 
 	// datasetId is optional
-	return a.isAppEnabledInOrg(ctx, store, integration.ApplicationID)
+	return isAppEnabledInOrgWithSufficientPermission(ctx, store, integration.ApplicationID, a.claims.OrgClaim)
 }
 
-func (a *ApplicationAuthorizer) isAppEnabledInOrg(ctx context.Context, store store.DatabaseStore, applicationId int64) bool {
-	// Re-confirm/re-visit use of isDisabled field in the webhooks table?
+// is userRole invoking application >= orgRole of application
+func isAppEnabledInOrgWithSufficientPermission(ctx context.Context, store store.DatabaseStore, applicationId int64, orgClaim organization.Claim) bool {
 	organizationUser, err := store.GetOrganizationUserById(ctx, applicationId)
 	if err != nil {
 		log.Print(err)
 		return false
 	}
+
 	if organizationUser != nil {
-		return true
+		currentUserOrgRole := orgClaim.Role
+		if currentUserOrgRole >= organizationUser.PermissionBit {
+			return true
+		}
+		log.Print("userOrgRoleLessThanAppUserOrgRole")
 	}
 
 	return false
 }
 
 func isAppEnabledInDataset() bool {
-	return false
-}
-
-// is userRole invoking application >= orgRole of application
-func isUserOrgRoleGreaterThanAppUserOrgRole() bool {
 	return false
 }
 
