@@ -110,7 +110,7 @@ func TestIsAppEnabledInOrgWithSufficientPermission(t *testing.T) {
 		t.Fatalf("expected authorizer to return false")
 	}
 
-	// should return true if application is enabled in org and the invoking user has insufficient rights
+	// should return true if application is enabled in org and the invoking user has sufficient rights
 	claims := map[string]interface{}{
 		"org_claim": map[string]interface{}{
 			"Role":            float64(8),
