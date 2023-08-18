@@ -74,7 +74,7 @@ func TestGetOrganizationUserById(t *testing.T) {
 		IsDisabled:        false,
 		CreatedAt:         time.Now(),
 		CreatedBy:         1,
-		IntegrationUserID: 1,
+		IntegrationUserID: 3,
 		HasAccess:         true,
 	}
 	ctx := context.Background()
