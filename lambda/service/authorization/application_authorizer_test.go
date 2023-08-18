@@ -124,7 +124,7 @@ func TestCase2IsAppEnabledInOrgWithSufficientPermission(t *testing.T) {
 		IsDisabled:        false,
 		CreatedAt:         time.Now(),
 		CreatedBy:         1,
-		IntegrationUserID: 1,
+		IntegrationUserID: 2,
 		HasAccess:         true,
 	}
 	mockApplicationID, err := applicationDatabaseStore.Insert(ctx, mockApplication)
