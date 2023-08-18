@@ -20,8 +20,8 @@ func IntegrationServiceHandler(ctx context.Context, request events.APIGatewayV2H
 		logger.With("awsRequestID", lc.AwsRequestID)
 	}
 
-	applicationAuthorizer := authorization.NewApplicationAuthorizer(request)
-	router := NewLambdaRouter(applicationAuthorizer)
+	applicationAuthorizer := authorization.NewApplicationAuthorizer(request, logger)
+	router := NewLambdaRouter(applicationAuthorizer, logger)
 	// register routes based on their supported methods
 	router.POST("/integrations", PostIntegrationsHandler)
 	return router.Start(ctx, request)

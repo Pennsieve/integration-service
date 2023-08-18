@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -9,7 +10,7 @@ import (
 	"github.com/pennsieve/integration-service/service/utils"
 )
 
-type RouterHandlerFunc func(context.Context, events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error)
+type RouterHandlerFunc func(context.Context, events.APIGatewayV2HTTPRequest, *slog.Logger) (events.APIGatewayV2HTTPResponse, error)
 
 // Defines the router interface
 type Router interface {
@@ -22,11 +23,15 @@ type LambdaRouter struct {
 	authorizer authorization.ServiceAuthorizer
 	getRoutes  map[string]RouterHandlerFunc
 	postRoutes map[string]RouterHandlerFunc
+	logger     *slog.Logger
 }
 
-func NewLambdaRouter(authorizer authorization.ServiceAuthorizer) Router {
-	return &LambdaRouter{authorizer, make(map[string]RouterHandlerFunc),
-		make(map[string]RouterHandlerFunc)}
+func NewLambdaRouter(authorizer authorization.ServiceAuthorizer, logger *slog.Logger) Router {
+	return &LambdaRouter{authorizer,
+		make(map[string]RouterHandlerFunc),
+		make(map[string]RouterHandlerFunc),
+		logger,
+	}
 }
 
 func (r *LambdaRouter) POST(routeKey string, handler RouterHandlerFunc) {
@@ -44,14 +49,14 @@ func (r *LambdaRouter) Start(ctx context.Context, request events.APIGatewayV2HTT
 		case http.MethodPost:
 			f, ok := r.postRoutes[routeKey]
 			if ok {
-				return f(ctx, request)
+				return f(ctx, request, r.logger)
 			} else {
 				return handleError()
 			}
 		case http.MethodGet:
 			f, ok := r.getRoutes[routeKey]
 			if ok {
-				return f(ctx, request)
+				return f(ctx, request, r.logger)
 			} else {
 				return handleError()
 			}

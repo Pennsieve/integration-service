@@ -3,7 +3,7 @@ package authorization
 import (
 	"context"
 	"encoding/json"
-	"log"
+	"log/slog"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/pennsieve/integration-service/service/models"
@@ -20,35 +20,36 @@ type ServiceAuthorizer interface {
 }
 
 type ApplicationAuthorizer struct {
-	claims      *authorizer.Claims // datasetClaim from authorizer would be nil, as no datasetId passed as queryParam
+	claims      *authorizer.Claims
 	requestBody string
+	logger      *slog.Logger
 }
 
-func NewApplicationAuthorizer(request events.APIGatewayV2HTTPRequest) ServiceAuthorizer {
+func NewApplicationAuthorizer(request events.APIGatewayV2HTTPRequest, logger *slog.Logger) ServiceAuthorizer {
 	claims := authorizer.ParseClaims(request.RequestContext.Authorizer.Lambda)
 
-	return &ApplicationAuthorizer{claims, request.Body}
+	return &ApplicationAuthorizer{claims, request.Body, logger}
 }
 
 func (a *ApplicationAuthorizer) IsAuthorized(ctx context.Context) bool {
 	db, err := pgQueries.ConnectRDS()
 	if err != nil {
-		log.Print(err)
+		a.logger.ErrorContext(ctx, err.Error())
 		return false
 	}
 	defer db.Close()
 
 	var integration models.Integration
 	if err := json.Unmarshal([]byte(a.requestBody), &integration); err != nil {
-		log.Println(err)
+		a.logger.ErrorContext(ctx, err.Error())
 		return false
 	}
 	store := store.NewApplicationDatabaseStore(db, integration.OrganizationID)
 
-	isAppEnabledInOrg := isAppEnabledInOrgWithSufficientPermission(ctx, store, integration.ApplicationID, a.claims.OrgClaim)
+	isAppEnabledInOrg := isAppEnabledInOrgWithSufficientPermission(ctx, store, integration.ApplicationID, a.claims.OrgClaim, a.logger)
 	// datasetId is optional
 	if integration.DatasetID != 0 {
-		isAppEnabledInDataset := isAppEnabledInDatasetWithSufficientPermission(ctx, store, integration.DatasetID, a.claims.UserClaim, integration.ApplicationID)
+		isAppEnabledInDataset := isAppEnabledInDatasetWithSufficientPermission(ctx, store, integration.DatasetID, a.claims.UserClaim, integration.ApplicationID, a.logger)
 		return isAppEnabledInOrg && isAppEnabledInDataset
 	}
 
@@ -56,36 +57,37 @@ func (a *ApplicationAuthorizer) IsAuthorized(ctx context.Context) bool {
 }
 
 // is userRole invoking application >= orgRole of application
-func isAppEnabledInOrgWithSufficientPermission(ctx context.Context, store store.DatabaseStore, applicationId int64, orgClaim organization.Claim) bool {
+func isAppEnabledInOrgWithSufficientPermission(ctx context.Context, store store.DatabaseStore, applicationId int64, orgClaim organization.Claim, logger *slog.Logger) bool {
 	applicationOrganizationUser, err := store.GetOrganizationUserById(ctx, applicationId)
 	if err != nil {
-		log.Print(err)
+		logger.ErrorContext(ctx, err.Error())
 		return false
 	}
 
+	// TODO: adding actual roles in organisation_user table
 	if applicationOrganizationUser != nil {
 		currentUserOrgRole := orgClaim.Role
 		if currentUserOrgRole >= applicationOrganizationUser.PermissionBit {
 			return true
 		}
-		log.Print("userOrgRoleLessThanAppUserOrgRole")
+		logger.Warn("userOrgRoleLessThanAppUserOrgRole")
 	}
 
 	return false
 }
 
 // is userDatasetRole >= datasetRole of application
-func isAppEnabledInDatasetWithSufficientPermission(ctx context.Context, store store.DatabaseStore, datasetId int64, userClaim user.Claim, applicationId int64) bool {
-	userID := userClaim.Id
-	currentDatasetUser, err := store.GetDatasetUserByUserId(ctx, userID, datasetId)
+func isAppEnabledInDatasetWithSufficientPermission(ctx context.Context, store store.DatabaseStore, datasetId int64, userClaim user.Claim, applicationId int64, logger *slog.Logger) bool {
+	// currently datasetClaim from authorizer would be nil, as no datasetId is passed as a queryParam
+	currentDatasetUser, err := store.GetDatasetUserByUserId(ctx, userClaim.Id, datasetId)
 	if err != nil {
-		log.Print(err)
+		logger.ErrorContext(ctx, err.Error())
 		return false
 	}
 
 	applicationDatasetUser, err := store.GetDatasetUserById(ctx, applicationId, datasetId)
 	if err != nil {
-		log.Print(err)
+		logger.ErrorContext(ctx, err.Error())
 		return false
 	}
 
@@ -93,18 +95,18 @@ func isAppEnabledInDatasetWithSufficientPermission(ctx context.Context, store st
 		currentUserOrgRoleString := currentDatasetUser.Role
 		currentUserOrgRole, ok := role.RoleFromString(currentUserOrgRoleString)
 		if !ok {
-			log.Print(err)
+			logger.Warn("currentUserOrgRole: could not map role from database string")
 			return false
 		}
 		applicationDatasetUserRole, ok := role.RoleFromString(applicationDatasetUser.Role)
 		if !ok {
-			log.Print(err)
+			logger.Warn("applicationDatasetUserRole: could not map role from database string")
 			return false
 		}
 		if currentUserOrgRole >= applicationDatasetUserRole {
 			return true
 		}
-		log.Print("userDatasetRoleLessThanAppUserDatasetRole")
+		logger.Warn("userDatasetRoleLessThanAppUserDatasetRole")
 	}
 	return false
 }

@@ -4,14 +4,19 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"testing"
 	"time"
+
+	"log/slog"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/pennsieve/integration-service/service/authorization"
 	"github.com/pennsieve/integration-service/service/store"
 	pgQueries "github.com/pennsieve/pennsieve-go-core/pkg/queries/pgdb"
 )
+
+var logger = slog.New(slog.NewJSONHandler(os.Stderr, nil))
 
 func TestIsAuthorized(t *testing.T) {
 	// should return false when no records exist in database
@@ -29,7 +34,7 @@ func TestIsAuthorized(t *testing.T) {
 		RequestContext: requestContext,
 	}
 
-	authorizer := authorization.NewApplicationAuthorizer(request)
+	authorizer := authorization.NewApplicationAuthorizer(request, logger)
 	if authorizer.IsAuthorized(context.Background()) {
 		t.Fatalf("expected authorizer to return false")
 	}
@@ -82,7 +87,7 @@ func TestIsAppEnabledInOrgWithSufficientPermission(t *testing.T) {
 	}
 
 	// should return false if application exists but is NOT enabled in org (organizationUser is not returned)
-	authorizer := authorization.NewApplicationAuthorizer(failureRequest)
+	authorizer := authorization.NewApplicationAuthorizer(failureRequest, logger)
 	if authorizer.IsAuthorized(ctx) {
 		t.Fatalf("expected authorizer to return false")
 	}
@@ -105,7 +110,7 @@ func TestIsAppEnabledInOrgWithSufficientPermission(t *testing.T) {
 		RequestContext: requestContext,
 	}
 
-	authorizer2 := authorization.NewApplicationAuthorizer(failureRequest2)
+	authorizer2 := authorization.NewApplicationAuthorizer(failureRequest2, logger)
 	if authorizer2.IsAuthorized(ctx) {
 		t.Fatalf("expected authorizer to return false")
 	}
@@ -136,7 +141,7 @@ func TestIsAppEnabledInOrgWithSufficientPermission(t *testing.T) {
 		RequestContext: requestContext2,
 	}
 
-	authorizer3 := authorization.NewApplicationAuthorizer(successRequest)
+	authorizer3 := authorization.NewApplicationAuthorizer(successRequest, logger)
 	if !authorizer3.IsAuthorized(ctx) {
 		// TODO refactor
 		// cleanup
@@ -229,7 +234,7 @@ func TestIsAppEnabledInDatasetWithSufficientPermission(t *testing.T) {
 		RequestContext: requestContext,
 	}
 
-	authorizer := authorization.NewApplicationAuthorizer(successRequest)
+	authorizer := authorization.NewApplicationAuthorizer(successRequest, logger)
 	if !authorizer.IsAuthorized(ctx) {
 		// TODO refactor
 		// cleanup
@@ -271,7 +276,7 @@ func TestIsAppEnabledInDatasetWithSufficientPermission(t *testing.T) {
 		RequestContext: requestContext2,
 	}
 
-	authorizer2 := authorization.NewApplicationAuthorizer(successRequest2)
+	authorizer2 := authorization.NewApplicationAuthorizer(successRequest2, logger)
 	if authorizer2.IsAuthorized(ctx) {
 		// TODO refactor
 		// cleanup
@@ -380,7 +385,7 @@ func TestIsAppEnabledInDatasetWithSufficientPermissionFail(t *testing.T) {
 		RequestContext: requestContext3,
 	}
 
-	authorizer3 := authorization.NewApplicationAuthorizer(failureRequest)
+	authorizer3 := authorization.NewApplicationAuthorizer(failureRequest, logger)
 	if authorizer3.IsAuthorized(ctx) {
 		// TODO refactor
 		// cleanup
@@ -497,7 +502,7 @@ func TestIsAppEnabledInDatasetWithSufficientPermissionPass(t *testing.T) {
 		RequestContext: requestContext3,
 	}
 
-	authorizer3 := authorization.NewApplicationAuthorizer(successRequest)
+	authorizer3 := authorization.NewApplicationAuthorizer(successRequest, logger)
 	if !authorizer3.IsAuthorized(ctx) {
 		// TODO refactor
 		// cleanup
