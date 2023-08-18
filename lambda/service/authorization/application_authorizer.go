@@ -56,7 +56,7 @@ func (a *ApplicationAuthorizer) IsAuthorized(ctx context.Context) bool {
 	return isAppEnabledInOrg
 }
 
-// is userRole invoking application >= orgRole of application
+// is invoking user orgRole >= orgRole of application
 func isAppEnabledInOrgWithSufficientPermission(ctx context.Context, store store.DatabaseStore, applicationId int64, orgClaim organization.Claim, logger *slog.Logger) bool {
 	applicationOrganizationUser, err := store.GetOrganizationUserById(ctx, applicationId)
 	if err != nil {
@@ -76,7 +76,7 @@ func isAppEnabledInOrgWithSufficientPermission(ctx context.Context, store store.
 	return false
 }
 
-// is userDatasetRole >= datasetRole of application
+// is invoking user datasetRole >= datasetRole of application
 func isAppEnabledInDatasetWithSufficientPermission(ctx context.Context, store store.DatabaseStore, datasetId int64, userClaim user.Claim, applicationId int64, logger *slog.Logger) bool {
 	// currently datasetClaim from authorizer would be nil, as no datasetId is passed as a queryParam
 	currentDatasetUser, err := store.GetDatasetUserByUserId(ctx, userClaim.Id, datasetId)
