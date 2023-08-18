@@ -128,7 +128,6 @@ func (r *ApplicationDatabaseStore) GetDatasetUserByUserId(ctx context.Context, u
 }
 
 // utility store methods
-// refactor - no ID needs to be returned
 func (r *ApplicationDatabaseStore) InsertOrganizationUser(ctx context.Context, organizationUser OrganizationUser) (int64, error) {
 	var organization_id int64
 	query := "insert into pennsieve.organization_user (organization_id,user_id,permission_bit) VALUES ($1,$2,$3) RETURNING ORGANIZATION_ID"
@@ -156,7 +155,6 @@ func (r *ApplicationDatabaseStore) DeleteOrganizationUser(ctx context.Context, o
 	return nil
 }
 
-// refactor
 func (r *ApplicationDatabaseStore) InsertDatasetUser(ctx context.Context, datasetUser DatasetUser) (int64, error) {
 	var dataset_id int64
 	query := fmt.Sprintf("insert into \"%v\".dataset_user (dataset_id,user_id,role) VALUES ($1,$2,$3) RETURNING DATASET_ID",
