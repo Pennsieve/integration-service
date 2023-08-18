@@ -46,7 +46,7 @@ func PostIntegrationsHandler(ctx context.Context, request events.APIGatewayV2HTT
 	}
 
 	// create application trigger
-	client := clients.NewApplicationRestClient(&http.Client{}, application.URL)
+	client := clients.NewApplicationRestClient(&http.Client{}, application.URL, logger)
 	applicationTrigger := trigger.NewApplicationTrigger(client, application,
 		integration.TriggerPayload)
 	// validate
