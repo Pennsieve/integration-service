@@ -3,7 +3,6 @@ package authorization_test
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"testing"
 	"time"
@@ -45,7 +44,7 @@ func TestIsAppEnabledInOrgWithSufficientPermission(t *testing.T) {
 	ctx := context.Background()
 	db, err := pgQueries.ConnectRDS()
 	if err != nil {
-		log.Fatalf("unable to connect to database: %v\n", err)
+		t.Fatalf("unable to connect to database: %v\n", err)
 	}
 	defer db.Close()
 
@@ -67,7 +66,7 @@ func TestIsAppEnabledInOrgWithSufficientPermission(t *testing.T) {
 	}
 	mockApplicationID, err := applicationDatabaseStore.Insert(ctx, mockApplication)
 	if err != nil {
-		log.Fatalf("error inserting application %v", err)
+		t.Fatalf("error inserting application %v", err)
 	}
 
 	requestContext := events.APIGatewayV2HTTPRequestContext{
@@ -100,7 +99,7 @@ func TestIsAppEnabledInOrgWithSufficientPermission(t *testing.T) {
 	}
 	_, err = applicationDatabaseStore.InsertOrganizationUser(ctx, organizationUser)
 	if err != nil {
-		log.Fatalf("error inserting application %v", err)
+		t.Fatalf("error inserting application %v", err)
 	}
 
 	failureRequest2 := events.APIGatewayV2HTTPRequest{
@@ -147,11 +146,11 @@ func TestIsAppEnabledInOrgWithSufficientPermission(t *testing.T) {
 		// cleanup
 		err = applicationDatabaseStore.Delete(ctx, mockApplicationID)
 		if err != nil {
-			log.Fatal(err)
+			t.Fatal(err)
 		}
 		err = applicationDatabaseStore.DeleteOrganizationUser(ctx, organizationId, mockApplication.IntegrationUserID)
 		if err != nil {
-			log.Fatal(err)
+			t.Fatal(err)
 		}
 		t.Fatalf("expected authorizer to return true")
 	}
@@ -159,11 +158,11 @@ func TestIsAppEnabledInOrgWithSufficientPermission(t *testing.T) {
 	// cleanup
 	err = applicationDatabaseStore.Delete(ctx, mockApplicationID)
 	if err != nil {
-		log.Fatal(err)
+		t.Fatal(err)
 	}
 	err = applicationDatabaseStore.DeleteOrganizationUser(ctx, organizationId, mockApplication.IntegrationUserID)
 	if err != nil {
-		log.Fatal(err)
+		t.Fatal(err)
 	}
 
 }
@@ -172,7 +171,7 @@ func TestIsAppEnabledInDatasetWithSufficientPermission(t *testing.T) {
 	ctx := context.Background()
 	db, err := pgQueries.ConnectRDS()
 	if err != nil {
-		log.Fatalf("unable to connect to database: %v\n", err)
+		t.Fatalf("unable to connect to database: %v\n", err)
 	}
 	defer db.Close()
 
@@ -194,7 +193,7 @@ func TestIsAppEnabledInDatasetWithSufficientPermission(t *testing.T) {
 	}
 	mockApplicationID, err := applicationDatabaseStore.Insert(ctx, mockApplication)
 	if err != nil {
-		log.Fatalf("error inserting application %v", err)
+		t.Fatalf("error inserting application %v", err)
 	}
 
 	organizationUser := store.OrganizationUser{
@@ -204,7 +203,7 @@ func TestIsAppEnabledInDatasetWithSufficientPermission(t *testing.T) {
 	}
 	_, err = applicationDatabaseStore.InsertOrganizationUser(ctx, organizationUser)
 	if err != nil {
-		log.Fatalf("error inserting application %v", err)
+		t.Fatalf("error inserting application %v", err)
 	}
 
 	// should return true if application is enabled in org and the invoking user has sufficient rights
@@ -240,11 +239,11 @@ func TestIsAppEnabledInDatasetWithSufficientPermission(t *testing.T) {
 		// cleanup
 		err = applicationDatabaseStore.Delete(ctx, mockApplicationID)
 		if err != nil {
-			log.Fatal(err)
+			t.Fatal(err)
 		}
 		err = applicationDatabaseStore.DeleteOrganizationUser(ctx, organizationId, mockApplication.IntegrationUserID)
 		if err != nil {
-			log.Fatal(err)
+			t.Fatal(err)
 		}
 		t.Fatalf("expected authorizer to return true")
 	}
@@ -282,11 +281,11 @@ func TestIsAppEnabledInDatasetWithSufficientPermission(t *testing.T) {
 		// cleanup
 		err = applicationDatabaseStore.Delete(ctx, mockApplicationID)
 		if err != nil {
-			log.Fatal(err)
+			t.Fatal(err)
 		}
 		err = applicationDatabaseStore.DeleteOrganizationUser(ctx, organizationId, mockApplication.IntegrationUserID)
 		if err != nil {
-			log.Fatal(err)
+			t.Fatal(err)
 		}
 		t.Fatalf("expected authorizer to return false")
 	}
@@ -294,11 +293,11 @@ func TestIsAppEnabledInDatasetWithSufficientPermission(t *testing.T) {
 	// cleanup
 	err = applicationDatabaseStore.Delete(ctx, mockApplicationID)
 	if err != nil {
-		log.Fatal(err)
+		t.Fatal(err)
 	}
 	err = applicationDatabaseStore.DeleteOrganizationUser(ctx, organizationId, mockApplication.IntegrationUserID)
 	if err != nil {
-		log.Fatal(err)
+		t.Fatal(err)
 	}
 
 }
@@ -309,7 +308,7 @@ func TestIsAppEnabledInDatasetWithSufficientPermissionFail(t *testing.T) {
 	ctx := context.Background()
 	db, err := pgQueries.ConnectRDS()
 	if err != nil {
-		log.Fatalf("unable to connect to database: %v\n", err)
+		t.Fatalf("unable to connect to database: %v\n", err)
 	}
 	defer db.Close()
 
@@ -331,7 +330,7 @@ func TestIsAppEnabledInDatasetWithSufficientPermissionFail(t *testing.T) {
 	}
 	mockApplicationID, err := applicationDatabaseStore.Insert(ctx, mockApplication)
 	if err != nil {
-		log.Fatalf("error inserting application %v", err)
+		t.Fatalf("error inserting application %v", err)
 	}
 
 	organizationUser := store.OrganizationUser{
@@ -341,7 +340,7 @@ func TestIsAppEnabledInDatasetWithSufficientPermissionFail(t *testing.T) {
 	}
 	_, err = applicationDatabaseStore.InsertOrganizationUser(ctx, organizationUser)
 	if err != nil {
-		log.Fatalf("error inserting application %v", err)
+		t.Fatalf("error inserting application %v", err)
 	}
 
 	claims3 := map[string]interface{}{
@@ -375,7 +374,7 @@ func TestIsAppEnabledInDatasetWithSufficientPermissionFail(t *testing.T) {
 	}
 	_, err = applicationDatabaseStore.InsertDatasetUser(ctx, userDatasetUser)
 	if err != nil {
-		log.Fatalf("error inserting datasetUser %v", err)
+		t.Fatalf("error inserting datasetUser %v", err)
 	}
 
 	failureRequest := events.APIGatewayV2HTTPRequest{
@@ -391,15 +390,15 @@ func TestIsAppEnabledInDatasetWithSufficientPermissionFail(t *testing.T) {
 		// cleanup
 		err = applicationDatabaseStore.Delete(ctx, mockApplicationID)
 		if err != nil {
-			log.Fatal(err)
+			t.Fatal(err)
 		}
 		err = applicationDatabaseStore.DeleteOrganizationUser(ctx, organizationId, mockApplication.IntegrationUserID)
 		if err != nil {
-			log.Fatal(err)
+			t.Fatal(err)
 		}
 		err = applicationDatabaseStore.DeleteDatasetUser(ctx, userDatasetUser.DatasetID, userDatasetUser.UserID)
 		if err != nil {
-			log.Fatal(err)
+			t.Fatal(err)
 		}
 		t.Fatalf("expected authorizer to return false")
 	}
@@ -407,15 +406,15 @@ func TestIsAppEnabledInDatasetWithSufficientPermissionFail(t *testing.T) {
 	// cleanup
 	err = applicationDatabaseStore.Delete(ctx, mockApplicationID)
 	if err != nil {
-		log.Fatal(err)
+		t.Fatal(err)
 	}
 	err = applicationDatabaseStore.DeleteOrganizationUser(ctx, organizationId, mockApplication.IntegrationUserID)
 	if err != nil {
-		log.Fatal(err)
+		t.Fatal(err)
 	}
 	err = applicationDatabaseStore.DeleteDatasetUser(ctx, userDatasetUser.DatasetID, userDatasetUser.UserID)
 	if err != nil {
-		log.Fatal(err)
+		t.Fatal(err)
 	}
 
 }
@@ -426,7 +425,7 @@ func TestIsAppEnabledInDatasetWithSufficientPermissionPass(t *testing.T) {
 	ctx := context.Background()
 	db, err := pgQueries.ConnectRDS()
 	if err != nil {
-		log.Fatalf("unable to connect to database: %v\n", err)
+		t.Fatalf("unable to connect to database: %v\n", err)
 	}
 	defer db.Close()
 
@@ -448,7 +447,7 @@ func TestIsAppEnabledInDatasetWithSufficientPermissionPass(t *testing.T) {
 	}
 	mockApplicationID, err := applicationDatabaseStore.Insert(ctx, mockApplication)
 	if err != nil {
-		log.Fatalf("error inserting application %v", err)
+		t.Fatalf("error inserting application %v", err)
 	}
 
 	organizationUser := store.OrganizationUser{
@@ -458,7 +457,7 @@ func TestIsAppEnabledInDatasetWithSufficientPermissionPass(t *testing.T) {
 	}
 	_, err = applicationDatabaseStore.InsertOrganizationUser(ctx, organizationUser)
 	if err != nil {
-		log.Fatalf("error inserting application %v", err)
+		t.Fatalf("error inserting application %v", err)
 	}
 
 	claims3 := map[string]interface{}{
@@ -492,7 +491,7 @@ func TestIsAppEnabledInDatasetWithSufficientPermissionPass(t *testing.T) {
 	}
 	_, err = applicationDatabaseStore.InsertDatasetUser(ctx, userDatasetUser)
 	if err != nil {
-		log.Fatalf("error inserting datasetUser %v", err)
+		t.Fatalf("error inserting datasetUser %v", err)
 	}
 
 	successRequest := events.APIGatewayV2HTTPRequest{
@@ -508,15 +507,15 @@ func TestIsAppEnabledInDatasetWithSufficientPermissionPass(t *testing.T) {
 		// cleanup
 		err = applicationDatabaseStore.Delete(ctx, mockApplicationID)
 		if err != nil {
-			log.Fatal(err)
+			t.Fatal(err)
 		}
 		err = applicationDatabaseStore.DeleteOrganizationUser(ctx, organizationId, mockApplication.IntegrationUserID)
 		if err != nil {
-			log.Fatal(err)
+			t.Fatal(err)
 		}
 		err = applicationDatabaseStore.DeleteDatasetUser(ctx, userDatasetUser.DatasetID, userDatasetUser.UserID)
 		if err != nil {
-			log.Fatal(err)
+			t.Fatal(err)
 		}
 		t.Fatalf("expected authorizer to return true")
 	}
@@ -524,15 +523,15 @@ func TestIsAppEnabledInDatasetWithSufficientPermissionPass(t *testing.T) {
 	// cleanup
 	err = applicationDatabaseStore.Delete(ctx, mockApplicationID)
 	if err != nil {
-		log.Fatal(err)
+		t.Fatal(err)
 	}
 	err = applicationDatabaseStore.DeleteOrganizationUser(ctx, organizationId, mockApplication.IntegrationUserID)
 	if err != nil {
-		log.Fatal(err)
+		t.Fatal(err)
 	}
 	err = applicationDatabaseStore.DeleteDatasetUser(ctx, userDatasetUser.DatasetID, userDatasetUser.UserID)
 	if err != nil {
-		log.Fatal(err)
+		t.Fatal(err)
 	}
 
 }

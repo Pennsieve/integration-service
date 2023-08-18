@@ -2,7 +2,6 @@ package store_test
 
 import (
 	"context"
-	"log"
 	"testing"
 	"time"
 
@@ -13,7 +12,7 @@ import (
 func TestGetById(t *testing.T) {
 	db, err := pgQueries.ConnectENV()
 	if err != nil {
-		log.Fatalf("unable to connect to database: %v\n", err)
+		t.Fatalf("unable to connect to database: %v\n", err)
 	}
 	defer db.Close()
 
@@ -37,27 +36,27 @@ func TestGetById(t *testing.T) {
 	ctx := context.Background()
 	applicationID, err := applicationDatabaseStore.Insert(ctx, mockApplication)
 	if err != nil {
-		log.Fatalf("error inserting application %v", err)
+		t.Fatalf("error inserting application %v", err)
 	}
 	application, err := applicationDatabaseStore.GetById(ctx, applicationID)
 	if err != nil {
-		log.Fatalf("error getting application %v", err)
+		t.Fatalf("error getting application %v", err)
 	}
 	if application.ID != applicationID {
-		log.Fatalf("expected %v, got %v", applicationID, application.ID)
+		t.Fatalf("expected %v, got %v", applicationID, application.ID)
 	}
 
 	// delete inserted test application record
 	err = applicationDatabaseStore.Delete(ctx, applicationID)
 	if err != nil {
-		log.Fatal(err)
+		t.Fatal(err)
 	}
 }
 
 func TestGetOrgEnabledById(t *testing.T) {
 	db, err := pgQueries.ConnectENV()
 	if err != nil {
-		log.Fatalf("unable to connect to database: %v\n", err)
+		t.Fatalf("unable to connect to database: %v\n", err)
 	}
 	defer db.Close()
 
@@ -81,19 +80,19 @@ func TestGetOrgEnabledById(t *testing.T) {
 	ctx := context.Background()
 	applicationID, err := applicationDatabaseStore.Insert(ctx, mockApplication)
 	if err != nil {
-		log.Fatalf("error inserting application %v", err)
+		t.Fatalf("error inserting application %v", err)
 	}
 	application, err := applicationDatabaseStore.GetById(ctx, applicationID)
 	if err != nil {
-		log.Fatalf("error getting application %v", err)
+		t.Fatalf("error getting application %v", err)
 	}
 	if application.ID != applicationID {
-		log.Fatalf("expected %v, got %v", applicationID, application.ID)
+		t.Fatalf("expected %v, got %v", applicationID, application.ID)
 	}
 
 	// delete inserted test application record
 	err = applicationDatabaseStore.Delete(ctx, applicationID)
 	if err != nil {
-		log.Fatal(err)
+		t.Fatal(err)
 	}
 }
