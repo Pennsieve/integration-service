@@ -62,6 +62,7 @@ func TestGetOrganizationUserById(t *testing.T) {
 
 	var organizationId int64 = 1
 	applicationDatabaseStore := store.NewApplicationDatabaseStore(db, organizationId)
+	testDatabaseStore := store.NewApplicationTestDatabaseStore(db, organizationId)
 
 	mockApplication := store.Application{
 		URL:               "http://mock-application:8081/mock",
@@ -88,7 +89,7 @@ func TestGetOrganizationUserById(t *testing.T) {
 		UserID:         mockApplication.IntegrationUserID,
 		PermissionBit:  8,
 	}
-	_, err = applicationDatabaseStore.InsertOrganizationUser(ctx, organizationUser)
+	_, err = testDatabaseStore.InsertOrganizationUser(ctx, organizationUser)
 	if err != nil {
 		t.Fatalf("error inserting application %v", err)
 	}
@@ -107,7 +108,7 @@ func TestGetOrganizationUserById(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = applicationDatabaseStore.DeleteOrganizationUser(ctx, organizationId, mockApplication.IntegrationUserID)
+	err = testDatabaseStore.DeleteOrganizationUser(ctx, organizationId, mockApplication.IntegrationUserID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,6 +123,7 @@ func TestGetDatasetUserById(t *testing.T) {
 
 	var organizationId int64 = 1
 	applicationDatabaseStore := store.NewApplicationDatabaseStore(db, organizationId)
+	testDatabaseStore := store.NewApplicationTestDatabaseStore(db, organizationId)
 
 	mockApplication := store.Application{
 		URL:               "http://mock-application:8081/mock",
@@ -149,7 +151,7 @@ func TestGetDatasetUserById(t *testing.T) {
 		UserID:    2,
 		Role:      "viewer",
 	}
-	_, err = applicationDatabaseStore.InsertDatasetUser(ctx, userDatasetUser)
+	_, err = testDatabaseStore.InsertDatasetUser(ctx, userDatasetUser)
 	if err != nil {
 		t.Fatalf("error inserting datasetUser %v", err)
 	}
@@ -168,7 +170,7 @@ func TestGetDatasetUserById(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = applicationDatabaseStore.DeleteDatasetUser(ctx, userDatasetUser.DatasetID, userDatasetUser.UserID)
+	err = testDatabaseStore.DeleteDatasetUser(ctx, userDatasetUser.DatasetID, userDatasetUser.UserID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,6 +186,7 @@ func TestGetDatasetUserByUserId(t *testing.T) {
 
 	var organizationId int64 = 1
 	applicationDatabaseStore := store.NewApplicationDatabaseStore(db, organizationId)
+	testDatabaseStore := store.NewApplicationTestDatabaseStore(db, organizationId)
 
 	datasetId := int64(1)
 	userDatasetUser := store.DatasetUser{
@@ -191,7 +194,7 @@ func TestGetDatasetUserByUserId(t *testing.T) {
 		UserID:    2,
 		Role:      "viewer",
 	}
-	_, err = applicationDatabaseStore.InsertDatasetUser(ctx, userDatasetUser)
+	_, err = testDatabaseStore.InsertDatasetUser(ctx, userDatasetUser)
 	if err != nil {
 		t.Fatalf("error inserting datasetUser %v", err)
 	}
@@ -206,7 +209,7 @@ func TestGetDatasetUserByUserId(t *testing.T) {
 	}
 
 	// cleanup
-	err = applicationDatabaseStore.DeleteDatasetUser(ctx, userDatasetUser.DatasetID, userDatasetUser.UserID)
+	err = testDatabaseStore.DeleteDatasetUser(ctx, userDatasetUser.DatasetID, userDatasetUser.UserID)
 	if err != nil {
 		t.Fatal(err)
 	}
