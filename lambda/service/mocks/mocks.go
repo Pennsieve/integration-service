@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 
+	"github.com/pennsieve/integration-service/service/authorization"
 	"github.com/pennsieve/integration-service/service/clients"
 )
 
@@ -15,4 +16,14 @@ func (c *MockClient) Execute(ctx context.Context, b bytes.Buffer) ([]byte, error
 
 func NewMockClient() clients.Client {
 	return &MockClient{}
+}
+
+type MockApplicationAuthorizer struct{}
+
+func (c *MockApplicationAuthorizer) IsAuthorized(ctx context.Context) bool {
+	return true
+}
+
+func NewMockApplicationAuthorizer() authorization.ServiceAuthorizer {
+	return &MockApplicationAuthorizer{}
 }

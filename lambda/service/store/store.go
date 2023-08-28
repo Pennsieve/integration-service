@@ -11,6 +11,9 @@ type DatabaseStore interface {
 	GetById(context.Context, int64) (Application, error)
 	Insert(context.Context, Application) (int64, error)
 	Delete(context.Context, int64) error
+	GetOrganizationUserById(context.Context, int64) (*OrganizationUser, error)
+	GetDatasetUserById(context.Context, int64, int64) (*DatasetUser, error)
+	GetDatasetUserByUserId(context.Context, int64, int64) (*DatasetUser, error)
 }
 
 type ApplicationDatabaseStore struct {
@@ -23,7 +26,7 @@ func NewApplicationDatabaseStore(db *sql.DB, organizationId int64) DatabaseStore
 }
 
 func (r *ApplicationDatabaseStore) GetById(ctx context.Context, applicationId int64) (Application, error) {
-	query := fmt.Sprintf("SELECT id, name, api_url, is_disabled FROM \"%v\".webhooks WHERE id=$1",
+	query := fmt.Sprintf("SELECT id, name, api_url, is_disabled, integration_user_id FROM \"%v\".webhooks WHERE id=$1",
 		r.OrganizationID)
 	queryContext, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -32,14 +35,12 @@ func (r *ApplicationDatabaseStore) GetById(ctx context.Context, applicationId in
 		&application.ID,
 		&application.Name,
 		&application.URL,
-		&application.IsDisabled)
+		&application.IsDisabled,
+		&application.IntegrationUserID)
 	if err != nil {
 		return Application{}, err
 	}
 
-	if application.ID != applicationId {
-		return Application{}, err
-	}
 	return application, nil
 }
 
@@ -71,4 +72,52 @@ func (r *ApplicationDatabaseStore) Delete(ctx context.Context, applicationId int
 		return err.Err()
 	}
 	return nil
+}
+
+func (r *ApplicationDatabaseStore) GetOrganizationUserById(ctx context.Context, applicationId int64) (*OrganizationUser, error) {
+	query := fmt.Sprintf("SELECT organization_id, user_id, permission_bit from pennsieve.organization_user where organization_id=%[1]v and user_id in (SELECT integration_user_id from \"%[1]v\".webhooks where id=$1)", r.OrganizationID)
+	queryContext, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	var organizationUser OrganizationUser
+	err := r.DB.QueryRowContext(queryContext, query, applicationId).Scan(
+		&organizationUser.OrganizationID,
+		&organizationUser.UserID,
+		&organizationUser.PermissionBit)
+	if err != nil {
+		return nil, err
+	}
+
+	return &organizationUser, nil
+}
+
+func (r *ApplicationDatabaseStore) GetDatasetUserById(ctx context.Context, applicationId int64, datasetId int64) (*DatasetUser, error) {
+	query := fmt.Sprintf("SELECT dataset_id, user_id, role from \"%[1]v\".dataset_user where dataset_id=%[2]v and user_id in (SELECT integration_user_id from \"%[1]v\".webhooks where id=$1)", r.OrganizationID, datasetId)
+	queryContext, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	var dataserUser DatasetUser
+	err := r.DB.QueryRowContext(queryContext, query, applicationId).Scan(
+		&dataserUser.DatasetID,
+		&dataserUser.UserID,
+		&dataserUser.Role)
+	if err != nil {
+		return nil, err
+	}
+
+	return &dataserUser, nil
+}
+
+func (r *ApplicationDatabaseStore) GetDatasetUserByUserId(ctx context.Context, userId int64, datasetId int64) (*DatasetUser, error) {
+	query := fmt.Sprintf("SELECT dataset_id, user_id, role from \"%[1]v\".dataset_user where dataset_id=%[2]v and user_id=$1", r.OrganizationID, datasetId)
+	queryContext, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	var dataserUser DatasetUser
+	err := r.DB.QueryRowContext(queryContext, query, userId).Scan(
+		&dataserUser.DatasetID,
+		&dataserUser.UserID,
+		&dataserUser.Role)
+	if err != nil {
+		return nil, err
+	}
+
+	return &dataserUser, nil
 }

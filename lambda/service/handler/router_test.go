@@ -2,11 +2,16 @@ package handler_test
 
 import (
 	"context"
+	"log/slog"
+	"os"
 	"testing"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/pennsieve/integration-service/service/handler"
+	"github.com/pennsieve/integration-service/service/mocks"
 )
+
+var logger = slog.New(slog.NewJSONHandler(os.Stderr, nil))
 
 func TestLambdaRouter(t *testing.T) {
 	ctx := context.Background()
@@ -21,7 +26,8 @@ func TestLambdaRouter(t *testing.T) {
 		RequestContext: requestContext,
 	}
 
-	router := handler.NewLambdaRouter()
+	applicationAuthorizer := mocks.NewMockApplicationAuthorizer()
+	router := handler.NewLambdaRouter(applicationAuthorizer, logger)
 
 	// POST /integrations
 	router.POST("/integrations", handler.PostIntegrationsHandler)
@@ -42,7 +48,7 @@ func TestLambdaRouter(t *testing.T) {
 		Body:           "",
 		RequestContext: requestContext,
 	}
-	var GetApplicationsHandler = func(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	var GetApplicationsHandler = func(ctx context.Context, request events.APIGatewayV2HTTPRequest, logger *slog.Logger) (events.APIGatewayV2HTTPResponse, error) {
 		response := events.APIGatewayV2HTTPResponse{
 			StatusCode: 200,
 			Body:       "GetApplicationsHandler",
