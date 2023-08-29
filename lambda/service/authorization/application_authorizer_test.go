@@ -3,19 +3,14 @@ package authorization_test
 import (
 	"context"
 	"fmt"
-	"os"
 	"testing"
 	"time"
-
-	"log/slog"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/pennsieve/integration-service/service/authorization"
 	"github.com/pennsieve/integration-service/service/store"
 	pgQueries "github.com/pennsieve/pennsieve-go-core/pkg/queries/pgdb"
 )
-
-var logger = slog.New(slog.NewJSONHandler(os.Stderr, nil))
 
 func TestIsAuthorized(t *testing.T) {
 	// should return false when no records exist in database
@@ -33,7 +28,7 @@ func TestIsAuthorized(t *testing.T) {
 		RequestContext: requestContext,
 	}
 
-	authorizer := authorization.NewApplicationAuthorizer(request, logger)
+	authorizer := authorization.NewApplicationAuthorizer(request)
 	if authorizer.IsAuthorized(context.Background()) {
 		t.Fatalf("expected authorizer to return false")
 	}
@@ -87,7 +82,7 @@ func TestCase1IsAppEnabledInOrgWithSufficientPermission(t *testing.T) {
 		RequestContext: requestContext,
 	}
 
-	authorizer := authorization.NewApplicationAuthorizer(failureRequest, logger)
+	authorizer := authorization.NewApplicationAuthorizer(failureRequest)
 	if authorizer.IsAuthorized(ctx) {
 		t.Fatalf("expected authorizer to return false")
 	}
@@ -160,7 +155,7 @@ func TestCase2IsAppEnabledInOrgWithSufficientPermission(t *testing.T) {
 		RequestContext: requestContext,
 	}
 
-	authorizer := authorization.NewApplicationAuthorizer(failureRequest, logger)
+	authorizer := authorization.NewApplicationAuthorizer(failureRequest)
 	if authorizer.IsAuthorized(ctx) {
 		t.Fatalf("expected authorizer to return false")
 	}
@@ -242,7 +237,7 @@ func TestCase3IsAppEnabledInOrgWithSufficientPermission(t *testing.T) {
 		RequestContext: requestContext,
 	}
 
-	authorizer := authorization.NewApplicationAuthorizer(successRequest, logger)
+	authorizer := authorization.NewApplicationAuthorizer(successRequest)
 	if !authorizer.IsAuthorized(ctx) {
 		t.Fatalf("expected authorizer to return true")
 	}
@@ -325,7 +320,7 @@ func TestCase1IsAppEnabledInDatasetWithSufficientPermission(t *testing.T) {
 		RequestContext: requestContext,
 	}
 
-	authorizer := authorization.NewApplicationAuthorizer(successRequest, logger)
+	authorizer := authorization.NewApplicationAuthorizer(successRequest)
 	if !authorizer.IsAuthorized(ctx) {
 		t.Fatalf("expected authorizer to return true")
 	}
@@ -409,7 +404,7 @@ func TestCase2IsAppEnabledInDatasetWithSufficientPermission(t *testing.T) {
 		RequestContext: requestContext,
 	}
 
-	authorizer := authorization.NewApplicationAuthorizer(failureRequest, logger)
+	authorizer := authorization.NewApplicationAuthorizer(failureRequest)
 	if authorizer.IsAuthorized(ctx) {
 		t.Fatalf("expected authorizer to return false")
 	}
@@ -509,7 +504,7 @@ func TestCase3IsAppEnabledInDatasetWithSufficientPermission(t *testing.T) {
 		RequestContext: requestContext,
 	}
 
-	authorizer := authorization.NewApplicationAuthorizer(failureRequest, logger)
+	authorizer := authorization.NewApplicationAuthorizer(failureRequest)
 	if authorizer.IsAuthorized(ctx) {
 		t.Fatalf("expected authorizer to return false")
 	}
@@ -613,7 +608,7 @@ func TestCase4IsAppEnabledInDatasetWithSufficientPermission(t *testing.T) {
 		RequestContext: requestContext,
 	}
 
-	authorizer := authorization.NewApplicationAuthorizer(successRequest, logger)
+	authorizer := authorization.NewApplicationAuthorizer(successRequest)
 	if !authorizer.IsAuthorized(ctx) {
 		t.Fatalf("expected authorizer to return true")
 	}

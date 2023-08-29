@@ -9,5 +9,6 @@ type Integration struct {
 }
 
 type TriggerPayload struct {
-	PackageIDs []int64 `json:"packageIds"`
+	PackageIDs    []int64  `json:"packageIds"`
+	PresignedURLs []string `json:"presignedURLs"`
 }

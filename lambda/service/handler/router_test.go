@@ -2,8 +2,6 @@ package handler_test
 
 import (
 	"context"
-	"log/slog"
-	"os"
 	"testing"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -11,9 +9,7 @@ import (
 	"github.com/pennsieve/integration-service/service/mocks"
 )
 
-var logger = slog.New(slog.NewJSONHandler(os.Stderr, nil))
-
-func TestLambdaRouter(t *testing.T) {
+func TestLambdaRouter404(t *testing.T) {
 	ctx := context.Background()
 	requestContext := events.APIGatewayV2HTTPRequestContext{
 		HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
@@ -27,7 +23,7 @@ func TestLambdaRouter(t *testing.T) {
 	}
 
 	applicationAuthorizer := mocks.NewMockApplicationAuthorizer()
-	router := handler.NewLambdaRouter(applicationAuthorizer, logger)
+	router := handler.NewLambdaRouter(applicationAuthorizer)
 
 	// POST /integrations
 	router.POST("/integrations", handler.PostIntegrationsHandler)
@@ -36,45 +32,57 @@ func TestLambdaRouter(t *testing.T) {
 	if response.StatusCode != expectedStatusCode {
 		t.Errorf("expected status code %v, got %v", expectedStatusCode, response.StatusCode)
 	}
+}
+
+func TestLambdaRouter200(t *testing.T) {
+	ctx := context.Background()
+	applicationAuthorizer := mocks.NewMockApplicationAuthorizer()
+	router := handler.NewLambdaRouter(applicationAuthorizer)
 
 	// GET /applications
-	requestContext = events.APIGatewayV2HTTPRequestContext{
+	requestContext := events.APIGatewayV2HTTPRequestContext{
 		HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
 			Method: "GET",
 		},
 	}
-	request = events.APIGatewayV2HTTPRequest{
+	request := events.APIGatewayV2HTTPRequest{
 		RouteKey:       "GET /applications",
 		Body:           "",
 		RequestContext: requestContext,
 	}
-	var GetApplicationsHandler = func(ctx context.Context, request events.APIGatewayV2HTTPRequest, logger *slog.Logger) (events.APIGatewayV2HTTPResponse, error) {
+	var GetApplicationsHandler = func(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 		response := events.APIGatewayV2HTTPResponse{
 			StatusCode: 200,
 			Body:       "GetApplicationsHandler",
 		}
 		return response, nil
 	}
-	expectedStatusCode = 200
+	expectedStatusCode := 200
 	router.GET("/applications", GetApplicationsHandler)
-	response, _ = router.Start(ctx, request)
+	response, _ := router.Start(ctx, request)
 	if response.StatusCode != expectedStatusCode {
 		t.Errorf("expected status code %v, got %v", expectedStatusCode, response.StatusCode)
 	}
+}
+
+func TestLambdaRouter409(t *testing.T) {
+	ctx := context.Background()
+	applicationAuthorizer := mocks.NewMockApplicationAuthorizer()
+	router := handler.NewLambdaRouter(applicationAuthorizer)
 
 	// Unsupported path
-	requestContext = events.APIGatewayV2HTTPRequestContext{
+	requestContext := events.APIGatewayV2HTTPRequestContext{
 		HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
 			Method: "DELETE",
 		},
 	}
-	request = events.APIGatewayV2HTTPRequest{
+	request := events.APIGatewayV2HTTPRequest{
 		RouteKey:       "DELETE /integrations/1",
 		Body:           "",
 		RequestContext: requestContext,
 	}
-	expectedStatusCode = 409
-	response, _ = router.Start(ctx, request)
+	expectedStatusCode := 409
+	response, _ := router.Start(ctx, request)
 	if response.StatusCode != expectedStatusCode {
 		t.Errorf("expected status code %v, got %v", expectedStatusCode, response.StatusCode)
 	}

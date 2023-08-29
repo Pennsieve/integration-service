@@ -3,7 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
+	"log"
 	"net/http"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -14,11 +14,11 @@ import (
 	pgQueries "github.com/pennsieve/pennsieve-go-core/pkg/queries/pgdb"
 )
 
-func PostIntegrationsHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest, logger *slog.Logger) (events.APIGatewayV2HTTPResponse, error) {
+func PostIntegrationsHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	handlerName := "PostIntegrationsHandler"
 	var integration models.Integration
 	if err := json.Unmarshal([]byte(request.Body), &integration); err != nil {
-		logger.ErrorContext(ctx, err.Error())
+		log.Println(err.Error())
 		return events.APIGatewayV2HTTPResponse{
 			StatusCode: 500,
 			Body:       handlerName,
@@ -27,7 +27,7 @@ func PostIntegrationsHandler(ctx context.Context, request events.APIGatewayV2HTT
 
 	db, err := pgQueries.ConnectRDS()
 	if err != nil {
-		logger.ErrorContext(ctx, err.Error())
+		log.Println(err.Error())
 		return events.APIGatewayV2HTTPResponse{
 			StatusCode: 500,
 			Body:       handlerName,
@@ -38,7 +38,7 @@ func PostIntegrationsHandler(ctx context.Context, request events.APIGatewayV2HTT
 	store := store.NewApplicationDatabaseStore(db, integration.OrganizationID)
 	application, err := store.GetById(ctx, integration.ApplicationID)
 	if err != nil {
-		logger.ErrorContext(ctx, err.Error())
+		log.Println(err.Error())
 		return events.APIGatewayV2HTTPResponse{
 			StatusCode: 409,
 			Body:       handlerName,
@@ -46,12 +46,12 @@ func PostIntegrationsHandler(ctx context.Context, request events.APIGatewayV2HTT
 	}
 
 	// create application trigger
-	client := clients.NewApplicationRestClient(&http.Client{}, application.URL, logger)
+	client := clients.NewApplicationRestClient(&http.Client{}, application.URL)
 	applicationTrigger := trigger.NewApplicationTrigger(client, application,
 		integration.TriggerPayload)
 	// validate
 	if applicationTrigger.Validate() != nil {
-		logger.ErrorContext(ctx, err.Error())
+		log.Println(err.Error())
 		return events.APIGatewayV2HTTPResponse{
 			StatusCode: 409,
 			Body:       handlerName,
@@ -59,7 +59,7 @@ func PostIntegrationsHandler(ctx context.Context, request events.APIGatewayV2HTT
 	}
 	// run
 	if err := applicationTrigger.Run(ctx); err != nil {
-		logger.ErrorContext(ctx, err.Error())
+		log.Println(err.Error())
 		return events.APIGatewayV2HTTPResponse{
 			StatusCode: 500,
 			Body:       handlerName,
