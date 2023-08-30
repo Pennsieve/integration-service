@@ -136,6 +136,7 @@ data "aws_iam_policy_document" "integration_service_lambda_iam_policy_document" 
     sid    = "EventIntegrationConsumerPermissions"
     effect = "Allow"
     actions = [
+      "rds-db:connect",
       "logs:CreateLogGroup",
       "logs:CreateLogStream",
       "logs:PutDestination",
