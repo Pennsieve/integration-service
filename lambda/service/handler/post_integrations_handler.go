@@ -11,6 +11,7 @@ import (
 	"github.com/pennsieve/integration-service/service/models"
 	"github.com/pennsieve/integration-service/service/store"
 	"github.com/pennsieve/integration-service/service/trigger"
+	"github.com/pennsieve/pennsieve-go-core/pkg/authorizer"
 	pgQueries "github.com/pennsieve/pennsieve-go-core/pkg/queries/pgdb"
 )
 
@@ -25,6 +26,10 @@ func PostIntegrationsHandler(ctx context.Context, request events.APIGatewayV2HTT
 		}, ErrUnmarshaling
 	}
 
+	claims := authorizer.ParseClaims(request.RequestContext.Authorizer.Lambda)
+	organizationId := claims.OrgClaim.IntId
+	log.Println("organizationId", organizationId)
+
 	db, err := pgQueries.ConnectRDS()
 	if err != nil {
 		log.Println(err.Error())
@@ -35,7 +40,7 @@ func PostIntegrationsHandler(ctx context.Context, request events.APIGatewayV2HTT
 	}
 	defer db.Close()
 
-	store := store.NewApplicationDatabaseStore(db, integration.OrganizationID)
+	store := store.NewApplicationDatabaseStore(db, organizationId)
 	application, err := store.GetById(ctx, integration.ApplicationID)
 	if err != nil {
 		log.Println(err.Error())
