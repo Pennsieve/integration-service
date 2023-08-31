@@ -42,7 +42,7 @@ func PostIntegrationsHandler(ctx context.Context, request events.APIGatewayV2HTT
 
 	log.Println("connected to DB")
 
-	store := store.NewApplicationDatabaseStore(db, integration.OrganizationID)
+	store := store.NewApplicationDatabaseStore(db, organizationId)
 	application, err := store.GetById(ctx, integration.ApplicationID)
 	if err != nil {
 		log.Println(err.Error())
