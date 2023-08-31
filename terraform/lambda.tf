@@ -47,7 +47,9 @@ resource "aws_lambda_function" "integration_service_lambda" {
     variables = {
       ENV = var.environment_name
       PENNSIEVE_DOMAIN = data.terraform_remote_state.account.outputs.domain_name,
-      RDS_PROXY_ENDPOINT = data.terraform_remote_state.pennsieve_postgres.outputs.rds_proxy_endpoint
+      RDS_PROXY_ENDPOINT = data.terraform_remote_state.pennsieve_postgres.outputs.rds_proxy_endpoint,
+      REGION = var.aws_region,
+      LOG_LEVEL = "info",
     }
   }
 }
