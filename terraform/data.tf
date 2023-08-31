@@ -60,3 +60,8 @@ data "terraform_remote_state" "pennsieve_postgres" {
     profile = var.aws_account
   }
 }
+
+# Import AWS Default SecretsManager KMS Key
+data "aws_kms_key" "ssm_kms_key" {
+  key_id = "alias/aws/secretsmanager"
+}
