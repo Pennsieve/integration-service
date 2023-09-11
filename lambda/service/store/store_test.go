@@ -89,6 +89,7 @@ func TestGetOrganizationUserById(t *testing.T) {
 		UserID:         mockApplication.IntegrationUserID,
 		PermissionBit:  8,
 	}
+	_ = testDatabaseStore.DeleteOrganizationUser(ctx, organizationId, mockApplication.IntegrationUserID)
 	_, err = testDatabaseStore.InsertOrganizationUser(ctx, organizationUser)
 	if err != nil {
 		t.Fatalf("error inserting application %v", err)
@@ -194,6 +195,8 @@ func TestGetDatasetUserByUserId(t *testing.T) {
 		UserID:    2,
 		Role:      "viewer",
 	}
+
+	_ = testDatabaseStore.DeleteDatasetUser(ctx, userDatasetUser.DatasetID, userDatasetUser.UserID) // ensure no duplicates
 	_, err = testDatabaseStore.InsertDatasetUser(ctx, userDatasetUser)
 	if err != nil {
 		t.Fatalf("error inserting datasetUser %v", err)
