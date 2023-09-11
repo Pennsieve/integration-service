@@ -40,8 +40,6 @@ func PostIntegrationsHandler(ctx context.Context, request events.APIGatewayV2HTT
 	}
 	defer db.Close()
 
-	log.Println("connected to DB")
-
 	store := store.NewApplicationDatabaseStore(db, organizationId)
 	application, err := store.GetById(ctx, integration.ApplicationID)
 	if err != nil {
@@ -55,7 +53,7 @@ func PostIntegrationsHandler(ctx context.Context, request events.APIGatewayV2HTT
 	// create application trigger
 	client := clients.NewApplicationRestClient(&http.Client{}, application.URL)
 	applicationTrigger := trigger.NewApplicationTrigger(client, application,
-		integration.TriggerPayload)
+		integration.Params)
 	// validate
 	if applicationTrigger.Validate() != nil {
 		log.Println(err.Error())

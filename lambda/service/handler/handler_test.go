@@ -20,11 +20,11 @@ func TestIntegrationServiceHandler(t *testing.T) {
 	}
 	request := events.APIGatewayV2HTTPRequest{
 		RouteKey:       "POST /IncorrectIntegrationsRoute",
-		Body:           "{ \"sessionToken\": \"ae5t678999-a345fgg\", \"datasetId\": 1, \"applicationId\": 1, \"organizationId\": 1, \"payload\": {\"packageIds\": [1,2,3]}}",
+		Body:           "{ \"datasetId\": \"N:dataset:c0f0db41-c7cb-4fb5-98b4-e90791f8a975\", \"applicationId\": 1,  \"packageIds\": [\"1\",\"2\",\"3\"]}",
 		RequestContext: requestContext,
 	}
 
-	expectedStatusCode := 404
+	expectedStatusCode := 409
 	response, _ := handler.IntegrationServiceHandler(ctx, request)
 	if response.StatusCode != expectedStatusCode {
 		t.Errorf("expected status code %v, got %v", expectedStatusCode, response.StatusCode)

@@ -7,7 +7,6 @@ import (
 	"errors"
 
 	"github.com/pennsieve/integration-service/service/clients"
-	"github.com/pennsieve/integration-service/service/models"
 	"github.com/pennsieve/integration-service/service/store"
 )
 
@@ -19,16 +18,16 @@ type Trigger interface {
 type ApplicationTrigger struct {
 	Client      clients.Client
 	Application store.Application
-	Payload     models.TriggerPayload
+	Params      interface{}
 }
 
-func NewApplicationTrigger(client clients.Client, application store.Application, payload models.TriggerPayload) Trigger {
-	return &ApplicationTrigger{client, application, payload}
+func NewApplicationTrigger(client clients.Client, application store.Application, params interface{}) Trigger {
+	return &ApplicationTrigger{client, application, params}
 }
 
 // runs trigger
 func (t *ApplicationTrigger) Run(ctx context.Context) error {
-	b, err := json.Marshal(t.Payload)
+	b, err := json.Marshal(t.Params)
 	if err != nil {
 		return err
 	}

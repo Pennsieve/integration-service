@@ -14,6 +14,7 @@ type DatabaseStore interface {
 	GetOrganizationUserById(context.Context, int64) (*OrganizationUser, error)
 	GetDatasetUserById(context.Context, int64, int64) (*DatasetUser, error)
 	GetDatasetUserByUserId(context.Context, int64, int64) (*DatasetUser, error)
+	GetDatasetId(context.Context, string) (int64, error)
 }
 
 type ApplicationDatabaseStore struct {
@@ -120,4 +121,18 @@ func (r *ApplicationDatabaseStore) GetDatasetUserByUserId(ctx context.Context, u
 	}
 
 	return &dataserUser, nil
+}
+
+func (r *ApplicationDatabaseStore) GetDatasetId(ctx context.Context, datasetNodeId string) (int64, error) {
+	query := fmt.Sprintf("SELECT id from \"%[1]v\".datasets where node_id=$1", r.OrganizationID)
+	queryContext, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	var datasetId int64
+	err := r.DB.QueryRowContext(queryContext, query, datasetNodeId).Scan(
+		&datasetId)
+	if err != nil {
+		return 0, err
+	}
+
+	return datasetId, nil
 }
