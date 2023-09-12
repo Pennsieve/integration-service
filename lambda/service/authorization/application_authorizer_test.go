@@ -24,7 +24,7 @@ func TestIsAuthorized(t *testing.T) {
 	}
 	request := events.APIGatewayV2HTTPRequest{
 		RouteKey:       "POST /integrations",
-		Body:           "{ \"sessionToken\": \"ae5t678999-a345fgg\", \"datasetId\": 1, \"applicationId\": 0, \"organizationId\": 0, \"payload\": {\"packageIds\": [1,2,3]}}",
+		Body:           "{ \"datasetId\": \"N:dataset:c0f0db41-c7cb-4fb5-98b4-e90791f8a975\", \"applicationId\": 0, \"packageIds\": [\"1\",\"2\",\"3\"] }",
 		RequestContext: requestContext,
 	}
 
@@ -46,7 +46,6 @@ func TestCase1IsAppEnabledInOrgWithSufficientPermission(t *testing.T) {
 
 	var organizationId int64 = 1
 	applicationDatabaseStore := store.NewApplicationDatabaseStore(db, organizationId)
-	testDatabaseStore := store.NewApplicationTestDatabaseStore(db, organizationId)
 	mockApplication := store.Application{
 		URL:               "http://mock-application:8081/mock",
 		Description:       "This is the Mock Application",
@@ -77,8 +76,8 @@ func TestCase1IsAppEnabledInOrgWithSufficientPermission(t *testing.T) {
 
 	failureRequest := events.APIGatewayV2HTTPRequest{
 		RouteKey: "POST /integrations",
-		Body: fmt.Sprintf("{ \"sessionToken\": \"ae5t678999-a345fgg\", \"applicationId\": %v, \"organizationId\": %v, \"payload\": {\"packageIds\": [1,2,3]}}",
-			mockApplicationID, organizationId),
+		Body: fmt.Sprintf("{ \"applicationId\": %v, \"packageIds\": [\"1\",\"2\",\"3\"]}",
+			mockApplicationID),
 		RequestContext: requestContext,
 	}
 
@@ -89,10 +88,6 @@ func TestCase1IsAppEnabledInOrgWithSufficientPermission(t *testing.T) {
 
 	// cleanup
 	err = applicationDatabaseStore.Delete(ctx, mockApplicationID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = testDatabaseStore.DeleteOrganizationUser(ctx, organizationId, mockApplication.IntegrationUserID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,8 +145,8 @@ func TestCase2IsAppEnabledInOrgWithSufficientPermission(t *testing.T) {
 
 	failureRequest := events.APIGatewayV2HTTPRequest{
 		RouteKey: "POST /integrations",
-		Body: fmt.Sprintf("{ \"sessionToken\": \"ae5t678999-a345fgg\", \"applicationId\": %v, \"organizationId\": %v, \"payload\": {\"packageIds\": [1,2,3]}}",
-			mockApplicationID, organizationId),
+		Body: fmt.Sprintf("{ \"applicationId\": %v, \"packageIds\": [\"1\",\"2\",\"3\"]}",
+			mockApplicationID),
 		RequestContext: requestContext,
 	}
 
@@ -232,8 +227,8 @@ func TestCase3IsAppEnabledInOrgWithSufficientPermission(t *testing.T) {
 
 	successRequest := events.APIGatewayV2HTTPRequest{
 		RouteKey: "POST /integrations",
-		Body: fmt.Sprintf("{ \"sessionToken\": \"ae5t678999-a345fgg\", \"applicationId\": %v, \"organizationId\": %v, \"payload\": {\"packageIds\": [1,2,3]}}",
-			mockApplicationID, organizationId),
+		Body: fmt.Sprintf("{ \"applicationId\": %v, \"packageIds\": [\"1\",\"2\",\"3\"]}",
+			mockApplicationID),
 		RequestContext: requestContext,
 	}
 
@@ -315,8 +310,8 @@ func TestCase1IsAppEnabledInDatasetWithSufficientPermission(t *testing.T) {
 
 	successRequest := events.APIGatewayV2HTTPRequest{
 		RouteKey: "POST /integrations",
-		Body: fmt.Sprintf("{ \"sessionToken\": \"ae5t678999-a345fgg\", \"applicationId\": %v, \"organizationId\": %v, \"payload\": {\"packageIds\": [1,2,3]}}",
-			mockApplicationID, organizationId),
+		Body: fmt.Sprintf("{\"applicationId\": %v, \"packageIds\": [\"1\",\"2\",\"3\"]}",
+			mockApplicationID),
 		RequestContext: requestContext,
 	}
 
@@ -399,8 +394,8 @@ func TestCase2IsAppEnabledInDatasetWithSufficientPermission(t *testing.T) {
 
 	failureRequest := events.APIGatewayV2HTTPRequest{
 		RouteKey: "POST /integrations",
-		Body: fmt.Sprintf("{ \"sessionToken\": \"ae5t678999-a345fgg\", \"applicationId\": %v, \"organizationId\": %v, \"datasetId\": 1111, \"payload\": {\"packageIds\": [1,2,3]}}",
-			mockApplicationID, organizationId),
+		Body: fmt.Sprintf("{ \"applicationId\": %v, \"datasetId\": \"N:dataset:c0f0db41-c7cb-4fb5-98b4-e90791f8a975\", \"packageIds\": [\"1\",\"2\",\"3\"]}",
+			mockApplicationID),
 		RequestContext: requestContext,
 	}
 
@@ -499,8 +494,8 @@ func TestCase3IsAppEnabledInDatasetWithSufficientPermission(t *testing.T) {
 
 	failureRequest := events.APIGatewayV2HTTPRequest{
 		RouteKey: "POST /integrations",
-		Body: fmt.Sprintf("{ \"sessionToken\": \"ae5t678999-a345fgg\", \"applicationId\": %v, \"organizationId\": %v, \"datasetId\": %v, \"payload\": {\"packageIds\": [1,2,3]}}",
-			mockApplicationID, organizationId, datasetId),
+		Body: fmt.Sprintf("{ \"applicationId\": %v, \"datasetId\": \"N:dataset:c0f0db41-c7cb-4fb5-98b4-e90791f8a975\", \"packageIds\": [\"1\",\"2\",\"3\"]}",
+			mockApplicationID),
 		RequestContext: requestContext,
 	}
 
@@ -603,8 +598,8 @@ func TestCase4IsAppEnabledInDatasetWithSufficientPermission(t *testing.T) {
 
 	successRequest := events.APIGatewayV2HTTPRequest{
 		RouteKey: "POST /integrations",
-		Body: fmt.Sprintf("{ \"sessionToken\": \"ae5t678999-a345fgg\", \"applicationId\": %v, \"organizationId\": %v, \"datasetId\": %v, \"payload\": {\"packageIds\": [1,2,3]}}",
-			mockApplicationID, organizationId, datasetId),
+		Body: fmt.Sprintf("{ \"applicationId\": %v, \"datasetId\": \"N:dataset:c0f0db41-c7cb-4fb5-98b4-e90791f8a975\", \"packageIds\": [\"1\"]}",
+			mockApplicationID),
 		RequestContext: requestContext,
 	}
 

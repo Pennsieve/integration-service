@@ -10,7 +10,7 @@ import (
 func TestExtractRouteKey(t *testing.T) {
 	request := events.APIGatewayV2HTTPRequest{
 		RouteKey: "POST /integrations",
-		Body:     "{ \"sessionToken\": \"ae5t678999-a345fgg\", \"datasetId\": \"dataset123\", \"applicationId\": 1, \"payload\": {\"packageIds\": [1,2,3]}}",
+		Body:     "{ \"datasetId\": \"dataset123\", \"applicationId\": 1, \"packageIds\": [\"1\"]}",
 	}
 	expected := "/integrations"
 	got := utils.ExtractRoute(request.RouteKey)

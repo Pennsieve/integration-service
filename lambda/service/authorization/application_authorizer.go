@@ -43,12 +43,12 @@ func (a *ApplicationAuthorizer) IsAuthorized(ctx context.Context) bool {
 		log.Println(err.Error())
 		return false
 	}
-	store := store.NewApplicationDatabaseStore(db, integration.OrganizationID)
+	store := store.NewApplicationDatabaseStore(db, a.claims.OrgClaim.IntId)
 
 	isAppEnabledInOrg := isAppEnabledInOrgWithSufficientPermission(ctx, store, integration.ApplicationID, a.claims.OrgClaim)
 	// datasetId is optional
-	if integration.DatasetID != 0 {
-		isAppEnabledInDataset := isAppEnabledInDatasetWithSufficientPermission(ctx, store, integration.DatasetID, a.claims.UserClaim, integration.ApplicationID)
+	if integration.DatasetNodeID != "" {
+		isAppEnabledInDataset := isAppEnabledInDatasetWithSufficientPermission(ctx, store, integration.DatasetNodeID, a.claims.UserClaim, integration.ApplicationID)
 		return isAppEnabledInOrg && isAppEnabledInDataset
 	}
 
@@ -76,8 +76,14 @@ func isAppEnabledInOrgWithSufficientPermission(ctx context.Context, store store.
 }
 
 // is invoking user datasetRole >= datasetRole of application
-func isAppEnabledInDatasetWithSufficientPermission(ctx context.Context, store store.DatabaseStore, datasetId int64, userClaim user.Claim, applicationId int64) bool {
+func isAppEnabledInDatasetWithSufficientPermission(ctx context.Context, store store.DatabaseStore, datasetNodeID string, userClaim user.Claim, applicationId int64) bool {
 	// currently datasetClaim from authorizer would be nil, as no datasetId is passed as a queryParam
+	datasetId, err := store.GetDatasetId(ctx, datasetNodeID)
+	if err != nil {
+		log.Println(err.Error())
+		return false
+	}
+
 	currentDatasetUser, err := store.GetDatasetUserByUserId(ctx, userClaim.Id, datasetId)
 	if err != nil {
 		log.Println(err.Error())

@@ -19,7 +19,6 @@ func NewApplicationRestClient(client *http.Client, url string) Client {
 }
 
 func (c *ApplicationRestClient) Execute(ctx context.Context, b bytes.Buffer) ([]byte, error) {
-	log.Println("in Execute")
 	requestDuration := 30 * time.Second
 	req, err := http.NewRequest(http.MethodPost, c.ApplicationURL, &b)
 	if err != nil {
@@ -27,7 +26,6 @@ func (c *ApplicationRestClient) Execute(ctx context.Context, b bytes.Buffer) ([]
 		return nil, err
 	}
 
-	log.Println("triggering")
 	triggerContext, cancel := context.WithTimeout(ctx, requestDuration)
 	defer cancel()
 	req = req.WithContext(triggerContext)
@@ -37,7 +35,6 @@ func (c *ApplicationRestClient) Execute(ctx context.Context, b bytes.Buffer) ([]
 		return nil, err
 	}
 
-	log.Println("done triggering")
 	defer resp.Body.Close()
 	s, err := io.ReadAll(resp.Body)
 	if err != nil {
