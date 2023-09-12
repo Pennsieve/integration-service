@@ -27,6 +27,7 @@ func NewApplicationTrigger(client clients.Client, application store.Application,
 
 // runs trigger
 func (t *ApplicationTrigger) Run(ctx context.Context) error {
+	// TODO: update to pass integrationId once DB is setup
 	b, err := json.Marshal(t.Params)
 	if err != nil {
 		return err

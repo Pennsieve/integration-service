@@ -28,7 +28,6 @@ func PostIntegrationsHandler(ctx context.Context, request events.APIGatewayV2HTT
 
 	claims := authorizer.ParseClaims(request.RequestContext.Authorizer.Lambda)
 	organizationId := claims.OrgClaim.IntId
-	log.Println("organizationId", organizationId)
 
 	db, err := pgQueries.ConnectRDS()
 	if err != nil {
