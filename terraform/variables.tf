@@ -20,3 +20,12 @@ variable "lambda_bucket" {
 }
 
 variable "image_tag" {}
+
+locals {
+  
+  common_tags = {
+    aws_account      = var.aws_account
+    aws_region       = data.aws_region.current_region.name
+    environment_name = var.environment_name
+  }
+}
