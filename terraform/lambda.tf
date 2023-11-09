@@ -50,6 +50,7 @@ resource "aws_lambda_function" "integration_service_lambda" {
       RDS_PROXY_ENDPOINT = data.terraform_remote_state.pennsieve_postgres.outputs.rds_proxy_endpoint,
       REGION = var.aws_region,
       LOG_LEVEL = "info",
+      INTEGRATIONS_TABLE = aws_dynamodb_table.integrations_table.name,
     }
   }
 }
