@@ -18,32 +18,6 @@ resource "aws_dynamodb_table" "integrations_table" {
     name = "datasetNodeId"
     type = "S"
   }
-
-  attribute {
-    name = "packageIds"
-    type = "S"
-  }
-
-  attribute {
-    name = "params"
-    type = "S"
-  }
-
-  attribute {
-    name = "taskId"
-    type = "S"
-  }
-
-  attribute {
-    name = "start"
-    type = "N"
-  }
-
-  attribute {
-    name = "end"
-    type = "N"
-  }
-
   
   ttl {
     attribute_name = "TimeToExist"
