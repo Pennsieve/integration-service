@@ -150,6 +150,28 @@ data "aws_iam_policy_document" "integration_service_lambda_iam_policy_document" 
     ]
     resources = ["*"]
   }
+
+  statement {
+    sid = "LambdaAccessToDynamoDB"
+    effect = "Allow"
+
+    actions = [
+      "dynamodb:BatchGetItem",
+      "dynamodb:GetItem",
+      "dynamodb:Query",
+      "dynamodb:Scan",
+      "dynamodb:BatchWriteItem",
+      "dynamodb:PutItem",
+      "dynamodb:UpdateItem"
+    ]
+
+    resources = [
+      aws_dynamodb_table.integrations_table.arn,
+      "${aws_dynamodb_table.integrations_table.arn}/*"
+    ]
+
+  }
+
 }
 
 resource "aws_iam_role_policy_attachment" "integration_service_lambda_iam_policy_attachment" {
