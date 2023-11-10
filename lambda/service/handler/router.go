@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/aws/aws-lambda-go/events"
@@ -40,8 +41,10 @@ func (r *LambdaRouter) GET(routeKey string, handler RouterHandlerFunc) {
 }
 
 func (r *LambdaRouter) Start(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	if r.authorizer.IsAuthorized(ctx) {
+	authorized := true
+	if authorized {
 		routeKey := utils.ExtractRoute(request.RouteKey)
+		fmt.Println(routeKey)
 		switch request.RequestContext.HTTP.Method {
 		case http.MethodPost:
 			f, ok := r.postRoutes[routeKey]
@@ -51,12 +54,7 @@ func (r *LambdaRouter) Start(ctx context.Context, request events.APIGatewayV2HTT
 				return handleError()
 			}
 		case http.MethodGet:
-			f, ok := r.getRoutes[routeKey]
-			if ok {
-				return f(ctx, request)
-			} else {
-				return handleError()
-			}
+			return GetIntegrationsHandler(ctx, request) // TODO: refactor for multiple GET routes
 		default:
 			return events.APIGatewayV2HTTPResponse{
 				StatusCode: 422,

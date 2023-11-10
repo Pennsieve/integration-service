@@ -19,5 +19,6 @@ func IntegrationServiceHandler(ctx context.Context, request events.APIGatewayV2H
 	router := NewLambdaRouter(applicationAuthorizer)
 	// register routes based on their supported methods
 	router.POST("/integrations", PostIntegrationsHandler)
+	router.GET("/integrations", GetIntegrationsHandler)
 	return router.Start(ctx, request)
 }
