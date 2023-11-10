@@ -5,9 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 
+	"github.com/google/uuid"
 	"github.com/pennsieve/integration-service/service/clients"
+	"github.com/pennsieve/integration-service/service/models"
 	"github.com/pennsieve/integration-service/service/store"
+	"github.com/pennsieve/integration-service/service/store_dynamodb"
 )
 
 type Trigger interface {
@@ -18,17 +22,40 @@ type Trigger interface {
 type ApplicationTrigger struct {
 	Client      clients.Client
 	Application store.Application
-	Params      interface{}
+	Integration models.Integration
+	Store       store_dynamodb.DynamoDBStore
 }
 
-func NewApplicationTrigger(client clients.Client, application store.Application, params interface{}) Trigger {
-	return &ApplicationTrigger{client, application, params}
+func NewApplicationTrigger(client clients.Client, application store.Application, integration models.Integration, store store_dynamodb.DynamoDBStore) Trigger {
+	return &ApplicationTrigger{client, application, integration, store}
 }
 
 // runs trigger
 func (t *ApplicationTrigger) Run(ctx context.Context) error {
-	// TODO: update to pass integrationId once DB is setup
-	b, err := json.Marshal(t.Params)
+	id := uuid.New()
+	integrationId := id.String()
+
+	// persist to dynamodb
+	packageIds, err := json.Marshal(t.Integration.PackageIDs)
+	if err != nil {
+		log.Println("error unmarshalling package IDs")
+		return err
+	}
+	store_integration := store_dynamodb.Integration{
+		Uuid:          integrationId,
+		ApplicationId: t.Integration.ApplicationID,
+		DatasetNodeId: t.Integration.DatasetNodeID,
+		PackageIds:    string(packageIds),
+	}
+	err = t.Store.Insert(ctx, store_integration)
+	if err != nil {
+		return err
+	}
+
+	applicationPayload := ApplicationPayload{
+		IntegrationId: integrationId,
+	}
+	b, err := json.Marshal(applicationPayload)
 	if err != nil {
 		return err
 	}
@@ -38,6 +65,7 @@ func (t *ApplicationTrigger) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
 	return nil
 }
 

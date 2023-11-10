@@ -5,11 +5,15 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
 
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/pennsieve/integration-service/service/clients"
 	"github.com/pennsieve/integration-service/service/models"
 	"github.com/pennsieve/integration-service/service/store"
+	"github.com/pennsieve/integration-service/service/store_dynamodb"
 	"github.com/pennsieve/integration-service/service/trigger"
 	"github.com/pennsieve/pennsieve-go-core/pkg/authorizer"
 	pgQueries "github.com/pennsieve/pennsieve-go-core/pkg/queries/pgdb"
@@ -44,20 +48,33 @@ func PostIntegrationsHandler(ctx context.Context, request events.APIGatewayV2HTT
 	if err != nil {
 		log.Println(err.Error())
 		return events.APIGatewayV2HTTPResponse{
-			StatusCode: 409,
+			StatusCode: 422,
 			Body:       handlerName,
 		}, ErrNoRecordsFound
 	}
 
+	cfg, err := config.LoadDefaultConfig(context.Background())
+	if err != nil {
+		log.Println(err.Error())
+		return events.APIGatewayV2HTTPResponse{
+			StatusCode: 500,
+			Body:       handlerName,
+		}, ErrConfig
+	}
+	dynamoDBClient := dynamodb.NewFromConfig(cfg)
+	integrationsTable := os.Getenv("INTEGRATIONS_TABLE")
+	log.Println(integrationsTable)
+	dynamo_store := store_dynamodb.NewIntegrationDatabaseStore(dynamoDBClient, integrationsTable)
+
 	// create application trigger
-	client := clients.NewApplicationRestClient(&http.Client{}, application.URL)
-	applicationTrigger := trigger.NewApplicationTrigger(client, application,
-		integration.Params)
+	httpClient := clients.NewApplicationRestClient(&http.Client{}, application.URL)
+	applicationTrigger := trigger.NewApplicationTrigger(httpClient, application,
+		integration, dynamo_store)
 	// validate
 	if applicationTrigger.Validate() != nil {
 		log.Println(err.Error())
 		return events.APIGatewayV2HTTPResponse{
-			StatusCode: 409,
+			StatusCode: 422,
 			Body:       handlerName,
 		}, ErrApplicationValidation
 	}

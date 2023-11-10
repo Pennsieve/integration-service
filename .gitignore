@@ -36,3 +36,6 @@ lambda/bin
 
 # vscode files
 .vscode/launch.json
+
+# dynamodb data
+test-dynamodb-data

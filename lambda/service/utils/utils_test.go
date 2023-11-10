@@ -18,3 +18,16 @@ func TestExtractRouteKey(t *testing.T) {
 		t.Errorf("expected %s, got %s", expected, got)
 	}
 }
+
+func TestExtractParam(t *testing.T) {
+	request := events.APIGatewayV2HTTPRequest{
+		RouteKey: "GET /integrations/someintegrationId",
+		Body:     "{ \"datasetId\": \"dataset123\", \"applicationId\": 1, \"packageIds\": [\"1\"]}",
+	}
+	expected := "someintegrationId"
+	routeKey := utils.ExtractRoute(request.RouteKey)
+	got := utils.ExtractParam(routeKey)
+	if got != expected {
+		t.Errorf("expected %s, got %s", expected, got)
+	}
+}

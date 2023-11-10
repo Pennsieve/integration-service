@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/pennsieve/integration-service/service/mocks"
+	"github.com/pennsieve/integration-service/service/models"
 	"github.com/pennsieve/integration-service/service/store"
 	"github.com/pennsieve/integration-service/service/trigger"
 )
@@ -16,10 +17,11 @@ func TestValidate(t *testing.T) {
 		URL:        "http://mock-application:8081/mock",
 		IsDisabled: true,
 	}
-	var params interface{}
+	integration := models.Integration{}
 
 	mockClient := mocks.NewMockClient()
-	applicationTrigger := trigger.NewApplicationTrigger(mockClient, application, params)
+	mockStore := mocks.NewMockDynamoDBStore()
+	applicationTrigger := trigger.NewApplicationTrigger(mockClient, application, integration, mockStore)
 	err := applicationTrigger.Validate()
 	expectedError := "application should be active"
 	if err != nil && err.Error() != expectedError {
@@ -34,10 +36,11 @@ func TestRun(t *testing.T) {
 		URL:        "http://mock-application:8081/mock",
 		IsDisabled: true,
 	}
-	var params interface{}
+	integration := models.Integration{}
 
 	mockClient := mocks.NewMockClient()
-	applicationTrigger := trigger.NewApplicationTrigger(mockClient, application, params)
+	mockStore := mocks.NewMockDynamoDBStore()
+	applicationTrigger := trigger.NewApplicationTrigger(mockClient, application, integration, mockStore)
 	ctx := context.Background()
 	err := applicationTrigger.Run(ctx)
 	if err != nil {
