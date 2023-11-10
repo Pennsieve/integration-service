@@ -59,13 +59,13 @@ func (r *LambdaRouter) Start(ctx context.Context, request events.APIGatewayV2HTT
 			}
 		default:
 			return events.APIGatewayV2HTTPResponse{
-				StatusCode: 409,
+				StatusCode: 422,
 				Body:       "LambdaRouter",
 			}, ErrUnsupportedPath
 		}
 	}
 	return events.APIGatewayV2HTTPResponse{
-		StatusCode: 409,
+		StatusCode: 422,
 		Body:       "LambdaRouter",
 	}, ErrUnauthorized
 

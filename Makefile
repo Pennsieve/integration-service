@@ -19,6 +19,8 @@ help:
 
 # Run dockerized tests (can be used locally)
 test:
+	mkdir -p test-dynamodb-data
+	chmod -R 777 test-dynamodb-data
 	docker-compose -f docker-compose.test.yml down --remove-orphans
 	mkdir -p data conf
 	chmod -R 777 data conf
@@ -27,6 +29,8 @@ test:
 
 # Run dockerized tests (used on Jenkins)
 test-ci:
+	mkdir -p test-dynamodb-data
+	chmod -R 777 test-dynamodb-data
 	docker-compose -f docker-compose.test.yml down --remove-orphans
 	mkdir -p data plugins conf logs
 	chmod -R 777 conf

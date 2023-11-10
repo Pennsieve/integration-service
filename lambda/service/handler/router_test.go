@@ -65,7 +65,7 @@ func TestLambdaRouter200(t *testing.T) {
 	}
 }
 
-func TestLambdaRouter409(t *testing.T) {
+func TestLambdaRouter422(t *testing.T) {
 	ctx := context.Background()
 	applicationAuthorizer := mocks.NewMockApplicationAuthorizer()
 	router := handler.NewLambdaRouter(applicationAuthorizer)
@@ -81,7 +81,7 @@ func TestLambdaRouter409(t *testing.T) {
 		Body:           "",
 		RequestContext: requestContext,
 	}
-	expectedStatusCode := 409
+	expectedStatusCode := 422
 	response, _ := router.Start(ctx, request)
 	if response.StatusCode != expectedStatusCode {
 		t.Errorf("expected status code %v, got %v", expectedStatusCode, response.StatusCode)
