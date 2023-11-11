@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/pennsieve/integration-service/service/models"
 	"github.com/pennsieve/integration-service/service/store_dynamodb"
 	"github.com/pennsieve/integration-service/service/utils"
 )
@@ -17,9 +18,7 @@ import (
 func GetIntegrationsHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	handlerName := "GetIntegrationsHandler"
 	fmt.Println(request)
-	routeKey := utils.ExtractRoute(request.RouteKey)
-	fmt.Println(routeKey)
-	uuid := utils.ExtractParam(request.RouteKey)
+	uuid := utils.ExtractParam(request.RawPath)
 	fmt.Println(uuid)
 
 	cfg, err := config.LoadDefaultConfig(context.Background())
@@ -39,12 +38,27 @@ func GetIntegrationsHandler(ctx context.Context, request events.APIGatewayV2HTTP
 	if err != nil {
 		log.Println(err.Error())
 		return events.APIGatewayV2HTTPResponse{
-			StatusCode: 500,
+			StatusCode: 404,
 			Body:       handlerName,
 		}, ErrNoRecordsFound
 	}
 
-	m, err := json.Marshal(integration)
+	var p []string
+	err = json.Unmarshal([]byte(integration.PackageIds), &p)
+	if err != nil {
+		log.Println(err.Error())
+		return events.APIGatewayV2HTTPResponse{
+			StatusCode: 500,
+			Body:       handlerName,
+		}, ErrUnmarshaling
+	}
+
+	m, err := json.Marshal(models.Integration{
+		Uuid:          integration.Uuid,
+		ApplicationID: integration.ApplicationId,
+		DatasetNodeID: integration.DatasetNodeId,
+		PackageIDs:    p,
+	})
 	if err != nil {
 		log.Println(err.Error())
 		return events.APIGatewayV2HTTPResponse{
