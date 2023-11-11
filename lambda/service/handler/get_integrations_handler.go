@@ -17,9 +17,8 @@ import (
 func GetIntegrationsHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	handlerName := "GetIntegrationsHandler"
 	fmt.Println(request)
-	routeKey := utils.ExtractRoute(request.RouteKey)
-	fmt.Println(routeKey)
-	uuid := utils.ExtractParam(request.RouteKey)
+
+	uuid := utils.ExtractParam(request.RawPath)
 	fmt.Println(uuid)
 
 	cfg, err := config.LoadDefaultConfig(context.Background())
@@ -39,7 +38,7 @@ func GetIntegrationsHandler(ctx context.Context, request events.APIGatewayV2HTTP
 	if err != nil {
 		log.Println(err.Error())
 		return events.APIGatewayV2HTTPResponse{
-			StatusCode: 500,
+			StatusCode: 404,
 			Body:       handlerName,
 		}, ErrNoRecordsFound
 	}
