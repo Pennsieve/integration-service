@@ -10,7 +10,7 @@ resource "aws_dynamodb_table" "integrations_table" {
   
   ttl {
     attribute_name = "TimeToExist"
-    enabled        = false
+    enabled        = true
   }
 
 tags = merge(
