@@ -59,12 +59,15 @@ func (t *ApplicationTrigger) Run(ctx context.Context) error {
 	}
 
 	fmt.Println("executing trigger")
-	_, err = t.Client.Execute(context.Background(), *bytes.NewBuffer(b))
+	resp, err := t.Client.Execute(context.Background(), *bytes.NewBuffer(b))
 	// handle responses:
 	// currently we expect a 2xx response and no errors?
 	if err != nil {
+		fmt.Println("generating uuid")
 		return err
 	}
+	fmt.Println("response ...")
+	fmt.Println(string(resp))
 
 	return nil
 }
