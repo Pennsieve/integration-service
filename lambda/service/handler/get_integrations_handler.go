@@ -43,21 +43,11 @@ func GetIntegrationsHandler(ctx context.Context, request events.APIGatewayV2HTTP
 		}, ErrNoRecordsFound
 	}
 
-	var p []string
-	err = json.Unmarshal([]byte(integration.PackageIds), &p)
-	if err != nil {
-		log.Println(err.Error())
-		return events.APIGatewayV2HTTPResponse{
-			StatusCode: 500,
-			Body:       handlerName,
-		}, ErrUnmarshaling
-	}
-
 	m, err := json.Marshal(models.Integration{
 		Uuid:          integration.Uuid,
 		ApplicationID: integration.ApplicationId,
 		DatasetNodeID: integration.DatasetNodeId,
-		PackageIDs:    p,
+		PackageIDs:    integration.PackageIds,
 	})
 	if err != nil {
 		log.Println(err.Error())

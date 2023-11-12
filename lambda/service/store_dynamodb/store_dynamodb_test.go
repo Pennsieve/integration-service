@@ -2,7 +2,6 @@ package store_dynamodb_test
 
 import (
 	"context"
-	"encoding/json"
 	"log"
 	"os"
 	"testing"
@@ -55,15 +54,11 @@ func TestInsertGet(t *testing.T) {
 	id := uuid.New()
 	integrationId := id.String()
 	packageIds := []string{"packageId1", "packageId2"}
-	p, err := json.Marshal(packageIds)
-	if err != nil {
-		t.Errorf("error unmarshaling")
-	}
 	store_integration := store_dynamodb.Integration{
 		Uuid:          integrationId,
 		ApplicationId: 1,
 		DatasetNodeId: "xyz",
-		PackageIds:    string(p),
+		PackageIds:    packageIds,
 	}
 	err = dynamo_store.Insert(context.Background(), store_integration)
 	if err != nil {
