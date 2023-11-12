@@ -19,7 +19,7 @@ func NewApplicationRestClient(client *http.Client, url string) Client {
 }
 
 func (c *ApplicationRestClient) Execute(ctx context.Context, b bytes.Buffer) ([]byte, error) {
-	requestDuration := 30 * time.Second
+	requestDuration := 60 * time.Second
 	req, err := http.NewRequest(http.MethodPost, c.ApplicationURL, &b)
 	if err != nil {
 		log.Println(err.Error())
