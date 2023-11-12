@@ -43,6 +43,8 @@ resource "aws_lambda_function" "integration_service_lambda" {
     security_group_ids = [data.terraform_remote_state.platform_infrastructure.outputs.integration_service_security_group_id]
   }
 
+  timeout = 300
+
   environment {
     variables = {
       ENV = var.environment_name
