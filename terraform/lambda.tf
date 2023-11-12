@@ -33,7 +33,7 @@ resource "aws_lambda_function" "integration_service_lambda" {
   runtime          = "provided.al2"
   architectures    = ["arm64"]
   role             = aws_iam_role.integration_service_lambda_role.arn
-  timeout          = 30
+  timeout          = 300
   memory_size      = 128
   s3_bucket         = var.lambda_bucket
   s3_key            = "${var.service_name}/service/${var.service_name}-${var.image_tag}.zip"
@@ -42,8 +42,6 @@ resource "aws_lambda_function" "integration_service_lambda" {
     subnet_ids         = tolist(data.terraform_remote_state.vpc.outputs.private_subnet_ids)
     security_group_ids = [data.terraform_remote_state.platform_infrastructure.outputs.integration_service_security_group_id]
   }
-
-  timeout = 300
 
   environment {
     variables = {
