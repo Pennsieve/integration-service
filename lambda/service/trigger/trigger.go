@@ -35,6 +35,7 @@ func (t *ApplicationTrigger) Run(ctx context.Context) error {
 	fmt.Println("generating uuid")
 	id := uuid.New()
 	integrationId := id.String()
+	fmt.Println(integrationId)
 
 	fmt.Println("persisting to db")
 	// persist to dynamodb
@@ -63,7 +64,7 @@ func (t *ApplicationTrigger) Run(ctx context.Context) error {
 	// handle responses:
 	// currently we expect a 2xx response and no errors?
 	if err != nil {
-		fmt.Println("generating uuid")
+		fmt.Println(err)
 		return err
 	}
 	fmt.Println("response ...")
