@@ -2,7 +2,9 @@ package handler
 
 import (
 	"context"
+	"io"
 	"log"
+	"net/http"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambdacontext"
@@ -14,6 +16,17 @@ func IntegrationServiceHandler(ctx context.Context, request events.APIGatewayV2H
 	if lc, ok := lambdacontext.FromContext(ctx); ok {
 		log.Println("awsRequestID", lc.AwsRequestID)
 	}
+
+	resp, err := http.Get("https://api.datacite.org/dois/10.26275/eefp-azay")
+	if err != nil {
+		log.Println(err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Println(err)
+	}
+	log.Println(string(body))
 
 	applicationAuthorizer := authorization.NewApplicationAuthorizer(request)
 	router := NewLambdaRouter(applicationAuthorizer)
