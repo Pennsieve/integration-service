@@ -63,7 +63,6 @@ func PostIntegrationsHandler(ctx context.Context, request events.APIGatewayV2HTT
 	}
 	dynamoDBClient := dynamodb.NewFromConfig(cfg)
 	integrationsTable := os.Getenv("INTEGRATIONS_TABLE")
-	log.Println(integrationsTable)
 	dynamo_store := store_dynamodb.NewIntegrationDatabaseStore(dynamoDBClient, integrationsTable)
 
 	// create application trigger
