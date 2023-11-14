@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"net/http"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/pennsieve/integration-service/service/models"
@@ -20,17 +21,22 @@ type ServiceAuthorizer interface {
 }
 
 type ApplicationAuthorizer struct {
-	claims      *authorizer.Claims
-	requestBody string
+	claims        *authorizer.Claims
+	requestBody   string
+	requestMethod string
 }
 
 func NewApplicationAuthorizer(request events.APIGatewayV2HTTPRequest) ServiceAuthorizer {
 	claims := authorizer.ParseClaims(request.RequestContext.Authorizer.Lambda)
 
-	return &ApplicationAuthorizer{claims, request.Body}
+	return &ApplicationAuthorizer{claims, request.Body, request.RequestContext.HTTP.Method}
 }
 
 func (a *ApplicationAuthorizer) IsAuthorized(ctx context.Context) bool {
+	if a.requestMethod == http.MethodGet {
+		return true // revisit authorization for GET requests without claim information
+	}
+
 	db, err := pgQueries.ConnectRDS()
 	if err != nil {
 		log.Println(err.Error())

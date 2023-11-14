@@ -35,6 +35,29 @@ func TestIsAuthorized(t *testing.T) {
 
 }
 
+func TestIsAuthorizedGET(t *testing.T) {
+	// should return false when no records exist in database
+	requestContext := events.APIGatewayV2HTTPRequestContext{
+		HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+			Method: "GET",
+		},
+		Authorizer: &events.APIGatewayV2HTTPRequestContextAuthorizerDescription{
+			Lambda: make(map[string]interface{}),
+		},
+	}
+	request := events.APIGatewayV2HTTPRequest{
+		RouteKey:       "GET /integrations",
+		Body:           "",
+		RequestContext: requestContext,
+	}
+
+	authorizer := authorization.NewApplicationAuthorizer(request)
+	if !authorizer.IsAuthorized(context.Background()) {
+		t.Fatalf("expected authorizer to return true")
+	}
+
+}
+
 func TestCase1IsAppEnabledInOrgWithSufficientPermission(t *testing.T) {
 	// should return false if application exists but is NOT enabled in org (organizationUser is not returned)
 	ctx := context.Background()
