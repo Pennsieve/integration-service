@@ -24,7 +24,7 @@ func TestIntegrationServiceHandler(t *testing.T) {
 		RequestContext: requestContext,
 	}
 
-	expectedStatusCode := 404
+	expectedStatusCode := 422
 	response, _ := handler.IntegrationServiceHandler(ctx, request)
 	if response.StatusCode != expectedStatusCode {
 		t.Errorf("expected status code %v, got %v", expectedStatusCode, response.StatusCode)

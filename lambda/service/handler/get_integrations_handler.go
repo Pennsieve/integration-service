@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"os"
 
@@ -17,9 +16,7 @@ import (
 
 func GetIntegrationsHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	handlerName := "GetIntegrationsHandler"
-	fmt.Println(request)
 	uuid := utils.ExtractParam(request.RawPath)
-	fmt.Println(uuid)
 
 	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
@@ -31,7 +28,6 @@ func GetIntegrationsHandler(ctx context.Context, request events.APIGatewayV2HTTP
 	}
 	dynamoDBClient := dynamodb.NewFromConfig(cfg)
 	integrationsTable := os.Getenv("INTEGRATIONS_TABLE")
-	log.Println("integrations table", integrationsTable)
 
 	dynamo_store := store_dynamodb.NewIntegrationDatabaseStore(dynamoDBClient, integrationsTable)
 	integration, err := dynamo_store.GetById(ctx, uuid)
