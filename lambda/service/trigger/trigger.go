@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
+	"log"
 
 	"github.com/google/uuid"
 	"github.com/pennsieve/integration-service/service/clients"
@@ -32,12 +32,9 @@ func NewApplicationTrigger(client clients.Client, application store.Application,
 
 // runs trigger
 func (t *ApplicationTrigger) Run(ctx context.Context) error {
-	fmt.Println("generating uuid")
 	id := uuid.New()
 	integrationId := id.String()
-	fmt.Println(integrationId)
 
-	fmt.Println("persisting to db")
 	// persist to dynamodb
 	store_integration := store_dynamodb.Integration{
 		Uuid:          integrationId,
@@ -50,7 +47,6 @@ func (t *ApplicationTrigger) Run(ctx context.Context) error {
 		return err
 	}
 
-	fmt.Println("creating and marshaling payload")
 	applicationPayload := ApplicationPayload{
 		IntegrationId: integrationId,
 	}
@@ -59,16 +55,14 @@ func (t *ApplicationTrigger) Run(ctx context.Context) error {
 		return err
 	}
 
-	fmt.Println("executing trigger")
-	resp, err := t.Client.Execute(context.Background(), *bytes.NewBuffer(b))
+	resp, err := t.Client.Execute(ctx, *bytes.NewBuffer(b))
 	// handle responses:
 	// currently we expect a 2xx response and no errors?
 	if err != nil {
-		fmt.Println(err)
+		log.Println(err)
 		return err
 	}
-	fmt.Println("response ...")
-	fmt.Println(string(resp))
+	log.Println(string(resp))
 
 	return nil
 }

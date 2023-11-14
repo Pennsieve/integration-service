@@ -79,7 +79,7 @@ func PostIntegrationsHandler(ctx context.Context, request events.APIGatewayV2HTT
 		}, ErrApplicationValidation
 	}
 	// run
-	if err := applicationTrigger.Run(context.Background()); err != nil {
+	if err := applicationTrigger.Run(ctx); err != nil {
 		log.Println(err.Error())
 		return events.APIGatewayV2HTTPResponse{
 			StatusCode: 500,
