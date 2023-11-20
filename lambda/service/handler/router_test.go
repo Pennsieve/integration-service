@@ -35,7 +35,6 @@ func TestLambdaRouter404(t *testing.T) {
 }
 
 func TestLambdaRouter200(t *testing.T) {
-	t.Skip() // TODO: refactor routing
 	ctx := context.Background()
 	applicationAuthorizer := mocks.NewMockApplicationAuthorizer()
 	router := handler.NewLambdaRouter(applicationAuthorizer)
