@@ -32,4 +32,4 @@ services:
     container_name: pennsievedb
     restart: always
     ports:
-      - "5432:5432"  
+      - "5432:5432"
