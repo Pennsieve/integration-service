@@ -14,7 +14,7 @@ services:
       dockerfile: Dockerfile.test
     depends_on:
       - pennsievedb
-      - dynamodb    
+      - dynamodb
     volumes:
       - $PWD:/go/src/github.com/pennsieve/integration-service
     networks:
@@ -68,4 +68,4 @@ services:
       - ./test-dynamodb-data:/home/dynamodblocal/data
     command: "-jar DynamoDBLocal.jar -sharedDb -dbPath /home/dynamodblocal/data/"
     networks:
-      - api-tests    
+      - api-tests

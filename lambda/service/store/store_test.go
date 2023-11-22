@@ -2,9 +2,12 @@ package store_test
 
 import (
 	"context"
+	"fmt"
+	"math/rand"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/pennsieve/integration-service/service/store"
 	pgQueries "github.com/pennsieve/pennsieve-go-core/pkg/queries/pgdb"
 )
@@ -116,7 +119,7 @@ func TestGetOrganizationUserById(t *testing.T) {
 }
 
 func TestGetDatasetUserById(t *testing.T) {
-	t.Skip() // TODO: revisit, flaky, succeeds on retry
+	ctx := context.Background()
 	db, err := pgQueries.ConnectENV()
 	if err != nil {
 		t.Fatalf("unable to connect to database: %v\n", err)
@@ -126,6 +129,12 @@ func TestGetDatasetUserById(t *testing.T) {
 	var organizationId int64 = 1
 	applicationDatabaseStore := store.NewApplicationDatabaseStore(db, organizationId)
 	testDatabaseStore := store.NewApplicationTestDatabaseStore(db, organizationId)
+
+	user := createNewUser()
+	userId, err := testDatabaseStore.InsertUser(ctx, user)
+	if err != nil {
+		t.Fatalf("error inserting user %v", err)
+	}
 
 	mockApplication := store.Application{
 		URL:               "http://mock-application:8081/mock",
@@ -138,10 +147,10 @@ func TestGetDatasetUserById(t *testing.T) {
 		IsDisabled:        false,
 		CreatedAt:         time.Now(),
 		CreatedBy:         1,
-		IntegrationUserID: 2,
+		IntegrationUserID: userId,
 		HasAccess:         true,
 	}
-	ctx := context.Background()
+
 	applicationID, err := applicationDatabaseStore.Insert(ctx, mockApplication)
 	if err != nil {
 		t.Fatalf("error inserting application %v", err)
@@ -150,7 +159,7 @@ func TestGetDatasetUserById(t *testing.T) {
 	datasetId := int64(1)
 	userDatasetUser := store.DatasetUser{
 		DatasetID: datasetId,
-		UserID:    2,
+		UserID:    userId,
 		Role:      "viewer",
 	}
 	_, err = testDatabaseStore.InsertDatasetUser(ctx, userDatasetUser)
@@ -176,6 +185,10 @@ func TestGetDatasetUserById(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	err = testDatabaseStore.DeleteUser(ctx, userId)
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestGetDatasetUserByUserId(t *testing.T) {
@@ -190,10 +203,16 @@ func TestGetDatasetUserByUserId(t *testing.T) {
 	applicationDatabaseStore := store.NewApplicationDatabaseStore(db, organizationId)
 	testDatabaseStore := store.NewApplicationTestDatabaseStore(db, organizationId)
 
+	user := createNewUser()
+	userId, err := testDatabaseStore.InsertUser(ctx, user)
+	if err != nil {
+		t.Fatalf("error inserting user %v", err)
+	}
+
 	datasetId := int64(1)
 	userDatasetUser := store.DatasetUser{
 		DatasetID: datasetId,
-		UserID:    2,
+		UserID:    userId,
 		Role:      "viewer",
 	}
 
@@ -217,5 +236,28 @@ func TestGetDatasetUserByUserId(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	err = testDatabaseStore.DeleteUser(ctx, userId)
+	if err != nil {
+		t.Fatal(err)
+	}
 
+}
+
+func createNewUser() store.User {
+	id := uuid.New()
+	uuid := id.String()
+	randomId := rand.Intn(100)
+
+	return store.User{
+		ID:             int64(randomId),
+		Email:          fmt.Sprintf("%s@email.com", uuid),
+		FirstName:      uuid,
+		LastName:       fmt.Sprintf("Test%s", uuid),
+		Color:          "#5FBFF9",
+		IsSuperAdmin:   false,
+		AuthyID:        int64(randomId),
+		PreferredOrgID: int64(randomId),
+		Status:         true,
+		NodeID:         fmt.Sprintf("N:user:%s", uuid),
+	}
 }

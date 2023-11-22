@@ -34,7 +34,7 @@ func NewApplicationAuthorizer(request events.APIGatewayV2HTTPRequest) ServiceAut
 
 func (a *ApplicationAuthorizer) IsAuthorized(ctx context.Context) bool {
 	if a.requestMethod == http.MethodGet {
-		return true // revisit authorization for GET requests without claim information
+		return true // revisit authorization for GET requests (without claim information)
 	}
 
 	db, err := pgQueries.ConnectRDS()

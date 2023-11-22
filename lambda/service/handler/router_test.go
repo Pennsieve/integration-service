@@ -9,7 +9,7 @@ import (
 	"github.com/pennsieve/integration-service/service/mocks"
 )
 
-func TestLambdaRouter404(t *testing.T) {
+func TestLambdaRouterPost(t *testing.T) {
 	ctx := context.Background()
 	requestContext := events.APIGatewayV2HTTPRequestContext{
 		HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
@@ -34,32 +34,32 @@ func TestLambdaRouter404(t *testing.T) {
 	}
 }
 
-func TestLambdaRouter200(t *testing.T) {
-	t.Skip() // TODO: refactor routing
+func TestLambdaRouterGet(t *testing.T) {
 	ctx := context.Background()
 	applicationAuthorizer := mocks.NewMockApplicationAuthorizer()
 	router := handler.NewLambdaRouter(applicationAuthorizer)
 
-	// GET /applications
+	// GET /integrations/1
 	requestContext := events.APIGatewayV2HTTPRequestContext{
 		HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
 			Method: "GET",
 		},
 	}
 	request := events.APIGatewayV2HTTPRequest{
-		RouteKey:       "GET /applications",
+		RouteKey:       "GET /integrations/someUUID",
 		Body:           "",
+		RawPath:        "/integrations/someUUID",
 		RequestContext: requestContext,
 	}
-	var GetApplicationsHandler = func(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	var GetIntegrationsHandler = func(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 		response := events.APIGatewayV2HTTPResponse{
 			StatusCode: 200,
-			Body:       "GetApplicationsHandler",
+			Body:       "GetIntegrationsHandler",
 		}
 		return response, nil
 	}
-	expectedStatusCode := 200
-	router.GET("/applications", GetApplicationsHandler)
+	expectedStatusCode := 404
+	router.GET("/integrations", GetIntegrationsHandler)
 	response, _ := router.Start(ctx, request)
 	if response.StatusCode != expectedStatusCode {
 		t.Errorf("expected status code %v, got %v", expectedStatusCode, response.StatusCode)
