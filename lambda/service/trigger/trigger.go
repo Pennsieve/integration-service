@@ -41,6 +41,7 @@ func (t *ApplicationTrigger) Run(ctx context.Context) error {
 		ApplicationId: t.Integration.ApplicationID,
 		DatasetNodeId: t.Integration.DatasetNodeID,
 		PackageIds:    t.Integration.PackageIDs,
+		Params:        t.Integration.Params,
 	}
 	err := t.Store.Insert(ctx, store_integration)
 	if err != nil {
