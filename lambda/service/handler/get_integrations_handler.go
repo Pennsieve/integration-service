@@ -47,7 +47,7 @@ func GetIntegrationsHandler(ctx context.Context, request events.APIGatewayV2HTTP
 		},
 		DatasetNodeID: integration.DatasetNodeId,
 		PackageIDs:    integration.PackageIds,
-		Workflow:      integration.Workflow.([]models.Application),
+		Workflow:      integration.Workflow,
 		Params:        integration.Params,
 	})
 	if err != nil {

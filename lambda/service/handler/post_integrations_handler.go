@@ -70,7 +70,7 @@ func PostIntegrationsHandler(ctx context.Context, request events.APIGatewayV2HTT
 	applicationTrigger := trigger.NewApplicationTrigger(httpClient, application,
 		integration, dynamo_store)
 	// validate
-	if applicationTrigger.Validate() != nil {
+	if err := applicationTrigger.Validate(); err != nil {
 		log.Println(err.Error())
 		return events.APIGatewayV2HTTPResponse{
 			StatusCode: 422,
