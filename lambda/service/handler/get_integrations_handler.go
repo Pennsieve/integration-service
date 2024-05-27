@@ -42,8 +42,12 @@ func GetIntegrationsHandler(ctx context.Context, request events.APIGatewayV2HTTP
 	m, err := json.Marshal(models.Integration{
 		Uuid:          integration.Uuid,
 		ApplicationID: integration.ApplicationId,
+		ComputeNode: models.ComputeNode{
+			ComputeNodeUuid: integration.ComputeNodeUuid,
+		},
 		DatasetNodeID: integration.DatasetNodeId,
 		PackageIDs:    integration.PackageIds,
+		Workflow:      integration.Workflow,
 		Params:        integration.Params,
 	})
 	if err != nil {

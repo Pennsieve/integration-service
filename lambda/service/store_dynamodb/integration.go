@@ -6,11 +6,13 @@ import (
 )
 
 type Integration struct {
-	Uuid          string      `dynamodbav:"uuid"`
-	ApplicationId int64       `dynamodbav:"applicationId"`
-	DatasetNodeId string      `dynamodbav:"datasetNodeId"`
-	PackageIds    []string    `dynamodbav:"packageIds"`
-	Params        interface{} `dynamodbav:"params"`
+	Uuid            string      `dynamodbav:"uuid"`
+	ComputeNodeUuid string      `dynamodbav:"computeNodeUuid"`
+	ApplicationId   int64       `dynamodbav:"applicationId"`
+	DatasetNodeId   string      `dynamodbav:"datasetNodeId"`
+	PackageIds      []string    `dynamodbav:"packageIds"`
+	Workflow        interface{} `dynamodbav:"workflow"`
+	Params          interface{} `dynamodbav:"params"`
 }
 
 func (i Integration) GetKey() map[string]types.AttributeValue {
