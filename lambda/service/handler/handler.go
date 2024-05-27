@@ -20,5 +20,6 @@ func IntegrationServiceHandler(ctx context.Context, request events.APIGatewayV2H
 	// register routes based on their supported methods
 	router.POST("/integrations", PostIntegrationsHandler)
 	router.GET("/integrations", GetIntegrationsHandler)
+	router.POST("/workflows", PostWorkflowsHandler)
 	return router.Start(ctx, request)
 }
