@@ -11,10 +11,11 @@ type Integration struct {
 }
 
 type Application struct {
-	ApplicationUuid string      `json:"uuid"`
-	ApplicationId   string      `json:"applicationId"`
-	ApplicationType string      `json:"applicationType"`
-	Params          interface{} `json:"params,omitempty"`
+	ApplicationUuid          string      `json:"uuid"`
+	ApplicationId            string      `json:"applicationId"`
+	ApplicationType          string      `json:"applicationType"`
+	ApplicationContainerName string      `json:"applicationContainerName"`
+	Params                   interface{} `json:"params,omitempty"`
 }
 type ComputeNode struct {
 	ComputeNodeUuid       string `json:"uuid"`
