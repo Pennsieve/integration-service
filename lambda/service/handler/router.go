@@ -40,7 +40,12 @@ func (r *LambdaRouter) GET(routeKey string, handler RouterHandlerFunc) {
 }
 
 func (r *LambdaRouter) Start(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	if r.authorizer.IsAuthorized(ctx) {
+	authorized := r.authorizer.IsAuthorized(ctx)
+	if utils.ExtractRoute(request.RouteKey) == "/workflows" { // temporary exclusion
+		authorized = true
+	}
+
+	if authorized {
 		routeKey := utils.ExtractRoute(request.RouteKey)
 		switch request.RequestContext.HTTP.Method {
 		case http.MethodPost:
