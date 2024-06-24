@@ -12,5 +12,5 @@ type Integration struct {
 
 type ComputeNode struct {
 	ComputeNodeUuid       string `json:"uuid"`
-	ComputeNodeGatewayUrl string `json:"computeNodeGatewayUrl"`
+	ComputeNodeGatewayUrl string `json:"computeNodeGatewayUrl,omitempty"`
 }
