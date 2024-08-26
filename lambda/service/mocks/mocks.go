@@ -41,6 +41,11 @@ func (r *MockDynamoDBStore) GetById(ctx context.Context, integrationId string) (
 	return store_dynamodb.Integration{}, nil
 }
 
+func (r *MockDynamoDBStore) Get(ctx context.Context, organizationId string, params map[string]string) ([]store_dynamodb.Integration, error) {
+
+	return []store_dynamodb.Integration{}, nil
+}
+
 func NewMockDynamoDBStore() store_dynamodb.DynamoDBStore {
 	return &MockDynamoDBStore{}
 }
