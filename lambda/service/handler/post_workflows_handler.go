@@ -22,18 +22,18 @@ func PostWorkflowsHandler(ctx context.Context, request events.APIGatewayV2HTTPRe
 	if err := json.Unmarshal([]byte(request.Body), &integration); err != nil {
 		log.Println(err.Error())
 		return events.APIGatewayV2HTTPResponse{
-			StatusCode: 500,
-			Body:       handlerName,
-		}, ErrUnmarshaling
+			StatusCode: http.StatusInternalServerError,
+			Body:       handlerError(handlerName, ErrUnmarshaling),
+		}, nil
 	}
 
 	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
 		log.Println(err.Error())
 		return events.APIGatewayV2HTTPResponse{
-			StatusCode: 500,
-			Body:       handlerName,
-		}, ErrConfig
+			StatusCode: http.StatusInternalServerError,
+			Body:       handlerError(handlerName, ErrConfig),
+		}, nil
 	}
 	dynamoDBClient := dynamodb.NewFromConfig(cfg)
 
@@ -47,14 +47,25 @@ func PostWorkflowsHandler(ctx context.Context, request events.APIGatewayV2HTTPRe
 	if err := computeTrigger.Run(ctx); err != nil {
 		log.Println(err.Error())
 		return events.APIGatewayV2HTTPResponse{
-			StatusCode: 500,
-			Body:       handlerName,
-		}, ErrRunningTrigger
+			StatusCode: http.StatusInternalServerError,
+			Body:       handlerError(handlerName, ErrRunningTrigger),
+		}, nil
+	}
+
+	m, err := json.Marshal(models.IntegrationResponse{
+		Message: "Workflow successfully initiated",
+	})
+	if err != nil {
+		log.Println(err.Error())
+		return events.APIGatewayV2HTTPResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       handlerError(handlerName, ErrMarshaling),
+		}, nil
 	}
 
 	response := events.APIGatewayV2HTTPResponse{
-		StatusCode: 200,
-		Body:       handlerName,
+		StatusCode: http.StatusOK,
+		Body:       string(m),
 	}
 	return response, nil
 }

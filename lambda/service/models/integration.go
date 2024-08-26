@@ -14,3 +14,7 @@ type ComputeNode struct {
 	ComputeNodeUuid       string `json:"uuid"`
 	ComputeNodeGatewayUrl string `json:"computeNodeGatewayUrl,omitempty"`
 }
+
+type IntegrationResponse struct {
+	Message string `json:"message"`
+}

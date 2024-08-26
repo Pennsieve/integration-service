@@ -2,9 +2,11 @@ package store_dynamodb
 
 import (
 	"context"
+	"fmt"
 	"log"
 
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go/aws"
 )
@@ -12,6 +14,7 @@ import (
 type DynamoDBStore interface {
 	Insert(context.Context, Integration) error
 	GetById(context.Context, string) (Integration, error)
+	Get(context.Context, string, map[string]string) ([]Integration, error)
 }
 
 type IntegrationDatabaseStore struct {
@@ -52,4 +55,42 @@ func (r *IntegrationDatabaseStore) GetById(ctx context.Context, integrationId st
 	}
 
 	return integration, err
+}
+
+func (r *IntegrationDatabaseStore) Get(ctx context.Context, organizationId string, params map[string]string) ([]Integration, error) {
+	integrations := []Integration{}
+
+	var c expression.ConditionBuilder
+	c = expression.Name("organizationId").Equal((expression.Value(organizationId)))
+
+	if computeNodeUuid, found := params["computeNodeUuid"]; found {
+		c = c.And(expression.Name("computeNodeUuid").Equal((expression.Value(computeNodeUuid))))
+	}
+
+	if datasetNodeId, found := params["datasetNodeId"]; found {
+		c = c.And(expression.Name("datasetNodeId").Equal((expression.Value(datasetNodeId))))
+	}
+
+	expr, err := expression.NewBuilder().WithFilter(c).Build()
+	if err != nil {
+		return integrations, fmt.Errorf("error building expression: %w", err)
+	}
+
+	response, err := r.DB.Scan(ctx, &dynamodb.ScanInput{
+		ExpressionAttributeNames:  expr.Names(),
+		ExpressionAttributeValues: expr.Values(),
+		FilterExpression:          expr.Filter(),
+		ProjectionExpression:      expr.Projection(),
+		TableName:                 aws.String(r.TableName),
+	})
+	if err != nil {
+		return integrations, fmt.Errorf("error getting integrations: %w", err)
+	}
+
+	err = attributevalue.UnmarshalListOfMaps(response.Items, &integrations)
+	if err != nil {
+		return integrations, fmt.Errorf("error unmarshaling integrations: %w", err)
+	}
+
+	return integrations, nil
 }
