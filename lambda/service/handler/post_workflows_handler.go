@@ -14,6 +14,7 @@ import (
 	"github.com/pennsieve/integration-service/service/compute_trigger"
 	"github.com/pennsieve/integration-service/service/models"
 	"github.com/pennsieve/integration-service/service/store_dynamodb"
+	"github.com/pennsieve/pennsieve-go-core/pkg/authorizer"
 )
 
 func PostWorkflowsHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
@@ -26,6 +27,9 @@ func PostWorkflowsHandler(ctx context.Context, request events.APIGatewayV2HTTPRe
 			Body:       handlerError(handlerName, ErrUnmarshaling),
 		}, nil
 	}
+
+	claims := authorizer.ParseClaims(request.RequestContext.Authorizer.Lambda)
+	organizationId := claims.OrgClaim.NodeId
 
 	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
@@ -42,7 +46,7 @@ func PostWorkflowsHandler(ctx context.Context, request events.APIGatewayV2HTTPRe
 
 	// create compute node trigger
 	httpClient := clients.NewComputeRestClient(&http.Client{}, integration.ComputeNode.ComputeNodeGatewayUrl)
-	computeTrigger := compute_trigger.NewComputeTrigger(httpClient, integration, dynamo_store)
+	computeTrigger := compute_trigger.NewComputeTrigger(httpClient, integration, dynamo_store, organizationId)
 	// run
 	if err := computeTrigger.Run(ctx); err != nil {
 		log.Println(err.Error())

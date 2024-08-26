@@ -41,7 +41,7 @@ func getClient() *dynamodb.Client {
 	return svc
 }
 
-func TestInsertGet(t *testing.T) {
+func TestInsertGetById(t *testing.T) {
 	tableName := "integrations"
 	dynamoDBClient := getClient()
 
@@ -75,6 +75,55 @@ func TestInsertGet(t *testing.T) {
 
 	if integrationItem.Uuid != integrationId {
 		t.Errorf("expected uuid to equal %s", integrationId)
+	}
+
+	// delete table
+	err = DeleteTable(dynamoDBClient, tableName)
+	if err != nil {
+		t.Fatalf("err creating table")
+	}
+
+}
+
+func TestInsertGet(t *testing.T) {
+	tableName := "integrations"
+	dynamoDBClient := getClient()
+	organizationId := "someOrganizationId"
+
+	// create table
+	_, err := CreateIntegrationsTable(dynamoDBClient, tableName)
+	if err != nil {
+		t.Fatalf("err creating table")
+	}
+	dynamo_store := store_dynamodb.NewIntegrationDatabaseStore(dynamoDBClient, tableName)
+	id := uuid.New()
+	integrationId := id.String()
+	packageIds := []string{"packageId1", "packageId2"}
+	params := `{
+		"target_path" : "output-folder"
+	}`
+	store_integration := store_dynamodb.Integration{
+		Uuid:            integrationId,
+		ComputeNodeUuid: "someComputeNodeUuid",
+		DatasetNodeId:   "someDatasetNodeId",
+		PackageIds:      packageIds,
+		Params:          params,
+		OrganizationId:  organizationId,
+	}
+	err = dynamo_store.Insert(context.Background(), store_integration)
+	if err != nil {
+		t.Errorf("error inserting item into table")
+	}
+	queryParams := make(map[string]string)
+	queryParams["computeNodeUuid"] = "someComputeNodeUuid"
+	queryParams["datasetNodeId"] = "someDatasetNodeId"
+	integrationItems, err := dynamo_store.Get(context.Background(), organizationId, queryParams)
+	if err != nil {
+		t.Errorf("error inserting item into table")
+	}
+
+	if len(integrationItems) != 1 {
+		t.Errorf("expected number of integration items to equal 1, but got %v", len(integrationItems))
 	}
 
 	// delete table
