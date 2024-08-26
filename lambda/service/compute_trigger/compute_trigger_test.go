@@ -11,10 +11,11 @@ import (
 
 func TestRun(t *testing.T) {
 	integration := models.Integration{}
+	organizationId := "someOrganizationId"
 
 	mockClient := mocks.NewMockClient()
 	mockStore := mocks.NewMockDynamoDBStore()
-	computeTrigger := compute_trigger.NewComputeTrigger(mockClient, integration, mockStore)
+	computeTrigger := compute_trigger.NewComputeTrigger(mockClient, integration, mockStore, organizationId)
 	ctx := context.Background()
 	err := computeTrigger.Run(ctx)
 	if err != nil {

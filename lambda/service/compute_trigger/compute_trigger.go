@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"log"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/pennsieve/integration-service/service/clients"
@@ -17,13 +18,14 @@ type Trigger interface {
 }
 
 type ComputeTrigger struct {
-	Client      clients.Client
-	Integration models.Integration
-	Store       store_dynamodb.DynamoDBStore
+	Client         clients.Client
+	Integration    models.Integration
+	Store          store_dynamodb.DynamoDBStore
+	OrganizationId string
 }
 
-func NewComputeTrigger(client clients.Client, integration models.Integration, store store_dynamodb.DynamoDBStore) Trigger {
-	return &ComputeTrigger{client, integration, store}
+func NewComputeTrigger(client clients.Client, integration models.Integration, store store_dynamodb.DynamoDBStore, organizationId string) Trigger {
+	return &ComputeTrigger{client, integration, store, organizationId}
 }
 
 // runs trigger
@@ -39,6 +41,8 @@ func (t *ComputeTrigger) Run(ctx context.Context) error {
 		PackageIds:      t.Integration.PackageIDs,
 		Workflow:        t.Integration.Workflow,
 		Params:          t.Integration.Params,
+		OrganizationId:  t.OrganizationId,
+		Start:           time.Now().UTC().String(),
 	}
 	err := t.Store.Insert(ctx, store_integration)
 	if err != nil {

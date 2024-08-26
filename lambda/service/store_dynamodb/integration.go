@@ -13,6 +13,9 @@ type Integration struct {
 	PackageIds      []string    `dynamodbav:"packageIds"`
 	Workflow        interface{} `dynamodbav:"workflow"`
 	Params          interface{} `dynamodbav:"params"`
+	OrganizationId  string      `dynamodbav:"organizationId"`
+	Start           string      `dynamodbav:"start"`
+	End             string      `dynamodbav:"end"`
 }
 
 func (i Integration) GetKey() map[string]types.AttributeValue {

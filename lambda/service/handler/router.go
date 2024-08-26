@@ -56,7 +56,12 @@ func (r *LambdaRouter) Start(ctx context.Context, request events.APIGatewayV2HTT
 				return handleError()
 			}
 		case http.MethodGet:
-			return GetIntegrationsHandler(ctx, request) // TODO: refactor for multiple GET routes
+			f, ok := r.getRoutes[routeKey]
+			if ok {
+				return f(ctx, request)
+			} else {
+				return handleError()
+			}
 		default:
 			return events.APIGatewayV2HTTPResponse{
 				StatusCode: 422,
