@@ -109,6 +109,7 @@ func TestInsertGet(t *testing.T) {
 		PackageIds:      packageIds,
 		Params:          params,
 		OrganizationId:  organizationId,
+		Start:           time.Now().UTC().String(),
 	}
 	err = dynamo_store.Insert(context.Background(), store_integration)
 	if err != nil {
