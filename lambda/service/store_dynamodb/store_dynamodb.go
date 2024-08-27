@@ -8,6 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go/aws"
 )
 
@@ -15,6 +16,7 @@ type DynamoDBStore interface {
 	Insert(context.Context, Integration) error
 	GetById(context.Context, string) (Integration, error)
 	Get(context.Context, string, map[string]string) ([]Integration, error)
+	Update(context.Context, Integration, string) error
 }
 
 type IntegrationDatabaseStore struct {
@@ -93,4 +95,25 @@ func (r *IntegrationDatabaseStore) Get(ctx context.Context, organizationId strin
 	}
 
 	return integrations, nil
+}
+
+func (r *IntegrationDatabaseStore) Update(ctx context.Context, integration Integration, integrationId string) error {
+	key, err := attributevalue.MarshalMap(IntegrationKey{Uuid: integrationId})
+	if err != nil {
+		return fmt.Errorf("error marshaling key for update: %w", err)
+	}
+
+	_, err = r.DB.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName: aws.String(r.TableName),
+		Key:       key,
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":c": &types.AttributeValueMemberS{Value: integration.CompletedAt},
+		},
+		UpdateExpression: aws.String("set completedAt = :c"),
+	})
+	if err != nil {
+		return fmt.Errorf("error updating integration: %w", err)
+	}
+
+	return nil
 }

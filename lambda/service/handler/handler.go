@@ -22,6 +22,7 @@ func IntegrationServiceHandler(ctx context.Context, request events.APIGatewayV2H
 
 	router.GET("/integrations/{id}", GetIntegrationHandler)
 	router.GET("/integrations", GetIntegrationsHandler)
+	router.PUT("/integrations", PutIntegrationsHandler)
 	router.POST("/workflows", PostWorkflowsHandler)
 	return router.Start(ctx, request)
 }
