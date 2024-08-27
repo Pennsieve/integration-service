@@ -49,6 +49,8 @@ func GetIntegrationHandler(ctx context.Context, request events.APIGatewayV2HTTPR
 		PackageIDs:    integration.PackageIds,
 		Workflow:      integration.Workflow,
 		Params:        integration.Params,
+		StartedAt:     integration.StartedAt,
+		CompletedAt:   integration.CompletedAt,
 	})
 	if err != nil {
 		log.Println(err.Error())
