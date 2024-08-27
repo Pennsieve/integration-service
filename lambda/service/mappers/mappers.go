@@ -19,6 +19,8 @@ func DynamoDBIntegrationToJsonIntegration(dynamoIntegrations []store_dynamodb.In
 			PackageIDs:    a.PackageIds,
 			Workflow:      a.Workflow,
 			Params:        a.Params,
+			StartedAt:     a.StartedAt,
+			CompletedAt:   a.CompletedAt,
 		})
 	}
 
