@@ -70,7 +70,7 @@ func TestInsertGetById(t *testing.T) {
 	}
 	integrationItem, err := dynamo_store.GetById(context.Background(), integrationId)
 	if err != nil {
-		t.Errorf("error inserting item into table")
+		t.Errorf("error getting item in table")
 	}
 
 	if integrationItem.Uuid != integrationId {
@@ -109,7 +109,7 @@ func TestInsertGet(t *testing.T) {
 		PackageIds:      packageIds,
 		Params:          params,
 		OrganizationId:  organizationId,
-		Start:           time.Now().UTC().String(),
+		StartedAt:       time.Now().UTC().String(),
 	}
 	err = dynamo_store.Insert(context.Background(), store_integration)
 	if err != nil {
@@ -120,11 +120,68 @@ func TestInsertGet(t *testing.T) {
 	queryParams["datasetNodeId"] = "someDatasetNodeId"
 	integrationItems, err := dynamo_store.Get(context.Background(), organizationId, queryParams)
 	if err != nil {
-		t.Errorf("error inserting item into table")
+		t.Errorf("error getting item in table %v", err)
 	}
 
 	if len(integrationItems) != 1 {
 		t.Errorf("expected number of integration items to equal 1, but got %v", len(integrationItems))
+	}
+
+	// delete table
+	err = DeleteTable(dynamoDBClient, tableName)
+	if err != nil {
+		t.Fatalf("err creating table")
+	}
+
+}
+
+func TestInsertPut(t *testing.T) {
+	tableName := "integrations"
+	dynamoDBClient := getClient()
+	organizationId := "someOrganizationId"
+
+	// create table
+	_, err := CreateIntegrationsTable(dynamoDBClient, tableName)
+	if err != nil {
+		t.Fatalf("err creating table")
+	}
+	dynamo_store := store_dynamodb.NewIntegrationDatabaseStore(dynamoDBClient, tableName)
+	id := uuid.New()
+	integrationId := id.String()
+	packageIds := []string{"packageId1", "packageId2"}
+	params := `{
+		"target_path" : "output-folder"
+	}`
+	store_integration := store_dynamodb.Integration{
+		Uuid:            integrationId,
+		ComputeNodeUuid: "someComputeNodeUuid",
+		DatasetNodeId:   "someDatasetNodeId",
+		PackageIds:      packageIds,
+		Params:          params,
+		OrganizationId:  organizationId,
+		StartedAt:       time.Now().UTC().String(),
+	}
+	err = dynamo_store.Insert(context.Background(), store_integration)
+	if err != nil {
+		t.Errorf("error inserting item into table %v", err)
+	}
+
+	updated_store_integration := store_dynamodb.Integration{
+		CompletedAt: time.Now().UTC().String(),
+	}
+
+	err = dynamo_store.Update(context.Background(), updated_store_integration, integrationId)
+	if err != nil {
+		t.Errorf("error updating item into table %v", err)
+	}
+
+	integrationItem, err := dynamo_store.GetById(context.Background(), integrationId)
+	if err != nil {
+		t.Errorf("error getting item in table %v", err)
+	}
+
+	if integrationItem.CompletedAt == "" {
+		t.Errorf("expected end to be updated")
 	}
 
 	// delete table

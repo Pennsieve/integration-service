@@ -8,6 +8,8 @@ type Integration struct {
 	PackageIDs    []string    `json:"packageIds"`
 	Workflow      interface{} `json:"workflow,omitempty"`
 	Params        interface{} `json:"params,omitempty"`
+	StartedAt     string      `json:"startedAt"`
+	CompletedAt   string      `json:"completedAt"`
 }
 
 type ComputeNode struct {

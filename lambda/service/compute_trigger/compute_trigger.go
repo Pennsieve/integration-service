@@ -42,7 +42,7 @@ func (t *ComputeTrigger) Run(ctx context.Context) error {
 		Workflow:        t.Integration.Workflow,
 		Params:          t.Integration.Params,
 		OrganizationId:  t.OrganizationId,
-		Start:           time.Now().UTC().String(),
+		StartedAt:       time.Now().UTC().String(),
 	}
 	err := t.Store.Insert(ctx, store_integration)
 	if err != nil {
