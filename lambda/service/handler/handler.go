@@ -21,10 +21,12 @@ func IntegrationServiceHandler(ctx context.Context, request events.APIGatewayV2H
 	router.POST("/integrations", PostIntegrationsHandler)   // deprecated
 	router.GET("/integrations", GetIntegrationsHandler)     // deprecated
 	router.GET("/integrations/{id}", GetIntegrationHandler) // deprecated
-	router.PUT("/integrations", PutIntegrationsHandler)
+	router.PUT("/integrations", PutIntegrationsHandler)     // deprecated
 
 	router.POST("/workflows", PostWorkflowsHandler)
+	router.POST("/workflows/instances", PostWorkflowInstancesHandler)
 	router.GET("/workflows/instances", GetWorkflowInstancesHandler)
 	router.GET("/workflows/instances/{id}", GetWorkflowInstanceHandler)
+	router.PUT("/workflows/instances", PutWorkflowInstancesHandler)
 	return router.Start(ctx, request)
 }
