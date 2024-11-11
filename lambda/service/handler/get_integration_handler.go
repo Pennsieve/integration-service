@@ -16,7 +16,15 @@ import (
 
 func GetIntegrationHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	handlerName := "GetIntegrationHandler"
-	uuid := request.PathParameters["id"]
+	var uuid string
+	idValue, ok := request.PathParameters["id"]
+	if ok {
+		uuid = idValue
+	}
+	integrationIdValue, ok := request.PathParameters["integration_id"]
+	if ok {
+		uuid = integrationIdValue
+	}
 
 	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {

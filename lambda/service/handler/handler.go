@@ -18,10 +18,11 @@ func IntegrationServiceHandler(ctx context.Context, request events.APIGatewayV2H
 	applicationAuthorizer := authorization.NewApplicationAuthorizer(request)
 	router := NewLambdaRouter(applicationAuthorizer)
 	// register routes based on their supported methods
-	router.POST("/integrations", PostIntegrationsHandler)   // deprecated
-	router.GET("/integrations", GetIntegrationsHandler)     // deprecated
-	router.GET("/integrations/{id}", GetIntegrationHandler) // deprecated
-	router.PUT("/integrations", PutIntegrationsHandler)     // deprecated
+	router.POST("/integrations", PostIntegrationsHandler)               // deprecated
+	router.GET("/integrations", GetIntegrationsHandler)                 // deprecated
+	router.GET("/integrations/{id}", GetIntegrationHandler)             // deprecated
+	router.GET("/integrations/{integration_id}", GetIntegrationHandler) // deprecated, backward-compatibility
+	router.PUT("/integrations", PutIntegrationsHandler)                 // deprecated
 
 	router.POST("/workflows", PostWorkflowsHandler)
 	router.POST("/workflows/instances", PostWorkflowInstancesHandler)
