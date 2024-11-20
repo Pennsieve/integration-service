@@ -5,10 +5,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 )
 
-type Integration struct {
+type WorkflowInstance struct {
 	Uuid            string      `dynamodbav:"uuid"`
 	ComputeNodeUuid string      `dynamodbav:"computeNodeUuid"`
-	ApplicationId   int64       `dynamodbav:"applicationId"`
 	DatasetNodeId   string      `dynamodbav:"datasetNodeId"`
 	PackageIds      []string    `dynamodbav:"packageIds"`
 	Workflow        interface{} `dynamodbav:"workflow"`
@@ -18,11 +17,11 @@ type Integration struct {
 	CompletedAt     string      `dynamodbav:"completedAt"`
 }
 
-type IntegrationKey struct {
+type WorkflowInstanceKey struct {
 	Uuid string `dynamodbav:"uuid"`
 }
 
-func (i Integration) GetKey() map[string]types.AttributeValue {
+func (i WorkflowInstance) GetKey() map[string]types.AttributeValue {
 	uuid, err := attributevalue.Marshal(i.Uuid)
 	if err != nil {
 		panic(err)

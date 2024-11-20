@@ -17,7 +17,7 @@ func TestValidate(t *testing.T) {
 		URL:        "http://mock-application:8081/mock",
 		IsDisabled: true,
 	}
-	integration := models.Integration{}
+	integration := models.WorkflowInstance{}
 
 	mockClient := mocks.NewMockClient()
 	mockStore := mocks.NewMockDynamoDBStore()
@@ -36,7 +36,7 @@ func TestRun(t *testing.T) {
 		URL:        "http://mock-application:8081/mock",
 		IsDisabled: true,
 	}
-	integration := models.Integration{}
+	integration := models.WorkflowInstance{}
 
 	mockClient := mocks.NewMockClient()
 	mockStore := mocks.NewMockDynamoDBStore()

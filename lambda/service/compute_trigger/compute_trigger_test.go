@@ -10,7 +10,7 @@ import (
 )
 
 func TestRun(t *testing.T) {
-	integration := models.Integration{}
+	integration := models.WorkflowInstance{}
 	organizationId := "someOrganizationId"
 
 	mockClient := mocks.NewMockClient()

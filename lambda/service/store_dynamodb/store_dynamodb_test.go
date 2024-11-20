@@ -46,20 +46,19 @@ func TestInsertGetById(t *testing.T) {
 	dynamoDBClient := getClient()
 
 	// create table
-	_, err := CreateIntegrationsTable(dynamoDBClient, tableName)
+	_, err := CreateWorkflowInstancesTable(dynamoDBClient, tableName)
 	if err != nil {
 		t.Fatalf("err creating table")
 	}
-	dynamo_store := store_dynamodb.NewIntegrationDatabaseStore(dynamoDBClient, tableName)
+	dynamo_store := store_dynamodb.NewWorkflowInstanceDatabaseStore(dynamoDBClient, tableName)
 	id := uuid.New()
 	integrationId := id.String()
 	packageIds := []string{"packageId1", "packageId2"}
 	params := `{
 		"target_path" : "output-folder"
 	}`
-	store_integration := store_dynamodb.Integration{
+	store_integration := store_dynamodb.WorkflowInstance{
 		Uuid:          integrationId,
-		ApplicationId: 1,
 		DatasetNodeId: "xyz",
 		PackageIds:    packageIds,
 		Params:        params,
@@ -91,18 +90,18 @@ func TestInsertGet(t *testing.T) {
 	organizationId := "someOrganizationId"
 
 	// create table
-	_, err := CreateIntegrationsTable(dynamoDBClient, tableName)
+	_, err := CreateWorkflowInstancesTable(dynamoDBClient, tableName)
 	if err != nil {
 		t.Fatalf("err creating table")
 	}
-	dynamo_store := store_dynamodb.NewIntegrationDatabaseStore(dynamoDBClient, tableName)
+	dynamo_store := store_dynamodb.NewWorkflowInstanceDatabaseStore(dynamoDBClient, tableName)
 	id := uuid.New()
 	integrationId := id.String()
 	packageIds := []string{"packageId1", "packageId2"}
 	params := `{
 		"target_path" : "output-folder"
 	}`
-	store_integration := store_dynamodb.Integration{
+	store_integration := store_dynamodb.WorkflowInstance{
 		Uuid:            integrationId,
 		ComputeNodeUuid: "someComputeNodeUuid",
 		DatasetNodeId:   "someDatasetNodeId",
@@ -141,18 +140,18 @@ func TestInsertPut(t *testing.T) {
 	organizationId := "someOrganizationId"
 
 	// create table
-	_, err := CreateIntegrationsTable(dynamoDBClient, tableName)
+	_, err := CreateWorkflowInstancesTable(dynamoDBClient, tableName)
 	if err != nil {
 		t.Fatalf("err creating table")
 	}
-	dynamo_store := store_dynamodb.NewIntegrationDatabaseStore(dynamoDBClient, tableName)
+	dynamo_store := store_dynamodb.NewWorkflowInstanceDatabaseStore(dynamoDBClient, tableName)
 	id := uuid.New()
 	integrationId := id.String()
 	packageIds := []string{"packageId1", "packageId2"}
 	params := `{
 		"target_path" : "output-folder"
 	}`
-	store_integration := store_dynamodb.Integration{
+	store_integration := store_dynamodb.WorkflowInstance{
 		Uuid:            integrationId,
 		ComputeNodeUuid: "someComputeNodeUuid",
 		DatasetNodeId:   "someDatasetNodeId",
@@ -166,7 +165,7 @@ func TestInsertPut(t *testing.T) {
 		t.Errorf("error inserting item into table %v", err)
 	}
 
-	updated_store_integration := store_dynamodb.Integration{
+	updated_store_integration := store_dynamodb.WorkflowInstance{
 		CompletedAt: time.Now().UTC().String(),
 	}
 
@@ -192,7 +191,7 @@ func TestInsertPut(t *testing.T) {
 
 }
 
-func CreateIntegrationsTable(dynamoDBClient *dynamodb.Client, tableName string) (*types.TableDescription, error) {
+func CreateWorkflowInstancesTable(dynamoDBClient *dynamodb.Client, tableName string) (*types.TableDescription, error) {
 	var tableDesc *types.TableDescription
 	table, err := dynamoDBClient.CreateTable(context.TODO(), &dynamodb.CreateTableInput{
 		AttributeDefinitions: []types.AttributeDefinition{{

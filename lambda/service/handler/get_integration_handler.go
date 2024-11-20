@@ -29,7 +29,7 @@ func GetIntegrationHandler(ctx context.Context, request events.APIGatewayV2HTTPR
 	dynamoDBClient := dynamodb.NewFromConfig(cfg)
 	integrationsTable := os.Getenv("INTEGRATIONS_TABLE")
 
-	dynamo_store := store_dynamodb.NewIntegrationDatabaseStore(dynamoDBClient, integrationsTable)
+	dynamo_store := store_dynamodb.NewWorkflowInstanceDatabaseStore(dynamoDBClient, integrationsTable)
 	integration, err := dynamo_store.GetById(ctx, uuid)
 	if err != nil {
 		log.Println(err.Error())
@@ -39,9 +39,8 @@ func GetIntegrationHandler(ctx context.Context, request events.APIGatewayV2HTTPR
 		}, nil
 	}
 
-	m, err := json.Marshal(models.Integration{
-		Uuid:          integration.Uuid,
-		ApplicationID: integration.ApplicationId,
+	m, err := json.Marshal(models.WorkflowInstance{
+		Uuid: integration.Uuid,
 		ComputeNode: models.ComputeNode{
 			ComputeNodeUuid: integration.ComputeNodeUuid,
 		},
