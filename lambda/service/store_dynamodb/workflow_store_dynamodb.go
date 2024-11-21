@@ -14,6 +14,7 @@ import (
 type WorkflowDBStore interface {
 	Insert(context.Context, Workflow) error
 	Get(context.Context, string) ([]Workflow, error)
+	GetById(context.Context, string) (Workflow, error)
 }
 
 type WorkflowDatabaseStore struct {
@@ -65,4 +66,21 @@ func (r *WorkflowDatabaseStore) Get(ctx context.Context, organizationId string) 
 	}
 
 	return workflows, nil
+}
+
+func (r *WorkflowDatabaseStore) GetById(ctx context.Context, instanceId string) (Workflow, error) {
+	workflow := Workflow{Uuid: instanceId}
+	response, err := r.DB.GetItem(ctx, &dynamodb.GetItemInput{
+		Key: workflow.GetKey(), TableName: aws.String(r.TableName),
+	})
+	if err != nil {
+		log.Printf("couldn't get info about %v. Here's why: %v\n", instanceId, err)
+	} else {
+		err = attributevalue.UnmarshalMap(response.Item, &workflow)
+		if err != nil {
+			log.Printf("couldn't unmarshal response. Here's why: %v\n", err)
+		}
+	}
+
+	return workflow, err
 }

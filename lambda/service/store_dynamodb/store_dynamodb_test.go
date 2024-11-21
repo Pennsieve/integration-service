@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/google/uuid"
 	"github.com/pennsieve/integration-service/service/store_dynamodb"
+	"github.com/stretchr/testify/assert"
 )
 
 func getEnv(key, fallback string) string {
@@ -72,9 +73,7 @@ func TestInsertGetById(t *testing.T) {
 		t.Errorf("error getting item in table")
 	}
 
-	if integrationItem.Uuid != integrationId {
-		t.Errorf("expected uuid to equal %s", integrationId)
-	}
+	assert.Equal(t, integrationId, integrationItem.Uuid)
 
 	// delete table
 	err = DeleteTable(dynamoDBClient, tableName)
@@ -122,9 +121,7 @@ func TestInsertGet(t *testing.T) {
 		t.Errorf("error getting item in table %v", err)
 	}
 
-	if len(integrationItems) != 1 {
-		t.Errorf("expected number of integration items to equal 1, but got %v", len(integrationItems))
-	}
+	assert.Equal(t, 1, len(integrationItems))
 
 	// delete table
 	err = DeleteTable(dynamoDBClient, tableName)
@@ -179,9 +176,8 @@ func TestInsertPut(t *testing.T) {
 		t.Errorf("error getting item in table %v", err)
 	}
 
-	if integrationItem.CompletedAt == "" {
-		t.Errorf("expected end to be updated")
-	}
+	assert.Equal(t, "someComputeNodeUuid", integrationItem.ComputeNodeUuid)
+	assert.NotEqual(t, "", integrationItem.CompletedAt)
 
 	// delete table
 	err = DeleteTable(dynamoDBClient, tableName)

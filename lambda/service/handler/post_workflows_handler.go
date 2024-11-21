@@ -6,11 +6,14 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/google/uuid"
 	"github.com/pennsieve/integration-service/service/models"
+	"github.com/pennsieve/integration-service/service/store_dynamodb"
 	"github.com/pennsieve/pennsieve-go-core/pkg/authorizer"
 )
 
@@ -26,7 +29,8 @@ func PostWorkflowsHandler(ctx context.Context, request events.APIGatewayV2HTTPRe
 	}
 
 	claims := authorizer.ParseClaims(request.RequestContext.Authorizer.Lambda)
-	_ = claims.OrgClaim.NodeId
+	organizationNodeId := claims.OrgClaim.NodeId
+	userNodeId := claims.UserClaim.NodeId
 
 	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
@@ -36,9 +40,30 @@ func PostWorkflowsHandler(ctx context.Context, request events.APIGatewayV2HTTPRe
 			Body:       handlerError(handlerName, ErrConfig),
 		}, nil
 	}
-	_ = dynamodb.NewFromConfig(cfg)
+	dynamoDBClient := dynamodb.NewFromConfig(cfg)
+	tableName := os.Getenv("WORKFLOWS_TABLE")
 
-	_ = os.Getenv("WORKFLOWS_TABLE")
+	dynamo_store := store_dynamodb.NewWorkflowDatabaseStore(dynamoDBClient, tableName)
+	id := uuid.New()
+	workflowId := id.String()
+
+	store_workflow := store_dynamodb.Workflow{
+		Uuid:           workflowId,
+		Name:           workflow.Name,
+		Description:    workflow.Description,
+		Processors:     workflow.Processors,
+		OrganizationId: organizationNodeId,
+		CreatedAt:      time.Now().UTC().String(),
+		CreatedBy:      userNodeId,
+	}
+	err = dynamo_store.Insert(context.Background(), store_workflow)
+	if err != nil {
+		log.Println(err.Error())
+		return events.APIGatewayV2HTTPResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       handlerError(handlerName, ErrMarshaling),
+		}, nil
+	}
 
 	m, err := json.Marshal(models.IntegrationResponse{
 		Message: "Workflow created",
