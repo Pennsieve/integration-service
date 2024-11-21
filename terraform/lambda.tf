@@ -51,6 +51,7 @@ resource "aws_lambda_function" "integration_service_lambda" {
       REGION = var.aws_region,
       LOG_LEVEL = "info",
       INTEGRATIONS_TABLE = aws_dynamodb_table.integrations_table.name,
+      WORKFLOWS_TABLE = aws_dynamodb_table.workflows_table.name,
     }
   }
 }

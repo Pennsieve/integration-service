@@ -19,12 +19,12 @@ type Trigger interface {
 
 type ComputeTrigger struct {
 	Client         clients.Client
-	Integration    models.Integration
+	Integration    models.WorkflowInstance
 	Store          store_dynamodb.DynamoDBStore
 	OrganizationId string
 }
 
-func NewComputeTrigger(client clients.Client, integration models.Integration, store store_dynamodb.DynamoDBStore, organizationId string) Trigger {
+func NewComputeTrigger(client clients.Client, integration models.WorkflowInstance, store store_dynamodb.DynamoDBStore, organizationId string) Trigger {
 	return &ComputeTrigger{client, integration, store, organizationId}
 }
 
@@ -34,7 +34,7 @@ func (t *ComputeTrigger) Run(ctx context.Context) error {
 	integrationId := id.String()
 
 	// persist to dynamodb
-	store_integration := store_dynamodb.Integration{
+	store_integration := store_dynamodb.WorkflowInstance{
 		Uuid:            integrationId,
 		ComputeNodeUuid: t.Integration.ComputeNode.ComputeNodeUuid,
 		DatasetNodeId:   t.Integration.DatasetNodeID,

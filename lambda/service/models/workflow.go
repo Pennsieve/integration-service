@@ -1,6 +1,6 @@
 package models
 
-type Integration struct {
+type WorkflowInstance struct {
 	Uuid          string      `json:"uuid"`
 	ApplicationID int64       `json:"applicationId,omitempty"`
 	ComputeNode   ComputeNode `json:"computeNode,omitempty"`
@@ -19,4 +19,13 @@ type ComputeNode struct {
 
 type IntegrationResponse struct {
 	Message string `json:"message"`
+}
+
+type Workflow struct {
+	Uuid        string   `json:"uuid"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Processors  []string `json:"processors"`
+	CreatedAt   string   `json:"createdAt"`
+	CreatedBy   string   `json:"createdBy"`
 }

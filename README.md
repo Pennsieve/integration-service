@@ -12,6 +12,6 @@
 
 ## Integration Service Workflow
 1. Service lambda receives payload from frontend
-2. Payload is validated and authorization to integrate determined
+2. Payload is validated and authorization to invoke workflow determined
 3. Payload attributes persisted 
-4. External application invoked
+4. Workflow initiated

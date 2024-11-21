@@ -13,23 +13,23 @@ import (
 )
 
 type DynamoDBStore interface {
-	Insert(context.Context, Integration) error
-	GetById(context.Context, string) (Integration, error)
-	Get(context.Context, string, map[string]string) ([]Integration, error)
-	Update(context.Context, Integration, string) error
+	Insert(context.Context, WorkflowInstance) error
+	GetById(context.Context, string) (WorkflowInstance, error)
+	Get(context.Context, string, map[string]string) ([]WorkflowInstance, error)
+	Update(context.Context, WorkflowInstance, string) error
 }
 
-type IntegrationDatabaseStore struct {
+type WorkflowInstanceDatabaseStore struct {
 	DB        *dynamodb.Client
 	TableName string
 }
 
-func NewIntegrationDatabaseStore(db *dynamodb.Client, tableName string) DynamoDBStore {
-	return &IntegrationDatabaseStore{db, tableName}
+func NewWorkflowInstanceDatabaseStore(db *dynamodb.Client, tableName string) DynamoDBStore {
+	return &WorkflowInstanceDatabaseStore{db, tableName}
 }
 
-func (r *IntegrationDatabaseStore) Insert(ctx context.Context, integration Integration) error {
-	item, err := attributevalue.MarshalMap(integration)
+func (r *WorkflowInstanceDatabaseStore) Insert(ctx context.Context, instanceId WorkflowInstance) error {
+	item, err := attributevalue.MarshalMap(instanceId)
 	if err != nil {
 		return err
 	}
@@ -37,30 +37,30 @@ func (r *IntegrationDatabaseStore) Insert(ctx context.Context, integration Integ
 		TableName: aws.String(r.TableName), Item: item,
 	})
 	if err != nil {
-		log.Printf("couldn't add integration to table. Here's why: %v\n", err)
+		log.Printf("couldn't add instance to table. Here's why: %v\n", err)
 	}
 	return err
 }
 
-func (r *IntegrationDatabaseStore) GetById(ctx context.Context, integrationId string) (Integration, error) {
-	integration := Integration{Uuid: integrationId}
+func (r *WorkflowInstanceDatabaseStore) GetById(ctx context.Context, instanceId string) (WorkflowInstance, error) {
+	workflowInstance := WorkflowInstance{Uuid: instanceId}
 	response, err := r.DB.GetItem(ctx, &dynamodb.GetItemInput{
-		Key: integration.GetKey(), TableName: aws.String(r.TableName),
+		Key: workflowInstance.GetKey(), TableName: aws.String(r.TableName),
 	})
 	if err != nil {
-		log.Printf("couldn't get info about %v. Here's why: %v\n", integrationId, err)
+		log.Printf("couldn't get info about %v. Here's why: %v\n", instanceId, err)
 	} else {
-		err = attributevalue.UnmarshalMap(response.Item, &integration)
+		err = attributevalue.UnmarshalMap(response.Item, &workflowInstance)
 		if err != nil {
 			log.Printf("couldn't unmarshal response. Here's why: %v\n", err)
 		}
 	}
 
-	return integration, err
+	return workflowInstance, err
 }
 
-func (r *IntegrationDatabaseStore) Get(ctx context.Context, organizationId string, params map[string]string) ([]Integration, error) {
-	integrations := []Integration{}
+func (r *WorkflowInstanceDatabaseStore) Get(ctx context.Context, organizationId string, params map[string]string) ([]WorkflowInstance, error) {
+	workflowInstances := []WorkflowInstance{}
 
 	var c expression.ConditionBuilder
 	c = expression.Name("organizationId").Equal((expression.Value(organizationId)))
@@ -75,7 +75,7 @@ func (r *IntegrationDatabaseStore) Get(ctx context.Context, organizationId strin
 
 	expr, err := expression.NewBuilder().WithFilter(c).Build()
 	if err != nil {
-		return integrations, fmt.Errorf("error building expression: %w", err)
+		return workflowInstances, fmt.Errorf("error building expression: %w", err)
 	}
 
 	response, err := r.DB.Scan(ctx, &dynamodb.ScanInput{
@@ -86,19 +86,19 @@ func (r *IntegrationDatabaseStore) Get(ctx context.Context, organizationId strin
 		TableName:                 aws.String(r.TableName),
 	})
 	if err != nil {
-		return integrations, fmt.Errorf("error getting integrations: %w", err)
+		return workflowInstances, fmt.Errorf("error getting instances: %w", err)
 	}
 
-	err = attributevalue.UnmarshalListOfMaps(response.Items, &integrations)
+	err = attributevalue.UnmarshalListOfMaps(response.Items, &workflowInstances)
 	if err != nil {
-		return integrations, fmt.Errorf("error unmarshaling integrations: %w", err)
+		return workflowInstances, fmt.Errorf("error unmarshaling instances: %w", err)
 	}
 
-	return integrations, nil
+	return workflowInstances, nil
 }
 
-func (r *IntegrationDatabaseStore) Update(ctx context.Context, integration Integration, integrationId string) error {
-	key, err := attributevalue.MarshalMap(IntegrationKey{Uuid: integrationId})
+func (r *WorkflowInstanceDatabaseStore) Update(ctx context.Context, workflowInstance WorkflowInstance, instanceId string) error {
+	key, err := attributevalue.MarshalMap(WorkflowInstanceKey{Uuid: instanceId})
 	if err != nil {
 		return fmt.Errorf("error marshaling key for update: %w", err)
 	}
@@ -107,12 +107,12 @@ func (r *IntegrationDatabaseStore) Update(ctx context.Context, integration Integ
 		TableName: aws.String(r.TableName),
 		Key:       key,
 		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":c": &types.AttributeValueMemberS{Value: integration.CompletedAt},
+			":c": &types.AttributeValueMemberS{Value: workflowInstance.CompletedAt},
 		},
 		UpdateExpression: aws.String("set completedAt = :c"),
 	})
 	if err != nil {
-		return fmt.Errorf("error updating integration: %w", err)
+		return fmt.Errorf("error updating instance: %w", err)
 	}
 
 	return nil

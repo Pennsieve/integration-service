@@ -5,13 +5,12 @@ import (
 	"github.com/pennsieve/integration-service/service/store_dynamodb"
 )
 
-func DynamoDBIntegrationToJsonIntegration(dynamoIntegrations []store_dynamodb.Integration) []models.Integration {
-	integrations := []models.Integration{}
+func DynamoDBIntegrationToJsonIntegration(dynamoIntegrations []store_dynamodb.WorkflowInstance) []models.WorkflowInstance {
+	integrations := []models.WorkflowInstance{}
 
 	for _, a := range dynamoIntegrations {
-		integrations = append(integrations, models.Integration{
-			Uuid:          a.Uuid,
-			ApplicationID: a.ApplicationId,
+		integrations = append(integrations, models.WorkflowInstance{
+			Uuid: a.Uuid,
 			ComputeNode: models.ComputeNode{
 				ComputeNodeUuid: a.ComputeNodeUuid,
 			},

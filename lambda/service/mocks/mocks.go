@@ -31,22 +31,22 @@ func NewMockApplicationAuthorizer() authorization.ServiceAuthorizer {
 
 type MockDynamoDBStore struct{}
 
-func (r *MockDynamoDBStore) Insert(ctx context.Context, integration store_dynamodb.Integration) error {
+func (r *MockDynamoDBStore) Insert(ctx context.Context, integration store_dynamodb.WorkflowInstance) error {
 
 	return nil
 }
 
-func (r *MockDynamoDBStore) GetById(ctx context.Context, integrationId string) (store_dynamodb.Integration, error) {
+func (r *MockDynamoDBStore) GetById(ctx context.Context, integrationId string) (store_dynamodb.WorkflowInstance, error) {
 
-	return store_dynamodb.Integration{}, nil
+	return store_dynamodb.WorkflowInstance{}, nil
 }
 
-func (r *MockDynamoDBStore) Get(ctx context.Context, organizationId string, params map[string]string) ([]store_dynamodb.Integration, error) {
+func (r *MockDynamoDBStore) Get(ctx context.Context, organizationId string, params map[string]string) ([]store_dynamodb.WorkflowInstance, error) {
 
-	return []store_dynamodb.Integration{}, nil
+	return []store_dynamodb.WorkflowInstance{}, nil
 }
 
-func (r *MockDynamoDBStore) Update(ctx context.Context, integration store_dynamodb.Integration, integrationId string) error {
+func (r *MockDynamoDBStore) Update(ctx context.Context, integration store_dynamodb.WorkflowInstance, integrationId string) error {
 
 	return nil
 }

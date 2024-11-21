@@ -44,7 +44,7 @@ func (a *ApplicationAuthorizer) IsAuthorized(ctx context.Context) bool {
 	}
 	defer db.Close()
 
-	var integration models.Integration
+	var integration models.WorkflowInstance
 	if err := json.Unmarshal([]byte(a.requestBody), &integration); err != nil {
 		log.Println(err.Error())
 		return false

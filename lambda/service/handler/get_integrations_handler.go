@@ -36,7 +36,7 @@ func GetIntegrationsHandler(ctx context.Context, request events.APIGatewayV2HTTP
 	log.Println("claims.OrgClaim.NodeId", claims.OrgClaim.NodeId)
 	log.Println("claims.OrgClaim.IntId", claims.OrgClaim.IntId)
 
-	dynamo_store := store_dynamodb.NewIntegrationDatabaseStore(dynamoDBClient, integrationsTable)
+	dynamo_store := store_dynamodb.NewWorkflowInstanceDatabaseStore(dynamoDBClient, integrationsTable)
 	dynamoIntegrations, err := dynamo_store.Get(ctx, organizationId, queryParams)
 	if err != nil {
 		log.Println(err.Error())

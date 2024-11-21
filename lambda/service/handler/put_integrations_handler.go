@@ -17,7 +17,7 @@ import (
 
 func PutIntegrationsHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	handlerName := "PutIntegrationsHandler"
-	var integration models.Integration
+	var integration models.WorkflowInstance
 	if err := json.Unmarshal([]byte(request.Body), &integration); err != nil {
 		log.Println(err.Error())
 		return events.APIGatewayV2HTTPResponse{
@@ -38,9 +38,9 @@ func PutIntegrationsHandler(ctx context.Context, request events.APIGatewayV2HTTP
 	}
 	dynamoDBClient := dynamodb.NewFromConfig(cfg)
 	integrationsTable := os.Getenv("INTEGRATIONS_TABLE")
-	dynamo_store := store_dynamodb.NewIntegrationDatabaseStore(dynamoDBClient, integrationsTable)
+	dynamo_store := store_dynamodb.NewWorkflowInstanceDatabaseStore(dynamoDBClient, integrationsTable)
 
-	store_integration := store_dynamodb.Integration{
+	store_integration := store_dynamodb.WorkflowInstance{
 		CompletedAt: integration.CompletedAt,
 	}
 	err = dynamo_store.Update(ctx, store_integration, integration.Uuid)

@@ -22,11 +22,11 @@ type Trigger interface {
 type ApplicationTrigger struct {
 	Client      clients.Client
 	Application store.Application
-	Integration models.Integration
+	Integration models.WorkflowInstance
 	Store       store_dynamodb.DynamoDBStore
 }
 
-func NewApplicationTrigger(client clients.Client, application store.Application, integration models.Integration, store store_dynamodb.DynamoDBStore) Trigger {
+func NewApplicationTrigger(client clients.Client, application store.Application, integration models.WorkflowInstance, store store_dynamodb.DynamoDBStore) Trigger {
 	return &ApplicationTrigger{client, application, integration, store}
 }
 
@@ -36,9 +36,8 @@ func (t *ApplicationTrigger) Run(ctx context.Context) error {
 	integrationId := id.String()
 
 	// persist to dynamodb
-	store_integration := store_dynamodb.Integration{
+	store_integration := store_dynamodb.WorkflowInstance{
 		Uuid:          integrationId,
-		ApplicationId: t.Integration.ApplicationID,
 		DatasetNodeId: t.Integration.DatasetNodeID,
 		PackageIds:    t.Integration.PackageIDs,
 		Params:        t.Integration.Params,
