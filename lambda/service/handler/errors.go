@@ -19,6 +19,7 @@ var ErrUnauthorized = errors.New("not authorized to perform this action")
 var ErrConfig = errors.New("error loading AWS config")
 var ErrMarshaling = errors.New("error marshaling item")
 var ErrDynamoDB = errors.New("error performing action on DynamoDB table")
+var ErrMissingParameter = errors.New("missing parameter")
 
 func handlerError(handlerName string, errorMessage error) string {
 	log.Printf("%s: %s", handlerName, errorMessage.Error())
