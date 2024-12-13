@@ -26,7 +26,7 @@ func TestLambdaRouterPost(t *testing.T) {
 	router := handler.NewLambdaRouter(applicationAuthorizer)
 
 	// POST /integrations
-	router.POST("/integrations", handler.PostIntegrationsHandler)
+	router.POST("/workflows/instances", handler.PostWorkflowInstancesHandler)
 	expectedStatusCode := 404
 	response, _ := router.Start(ctx, request)
 	if response.StatusCode != expectedStatusCode {

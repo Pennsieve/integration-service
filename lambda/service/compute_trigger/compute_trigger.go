@@ -35,14 +35,15 @@ func (t *ComputeTrigger) Run(ctx context.Context) error {
 
 	// persist to dynamodb
 	store_integration := store_dynamodb.WorkflowInstance{
-		Uuid:            integrationId,
-		ComputeNodeUuid: t.Integration.ComputeNode.ComputeNodeUuid,
-		DatasetNodeId:   t.Integration.DatasetNodeID,
-		PackageIds:      t.Integration.PackageIDs,
-		Workflow:        t.Integration.Workflow,
-		Params:          t.Integration.Params,
-		OrganizationId:  t.OrganizationId,
-		StartedAt:       time.Now().UTC().String(),
+		Uuid:                  integrationId,
+		ComputeNodeUuid:       t.Integration.ComputeNode.ComputeNodeUuid,
+		ComputeNodeGatewayUrl: t.Integration.ComputeNode.ComputeNodeGatewayUrl,
+		DatasetNodeId:         t.Integration.DatasetNodeID,
+		PackageIds:            t.Integration.PackageIDs,
+		Workflow:              t.Integration.Workflow,
+		Params:                t.Integration.Params,
+		OrganizationId:        t.OrganizationId,
+		StartedAt:             time.Now().UTC().String(),
 	}
 	err := t.Store.Insert(ctx, store_integration)
 	if err != nil {

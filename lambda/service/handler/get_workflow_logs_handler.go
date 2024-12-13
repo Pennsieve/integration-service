@@ -2,7 +2,7 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -10,14 +10,23 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
-	"github.com/pennsieve/integration-service/service/mappers"
+	"github.com/pennsieve/integration-service/service/clients"
+	"github.com/pennsieve/integration-service/service/log_retriever"
 	"github.com/pennsieve/integration-service/service/store_dynamodb"
-	"github.com/pennsieve/pennsieve-go-core/pkg/authorizer"
 )
 
-func GetWorkflowInstancesHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	handlerName := "GetWorkflowInstancesHandler"
+func GetWorkflowInstanceLogsHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	handlerName := "GetWorkflowInstanceLogsHandler"
+	uuid := request.PathParameters["id"]
 	queryParams := request.QueryStringParameters
+
+	applicationUuid, found := queryParams["applicationUuid"]
+	if !found {
+		return events.APIGatewayV2HTTPResponse{
+			StatusCode: http.StatusUnprocessableEntity,
+			Body:       handlerError(handlerName, ErrMissingParameter),
+		}, nil
+	}
 
 	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
@@ -28,32 +37,35 @@ func GetWorkflowInstancesHandler(ctx context.Context, request events.APIGatewayV
 		}, nil
 	}
 	dynamoDBClient := dynamodb.NewFromConfig(cfg)
+
 	integrationsTable := os.Getenv("INTEGRATIONS_TABLE")
-
-	claims := authorizer.ParseClaims(request.RequestContext.Authorizer.Lambda)
-	organizationId := claims.OrgClaim.NodeId
-
 	dynamo_store := store_dynamodb.NewWorkflowInstanceDatabaseStore(dynamoDBClient, integrationsTable)
-	dynamoIntegrations, err := dynamo_store.Get(ctx, organizationId, queryParams)
+
+	// retrieve logs
+	integration, err := dynamo_store.GetById(ctx, uuid)
 	if err != nil {
 		log.Println(err.Error())
 		return events.APIGatewayV2HTTPResponse{
-			StatusCode: http.StatusInternalServerError,
+			StatusCode: http.StatusNotFound,
 			Body:       handlerError(handlerName, ErrNoRecordsFound),
 		}, nil
 	}
 
-	m, err := json.Marshal(mappers.DynamoDBIntegrationToJsonIntegration(dynamoIntegrations))
+	httpClient := clients.NewComputeRestClient(&http.Client{}, fmt.Sprintf("%s/logs", integration.ComputeNodeGatewayUrl))
+	logRetriever := log_retriever.NewLogRetriever(httpClient, uuid, applicationUuid)
+	// run
+	resp, err := logRetriever.Run(ctx)
 	if err != nil {
 		log.Println(err.Error())
 		return events.APIGatewayV2HTTPResponse{
 			StatusCode: http.StatusInternalServerError,
-			Body:       handlerError(handlerName, ErrDynamoDB),
+			Body:       handlerError(handlerName, ErrRunningTrigger),
 		}, nil
 	}
+
 	response := events.APIGatewayV2HTTPResponse{
 		StatusCode: http.StatusOK,
-		Body:       string(m),
+		Body:       string(resp),
 	}
 	return response, nil
 }

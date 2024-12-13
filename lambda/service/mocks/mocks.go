@@ -15,6 +15,10 @@ func (c *MockClient) Execute(ctx context.Context, b bytes.Buffer) ([]byte, error
 	return nil, nil
 }
 
+func (c *MockClient) Retrieve(ctx context.Context, p map[string]string) ([]byte, error) {
+	return nil, nil
+}
+
 func NewMockClient() clients.Client {
 	return &MockClient{}
 }

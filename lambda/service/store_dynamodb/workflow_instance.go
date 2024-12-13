@@ -6,15 +6,16 @@ import (
 )
 
 type WorkflowInstance struct {
-	Uuid            string      `dynamodbav:"uuid"`
-	ComputeNodeUuid string      `dynamodbav:"computeNodeUuid"`
-	DatasetNodeId   string      `dynamodbav:"datasetNodeId"`
-	PackageIds      []string    `dynamodbav:"packageIds"`
-	Workflow        interface{} `dynamodbav:"workflow"`
-	Params          interface{} `dynamodbav:"params"`
-	OrganizationId  string      `dynamodbav:"organizationId"`
-	StartedAt       string      `dynamodbav:"startedAt"`
-	CompletedAt     string      `dynamodbav:"completedAt"`
+	Uuid                  string      `dynamodbav:"uuid"`
+	ComputeNodeUuid       string      `dynamodbav:"computeNodeUuid"`
+	ComputeNodeGatewayUrl string      `dynamodbav:"computeNodeGatewayUrl"`
+	DatasetNodeId         string      `dynamodbav:"datasetNodeId"`
+	PackageIds            []string    `dynamodbav:"packageIds"`
+	Workflow              interface{} `dynamodbav:"workflow"`
+	Params                interface{} `dynamodbav:"params"`
+	OrganizationId        string      `dynamodbav:"organizationId"`
+	StartedAt             string      `dynamodbav:"startedAt"`
+	CompletedAt           string      `dynamodbav:"completedAt"`
 }
 
 type WorkflowInstanceKey struct {
