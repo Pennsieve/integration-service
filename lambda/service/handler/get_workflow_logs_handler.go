@@ -41,7 +41,6 @@ func GetWorkflowInstanceLogsHandler(ctx context.Context, request events.APIGatew
 	integrationsTable := os.Getenv("INTEGRATIONS_TABLE")
 	dynamo_store := store_dynamodb.NewWorkflowInstanceDatabaseStore(dynamoDBClient, integrationsTable)
 
-	// retrieve logs
 	integration, err := dynamo_store.GetById(ctx, uuid)
 	if err != nil {
 		log.Println(err.Error())
@@ -51,15 +50,24 @@ func GetWorkflowInstanceLogsHandler(ctx context.Context, request events.APIGatew
 		}, nil
 	}
 
+	if integration.ComputeNodeGatewayUrl == "" {
+		log.Println("compute node URL required")
+		return events.APIGatewayV2HTTPResponse{
+			StatusCode: http.StatusUnprocessableEntity,
+			Body:       handlerError(handlerName, ErrRunningLogRetriever),
+		}, nil
+
+	}
+
 	httpClient := clients.NewComputeRestClient(&http.Client{}, fmt.Sprintf("%s/logs", integration.ComputeNodeGatewayUrl))
 	logRetriever := log_retriever.NewLogRetriever(httpClient, uuid, applicationUuid)
-	// run
+	// retrieve logs
 	resp, err := logRetriever.Run(ctx)
 	if err != nil {
 		log.Println(err.Error())
 		return events.APIGatewayV2HTTPResponse{
 			StatusCode: http.StatusInternalServerError,
-			Body:       handlerError(handlerName, ErrRunningTrigger),
+			Body:       handlerError(handlerName, ErrRunningLogRetriever),
 		}, nil
 	}
 
