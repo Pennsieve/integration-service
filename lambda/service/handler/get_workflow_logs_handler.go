@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/pennsieve/integration-service/service/clients"
 	"github.com/pennsieve/integration-service/service/log_retriever"
+	"github.com/pennsieve/integration-service/service/mappers"
 	"github.com/pennsieve/integration-service/service/store_dynamodb"
 )
 
@@ -71,9 +73,26 @@ func GetWorkflowInstanceLogsHandler(ctx context.Context, request events.APIGatew
 		}, nil
 	}
 
-	response := events.APIGatewayV2HTTPResponse{
-		StatusCode: http.StatusOK,
-		Body:       string(resp),
+	mappedResponse, err := mappers.ServiceResponseToAuxiliaryResponse(resp)
+	if err != nil {
+		log.Println(err.Error())
+		return events.APIGatewayV2HTTPResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       handlerError(handlerName, ErrRunningLogRetriever),
+		}, nil
 	}
-	return response, nil
+
+	logs, err := json.Marshal(mappedResponse)
+	if err != nil {
+		log.Println(err.Error())
+		return events.APIGatewayV2HTTPResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       handlerError(handlerName, ErrMarshaling),
+		}, nil
+	}
+
+	return events.APIGatewayV2HTTPResponse{
+		StatusCode: http.StatusOK,
+		Body:       string(logs),
+	}, nil
 }

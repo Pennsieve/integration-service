@@ -1,6 +1,9 @@
 package mappers
 
 import (
+	"encoding/json"
+
+	"github.com/pennsieve/integration-service/service/log_retriever"
 	"github.com/pennsieve/integration-service/service/models"
 	"github.com/pennsieve/integration-service/service/store_dynamodb"
 )
@@ -25,4 +28,13 @@ func DynamoDBIntegrationToJsonIntegration(dynamoIntegrations []store_dynamodb.Wo
 	}
 
 	return integrations
+}
+
+func ServiceResponseToAuxiliaryResponse(resp []byte) (log_retriever.ProcessorLogPayload, error) {
+	var m log_retriever.ProcessorLogPayload
+	if err := json.Unmarshal(resp, &m); err != nil {
+		return log_retriever.ProcessorLogPayload{}, err
+	}
+
+	return m, nil
 }
