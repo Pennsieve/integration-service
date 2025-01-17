@@ -1,7 +1,9 @@
 package utils_test
 
 import (
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/pennsieve/integration-service/service/utils"
@@ -47,5 +49,15 @@ func TestConvertEpochToUTCRFC3339(t *testing.T) {
 	got := utils.ConvertEpochToUTCRFC3339(int64(epoch))
 	if got != expected {
 		t.Errorf("expected %s, got %s", expected, got)
+	}
+}
+
+func TestRunName(t *testing.T) {
+	startedAt := time.Now().UTC()
+	name := ""
+	expected := "run-"
+	got := utils.RunName(name, startedAt)
+	if !strings.Contains(got, expected) {
+		t.Errorf("expected %s to have the substring %s", got, expected)
 	}
 }

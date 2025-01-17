@@ -11,6 +11,7 @@ import (
 	"github.com/pennsieve/integration-service/service/clients"
 	"github.com/pennsieve/integration-service/service/models"
 	"github.com/pennsieve/integration-service/service/store_dynamodb"
+	"github.com/pennsieve/integration-service/service/utils"
 )
 
 type Trigger interface {
@@ -32,10 +33,12 @@ func NewComputeTrigger(client clients.Client, integration models.WorkflowInstanc
 func (t *ComputeTrigger) Run(ctx context.Context) error {
 	id := uuid.New()
 	integrationId := id.String()
+	startedAt := time.Now().UTC()
 
 	// persist to dynamodb
 	store_integration := store_dynamodb.WorkflowInstance{
 		Uuid:                  integrationId,
+		Name:                  utils.RunName(t.Integration.Name, startedAt),
 		ComputeNodeUuid:       t.Integration.ComputeNode.ComputeNodeUuid,
 		ComputeNodeGatewayUrl: t.Integration.ComputeNode.ComputeNodeGatewayUrl,
 		DatasetNodeId:         t.Integration.DatasetNodeID,
@@ -43,7 +46,7 @@ func (t *ComputeTrigger) Run(ctx context.Context) error {
 		Workflow:              t.Integration.Workflow,
 		Params:                t.Integration.Params,
 		OrganizationId:        t.OrganizationId,
-		StartedAt:             time.Now().UTC().String(),
+		StartedAt:             startedAt.String(),
 	}
 	err := t.Store.Insert(ctx, store_integration)
 	if err != nil {

@@ -2,6 +2,7 @@ package models
 
 type WorkflowInstance struct {
 	Uuid          string      `json:"uuid"`
+	Name          string      `json:"name"`
 	ApplicationID int64       `json:"applicationId,omitempty"`
 	ComputeNode   ComputeNode `json:"computeNode,omitempty"`
 	DatasetNodeID string      `json:"datasetId"`
