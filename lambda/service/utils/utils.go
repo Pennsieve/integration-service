@@ -27,3 +27,11 @@ func ConvertEpochToUTCRFC3339(epoch int64) string {
 	t := time.Unix(int64(epoch/1000), 0).UTC()
 	return t.UTC().Format(time.RFC3339)
 }
+
+func RunName(s string, t time.Time) string {
+	if s == "" {
+		return fmt.Sprintf("run-%s", t.Format(time.RFC3339))
+	}
+
+	return s
+}

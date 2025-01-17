@@ -14,6 +14,7 @@ func DynamoDBIntegrationToJsonIntegration(dynamoIntegrations []store_dynamodb.Wo
 	for _, a := range dynamoIntegrations {
 		integrations = append(integrations, models.WorkflowInstance{
 			Uuid: a.Uuid,
+			Name: a.Name,
 			ComputeNode: models.ComputeNode{
 				ComputeNodeUuid:       a.ComputeNodeUuid,
 				ComputeNodeGatewayUrl: a.ComputeNodeGatewayUrl,

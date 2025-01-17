@@ -7,6 +7,7 @@ import (
 
 type WorkflowInstance struct {
 	Uuid                  string      `dynamodbav:"uuid"`
+	Name                  string      `dynamodbav:"uuid"`
 	ComputeNodeUuid       string      `dynamodbav:"computeNodeUuid"`
 	ComputeNodeGatewayUrl string      `dynamodbav:"computeNodeGatewayUrl"`
 	DatasetNodeId         string      `dynamodbav:"datasetNodeId"`
