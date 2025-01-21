@@ -42,5 +42,5 @@ func (r *WorkflowInstanceStatusDatabaseStore) GetAll(ctx context.Context, uuid s
 		return []WorkflowInstanceStatus{}, fmt.Errorf("error unmarshalling workflow instance statuses: %w", err)
 	}
 
-    return items, nil
+	return items, nil
 }

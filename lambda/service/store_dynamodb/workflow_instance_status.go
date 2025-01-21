@@ -6,15 +6,15 @@ import (
 )
 
 type WorkflowInstanceStatus struct {
-	Uuid                  string      `dynamodbav:"uuid"`
-	ProcessorUuid         string      `dynamodbav:"processorUuid"`
-    Status                string      `dynamodbav:"status"`
-    Timestamp             int         `dynamodbav:"timestamp"`
+	Uuid          string `dynamodbav:"uuid"`
+	ProcessorUuid string `dynamodbav:"processorUuid"`
+	Status        string `dynamodbav:"status"`
+	Timestamp     int    `dynamodbav:"timestamp"`
 }
 
 type WorkflowInstanceStatusKey struct {
-	Uuid string `dynamodbav:"uuid"`
-	Timestamp int `dynamodbav:"timestamp"`
+	Uuid      string `dynamodbav:"uuid"`
+	Timestamp int    `dynamodbav:"timestamp"`
 }
 
 func (s WorkflowInstanceStatus) GetKey() map[string]types.AttributeValue {
@@ -28,5 +28,5 @@ func (s WorkflowInstanceStatus) GetKey() map[string]types.AttributeValue {
 		panic(err)
 	}
 
-    return map[string]types.AttributeValue{"uuid": uuid, "timestamp": timestamp}
+	return map[string]types.AttributeValue{"uuid": uuid, "timestamp": timestamp}
 }

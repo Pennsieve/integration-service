@@ -51,22 +51,22 @@ type WorkflowStatus int
 
 const (
 	NotStarted WorkflowStatus = iota
-    Started
-    Failed
-    Succeeded
+	Started
+	Failed
+	Succeeded
 )
 
 func (s WorkflowStatus) String() string {
-    switch s {
-    case NotStarted:
-        return "NOT_STARTED"
-    case Started:
-        return "STARTED"
-    case Failed:
-        return "FAILED"
-    case Succeeded:
-        return "SUCCEEDED"
-    default:
-        return "UNKNOWN"
-    }
+	switch s {
+	case NotStarted:
+		return "NOT_STARTED"
+	case Started:
+		return "STARTED"
+	case Failed:
+		return "FAILED"
+	case Succeeded:
+		return "SUCCEEDED"
+	default:
+		return "UNKNOWN"
+	}
 }
