@@ -13,6 +13,22 @@ type WorkflowInstance struct {
 	CompletedAt   string      `json:"completedAt"`
 }
 
+type StatusMetadata struct {
+	Uuid        string `json:"uuid"`
+	Status      string `json:"status"`
+	StartedAt   string `json:"startedAt"`
+	CompletedAt string `json:"completedAt"`
+}
+
+type WorkflowInstanceStatus struct {
+	StatusMetadata
+	Processors []WorkflowProcessorStatus `json:"processors"`
+}
+
+type WorkflowProcessorStatus struct {
+	StatusMetadata
+}
+
 type ComputeNode struct {
 	ComputeNodeUuid       string `json:"uuid"`
 	ComputeNodeGatewayUrl string `json:"computeNodeGatewayUrl,omitempty"`
@@ -29,4 +45,28 @@ type Workflow struct {
 	Processors  []string `json:"processors"`
 	CreatedAt   string   `json:"createdAt"`
 	CreatedBy   string   `json:"createdBy"`
+}
+
+type WorkflowStatus int
+
+const (
+	NotStarted WorkflowStatus = iota
+    Started
+    Failed
+    Succeeded
+)
+
+func (s WorkflowStatus) String() string {
+    switch s {
+    case NotStarted:
+        return "NOT_STARTED"
+    case Started:
+        return "STARTED"
+    case Failed:
+        return "FAILED"
+    case Succeeded:
+        return "SUCCEEDED"
+    default:
+        return "UNKNOWN"
+    }
 }
