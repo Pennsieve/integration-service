@@ -111,11 +111,10 @@ func groupStatusesByProcessor(workflowInstanceStatuses []store_dynamodb.Workflow
 			ps.Status = item.Status
 		}
 
-		if item.Status == "STARTED" {
+		switch item.Status {
+		case "STARTED":
 			ps.StartedAt = time.Unix(int64(item.Timestamp), 0).UTC().String()
-		}
-
-		if item.Status == "FAILED" || item.Status == "SUCCEEDED" {
+		case "FAILED", "SUCCEEDED", "CANCELLED":
 			ps.CompletedAt = time.Unix(int64(item.Timestamp), 0).UTC().String()
 		}
 
