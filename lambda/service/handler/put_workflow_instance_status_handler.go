@@ -61,7 +61,7 @@ func PutWorkflowInstanceStatusHandler(ctx context.Context, request events.APIGat
 	response := struct {
 		Message string `json:"message"`
 	}{
-		Message: fmt.Sprintf("worklow instance %s and processor %s status updated", workflowInstance.Uuid),
+		Message: fmt.Sprintf("worklow instance %s and processor %s status updated", workflowInstance.Uuid, requestBody.Uuid),
 	}
 
 	jsonResponse, err := json.Marshal(response)

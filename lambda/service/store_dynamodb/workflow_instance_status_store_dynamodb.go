@@ -28,9 +28,9 @@ func NewWorkflowInstanceStatusDatabaseStore(db *dynamodb.Client, tableName strin
 func (r *WorkflowInstanceStatusDatabaseStore) GetAll(ctx context.Context, uuid string) ([]WorkflowInstanceStatus, error) {
 	result, err := r.DB.Query(ctx, &dynamodb.QueryInput{
 		TableName:              aws.String(r.TableName),
-		KeyConditionExpression: aws.String("uuid = :uuid"),
+		KeyConditionExpression: aws.String("workflowInstanceUuid = :workflowInstanceUuid"),
 		ExpressionAttributeValues: map[string]types.AttributeValue{
-			":uuid": &types.AttributeValueMemberS{Value: uuid},
+			":workflowInstanceUuid": &types.AttributeValueMemberS{Value: uuid},
 		},
 	})
 
@@ -49,10 +49,10 @@ func (r *WorkflowInstanceStatusDatabaseStore) GetAll(ctx context.Context, uuid s
 
 func (r *WorkflowInstanceStatusDatabaseStore) Put(ctx context.Context, uuid string, event models.WorkflowInstanceStatusEvent) error {
 	status := WorkflowInstanceStatus{
-		Uuid:          uuid,
-		ProcessorUuid: event.Uuid,
-		Status:        event.Status,
-		Timestamp:     event.Timestamp,
+		WorkflowInstanceUuid: uuid,
+		ProcessorUuid:        event.Uuid,
+		Status:               event.Status,
+		Timestamp:            event.Timestamp,
 	}
 
 	item, err := attributevalue.MarshalMap(status)

@@ -61,7 +61,7 @@ resource "aws_dynamodb_table" "workflow_instance_status_table" {
 
   attribute {
     name = "timestamp"
-    type = "S"
+    type = "N"
   }
 
   tags = merge(
