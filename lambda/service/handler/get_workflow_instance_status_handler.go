@@ -49,43 +49,7 @@ func GetWorkflowInstanceStatusHandler(ctx context.Context, request events.APIGat
 		}, nil
 	}
 
-	statuses := make(map[string]struct {
-		ProcessorStatus models.StatusMetadata
-		Latest          store_dynamodb.WorkflowInstanceStatus
-	})
-
-	for _, item := range workflowInstanceStatuses {
-		current, exists := statuses[item.ProcessorUuid]
-		ps, latest := current.ProcessorStatus, current.Latest
-		if !exists {
-			ps = models.StatusMetadata{
-				Uuid:   item.ProcessorUuid,
-				Status: item.Status,
-			}
-			latest = item
-		}
-
-		if item.Timestamp > latest.Timestamp {
-			latest = item
-			ps.Status = item.Status
-		}
-
-		if item.Status == "STARTED" {
-			ps.StartedAt = time.Unix(int64(item.Timestamp), 0).UTC().String()
-		}
-
-		if item.Status == "FAILED" || item.Status == "SUCCEEDED" {
-			ps.CompletedAt = time.Unix(int64(item.Timestamp), 0).UTC().String()
-		}
-
-		statuses[item.ProcessorUuid] = struct {
-			ProcessorStatus models.StatusMetadata
-			Latest          store_dynamodb.WorkflowInstanceStatus
-		}{
-			ProcessorStatus: ps,
-			Latest:          latest,
-		}
-	}
+	statuses := groupStatusesByProcessor(workflowInstanceStatuses)
 
 	response := models.WorkflowInstanceStatus{
 		StatusMetadata: models.StatusMetadata{
@@ -120,4 +84,49 @@ func GetWorkflowInstanceStatusHandler(ctx context.Context, request events.APIGat
 		StatusCode: http.StatusOK,
 		Body:       string(jsonResponse),
 	}, nil
+}
+
+// Aggregates processor status events into a single current state
+type groupedProcessorStatuses map[string]struct {
+	ProcessorStatus models.StatusMetadata
+	Latest          store_dynamodb.WorkflowInstanceStatus
+}
+
+func groupStatusesByProcessor(workflowInstanceStatuses []store_dynamodb.WorkflowInstanceStatus) groupedProcessorStatuses {
+	statuses := make(groupedProcessorStatuses)
+
+	for _, item := range workflowInstanceStatuses {
+		current, exists := statuses[item.ProcessorUuid]
+		ps, latest := current.ProcessorStatus, current.Latest
+		if !exists {
+			ps = models.StatusMetadata{
+				Uuid:   item.ProcessorUuid,
+				Status: item.Status,
+			}
+			latest = item
+		}
+
+		if item.Timestamp > latest.Timestamp {
+			latest = item
+			ps.Status = item.Status
+		}
+
+		if item.Status == "STARTED" {
+			ps.StartedAt = time.Unix(int64(item.Timestamp), 0).UTC().String()
+		}
+
+		if item.Status == "FAILED" || item.Status == "SUCCEEDED" {
+			ps.CompletedAt = time.Unix(int64(item.Timestamp), 0).UTC().String()
+		}
+
+		statuses[item.ProcessorUuid] = struct {
+			ProcessorStatus models.StatusMetadata
+			Latest          store_dynamodb.WorkflowInstanceStatus
+		}{
+			ProcessorStatus: ps,
+			Latest:          latest,
+		}
+	}
+
+	return statuses
 }

@@ -8,10 +8,12 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/pennsieve/integration-service/service/models"
 )
 
 type WorkflowInstanceStatusDBStore interface {
 	GetAll(context.Context, string) ([]WorkflowInstanceStatus, error)
+	Put(context.Context, string, models.WorkflowInstanceStatusEvent) error
 }
 
 type WorkflowInstanceStatusDatabaseStore struct {
@@ -43,4 +45,30 @@ func (r *WorkflowInstanceStatusDatabaseStore) GetAll(ctx context.Context, uuid s
 	}
 
 	return items, nil
+}
+
+func (r *WorkflowInstanceStatusDatabaseStore) Put(ctx context.Context, uuid string, event models.WorkflowInstanceStatusEvent) error {
+	status := WorkflowInstanceStatus{
+		Uuid:          uuid,
+		ProcessorUuid: event.Uuid,
+		Status:        event.Status,
+		Timestamp:     event.Timestamp,
+	}
+
+	item, err := attributevalue.MarshalMap(status)
+
+	if err != nil {
+		return err
+	}
+
+	_, err = r.DB.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName: aws.String(r.TableName),
+		Item:      item,
+	})
+
+	if err != nil {
+		return fmt.Errorf("error writing workflow instance status event: %w", err)
+	}
+
+	return nil
 }

@@ -29,6 +29,9 @@ func IntegrationServiceHandler(ctx context.Context, request events.APIGatewayV2H
 	router.PUT("/workflows/instances", PutWorkflowInstancesHandler)
 
 	router.GET("/workflows/instances/{id}/logs", GetWorkflowInstanceLogsHandler)
+
+	router.PUT("/workflows/instances/{id}/status", PutWorkflowInstanceStatusHandler)
 	router.GET("/workflows/instances/{id}/status", GetWorkflowInstanceStatusHandler)
+
 	return router.Start(ctx, request)
 }
