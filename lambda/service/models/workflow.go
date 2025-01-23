@@ -13,6 +13,15 @@ type WorkflowInstance struct {
 	CompletedAt   string      `json:"completedAt"`
 }
 
+type WorkflowProcessor struct {
+	Uuid                     string                 `json:"uuid"`
+	ApplicationID            string                 `json:"applicationId"`
+	ApplicationContainerName string                 `json:"applicationContainerName"`
+	ApplicationType          string                 `json:"applicationType"`
+	Params                   map[string]interface{} `json:"params"`
+	CommandArguments         []string               `json:"commandArguments"`
+}
+
 type StatusMetadata struct {
 	Uuid        string `json:"uuid"`
 	Status      string `json:"status"`
