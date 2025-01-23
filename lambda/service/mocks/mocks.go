@@ -6,6 +6,7 @@ import (
 
 	"github.com/pennsieve/integration-service/service/authorization"
 	"github.com/pennsieve/integration-service/service/clients"
+	"github.com/pennsieve/integration-service/service/models"
 	"github.com/pennsieve/integration-service/service/store_dynamodb"
 )
 
@@ -57,4 +58,18 @@ func (r *MockDynamoDBStore) Update(ctx context.Context, integration store_dynamo
 
 func NewMockDynamoDBStore() store_dynamodb.DynamoDBStore {
 	return &MockDynamoDBStore{}
+}
+
+type MockDynamoDBWorkflowInstanceStatusStore struct{}
+
+func (r *MockDynamoDBWorkflowInstanceStatusStore) Put(ctx context.Context, uuid string, event models.WorkflowInstanceStatusEvent) error {
+	return nil
+}
+
+func (r *MockDynamoDBWorkflowInstanceStatusStore) GetAll(ctx context.Context, uuid string) ([]store_dynamodb.WorkflowInstanceStatus, error) {
+	return []store_dynamodb.WorkflowInstanceStatus{}, nil
+}
+
+func NewMockDynamoDBWorkflowInstanceStatusStore() store_dynamodb.WorkflowInstanceStatusDBStore {
+	return &MockDynamoDBWorkflowInstanceStatusStore{}
 }

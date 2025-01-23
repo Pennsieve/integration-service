@@ -39,3 +39,18 @@ func ServiceResponseToAuxiliaryResponse(resp []byte) (log_retriever.ProcessorLog
 
 	return m, nil
 }
+
+func ExtractWorkflow(workflow interface{}) ([]models.WorkflowProcessor, error) {
+	workflowBytes, err := json.Marshal(workflow)
+	if err != nil {
+		return nil, err
+	}
+
+	var wf []models.WorkflowProcessor
+	err = json.Unmarshal(workflowBytes, &wf)
+	if err != nil {
+		return nil, err
+	}
+
+	return wf, nil
+}
