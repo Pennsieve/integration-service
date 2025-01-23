@@ -169,7 +169,7 @@ data "aws_iam_policy_document" "integration_service_lambda_iam_policy_document" 
       aws_dynamodb_table.integrations_table.arn,
       "${aws_dynamodb_table.integrations_table.arn}/*",
       aws_dynamodb_table.workflows_table.arn,
-      "${aws_dynamodb_table.workflows_table.arn}/*"
+      "${aws_dynamodb_table.workflows_table.arn}/*",
       aws_dynamodb_table.workflow_instance_status_table.arn,
       "${aws_dynamodb_table.workflow_instance_status_table.arn}/*"
     ]
