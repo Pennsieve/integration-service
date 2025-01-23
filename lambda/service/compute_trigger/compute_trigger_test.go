@@ -4,13 +4,22 @@ import (
 	"context"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/pennsieve/integration-service/service/compute_trigger"
 	"github.com/pennsieve/integration-service/service/mocks"
 	"github.com/pennsieve/integration-service/service/models"
 )
 
 func TestRun(t *testing.T) {
-	integration := models.WorkflowInstance{}
+	workflow := []struct {
+		Uuid string
+	}{
+		{Uuid: uuid.NewString()},
+		{Uuid: uuid.NewString()},
+	}
+	integration := models.WorkflowInstance{
+		Workflow: workflow,
+	}
 	organizationId := "someOrganizationId"
 
 	mockClient := mocks.NewMockClient()
