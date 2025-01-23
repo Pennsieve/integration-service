@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"time"
 
@@ -61,6 +62,10 @@ func (t *ComputeTrigger) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+    if len(workflows) == 0 {
+        return errors.New("cannot trigger compute for workflow instance with empty workflow")
+    }
 
 	err = t.Store.Insert(ctx, store_integration)
 	if err != nil {
