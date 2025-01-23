@@ -57,3 +57,26 @@ func TestExtractWorkflow(t *testing.T) {
 		assert.NoError(t, err)
 	}
 }
+
+func TestExtractWorkflowError(t *testing.T) {
+	workflowBytes := []byte(`{}`)
+
+	var workflow interface{}
+	err := json.Unmarshal(workflowBytes, &workflow)
+	assert.NoError(t, err)
+
+	_, err = mappers.ExtractWorkflow(workflow)
+	assert.Error(t, err)
+}
+
+func TestExtractWorkflowEmpty(t *testing.T) {
+	workflowBytes := []byte(`[]`)
+
+	var workflow interface{}
+	err := json.Unmarshal(workflowBytes, &workflow)
+	assert.NoError(t, err)
+
+	result, err := mappers.ExtractWorkflow(workflow)
+	assert.NoError(t, err)
+	assert.Len(t, result, 0)
+}
