@@ -11,6 +11,7 @@ import (
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/pennsieve/integration-service/service/mappers"
 	"github.com/pennsieve/integration-service/service/models"
 	"github.com/pennsieve/integration-service/service/store_dynamodb"
 )
@@ -41,6 +42,33 @@ func PutWorkflowInstanceStatusHandler(ctx context.Context, request events.APIGat
 
 	workflowInstance, err := workflowInstanceStore.GetById(ctx, uuid)
 	if err != nil {
+		return events.APIGatewayV2HTTPResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       handlerError(handlerName, ErrNoRecordsFound),
+		}, nil
+	}
+
+	workflow, err := mappers.ExtractWorkflow(workflowInstance.Workflow)
+	if err != nil {
+		return events.APIGatewayV2HTTPResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       handlerError(handlerName, errors.New(fmt.Sprintf("invalid workflow definition found in workflow instance: %s", workflowInstance.Uuid))),
+		}, nil
+	}
+
+	// status request UUID should either be the workflow instance ID or one of its processors' IDs
+	validProcessorID := false
+	if requestBody.Uuid == workflowInstance.Uuid {
+		validProcessorID = true
+	} else {
+		for _, p := range workflow {
+			if p.Uuid == requestBody.Uuid {
+				validProcessorID = true
+				break
+			}
+		}
+	}
+	if !validProcessorID {
 		return events.APIGatewayV2HTTPResponse{
 			StatusCode: http.StatusNotFound,
 			Body:       handlerError(handlerName, ErrNoRecordsFound),
