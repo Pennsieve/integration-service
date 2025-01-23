@@ -18,7 +18,7 @@ func TestServiceResponseToAuxiliaryResponse(t *testing.T) {
 }
 
 func TestExtractWorkflow(t *testing.T) {
-    workflowBytes := []byte(`[
+	workflowBytes := []byte(`[
         {
             "uuid": "801a4665-ba47-4053-9071-8503efb063ca",
             "applicationId": "arn:aws:ecs:us-east-1:1234567891011:task-definition/processor-pre-dev:1",
@@ -46,14 +46,14 @@ func TestExtractWorkflow(t *testing.T) {
     ]`)
 
 	var workflow interface{}
-    err := json.Unmarshal(workflowBytes, &workflow)
-    assert.NoError(t, err)
+	err := json.Unmarshal(workflowBytes, &workflow)
+	assert.NoError(t, err)
 
 	result, err := mappers.ExtractWorkflow(workflow)
-    assert.NoError(t, err)
-    assert.Len(t, result, 3)
-    for _, p := range(result) {
-        _, err = uuid.Parse(p.Uuid)
-        assert.NoError(t, err)
-    }
+	assert.NoError(t, err)
+	assert.Len(t, result, 3)
+	for _, p := range result {
+		_, err = uuid.Parse(p.Uuid)
+		assert.NoError(t, err)
+	}
 }

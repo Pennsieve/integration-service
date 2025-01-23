@@ -28,11 +28,11 @@ type ComputeTrigger struct {
 }
 
 func NewComputeTrigger(
-    client clients.Client,
-    integration models.WorkflowInstance,
-    store store_dynamodb.DynamoDBStore,
-    workflowInstanceStatusStore store_dynamodb.WorkflowInstanceStatusDBStore,
-    organizationId string,
+	client clients.Client,
+	integration models.WorkflowInstance,
+	store store_dynamodb.DynamoDBStore,
+	workflowInstanceStatusStore store_dynamodb.WorkflowInstanceStatusDBStore,
+	organizationId string,
 ) Trigger {
 	return &ComputeTrigger{client, integration, store, workflowInstanceStatusStore, organizationId}
 }
@@ -57,7 +57,7 @@ func (t *ComputeTrigger) Run(ctx context.Context) error {
 		StartedAt:             startedAt.String(),
 	}
 
-    workflows, err := mappers.ExtractWorkflow(t.Integration.Workflow)
+	workflows, err := mappers.ExtractWorkflow(t.Integration.Workflow)
 	if err != nil {
 		return err
 	}
@@ -67,28 +67,28 @@ func (t *ComputeTrigger) Run(ctx context.Context) error {
 		return err
 	}
 
-    // store initial status for workflow instance
-    err = t.WorkflowInstanceStatusStore.Put(ctx, integrationId, models.WorkflowInstanceStatusEvent{
-        Uuid: integrationId,
-        Status: "NOT_STARTED",
-        Timestamp: int(startedAt.Unix()),
-    })
+	// store initial status for workflow instance
+	err = t.WorkflowInstanceStatusStore.Put(ctx, integrationId, models.WorkflowInstanceStatusEvent{
+		Uuid:      integrationId,
+		Status:    "NOT_STARTED",
+		Timestamp: int(startedAt.Unix()),
+	})
 	if err != nil {
 		return err
 	}
 
-    // store initial status for workflow instance processors
-    for _, p := range(workflows) {
-        err = t.WorkflowInstanceStatusStore.Put(ctx, integrationId, models.WorkflowInstanceStatusEvent{
-            Uuid: p.Uuid,
-            Status: "NOT_STARTED",
-            Timestamp: int(startedAt.Unix()),
-        })
-        if err != nil {
-            return err
-        }
+	// store initial status for workflow instance processors
+	for _, p := range workflows {
+		err = t.WorkflowInstanceStatusStore.Put(ctx, integrationId, models.WorkflowInstanceStatusEvent{
+			Uuid:      p.Uuid,
+			Status:    "NOT_STARTED",
+			Timestamp: int(startedAt.Unix()),
+		})
+		if err != nil {
+			return err
+		}
 
-    }
+	}
 
 	computePayload := ComputePayload{
 		IntegrationId: integrationId,
