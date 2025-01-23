@@ -28,6 +28,13 @@ func PutWorkflowInstanceStatusHandler(ctx context.Context, request events.APIGat
 		}, ErrUnmarshaling
 	}
 
+	if !models.IsValidWorkflowInstanceStatus(requestBody.Status) {
+		return events.APIGatewayV2HTTPResponse{
+			StatusCode: http.StatusBadRequest,
+			Body:       handlerError(handlerName, errors.New(fmt.Sprintf("invalid workflow instance status: %s", requestBody.Status))),
+		}, nil
+	}
+
 	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
 		return events.APIGatewayV2HTTPResponse{
