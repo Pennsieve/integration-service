@@ -32,7 +32,7 @@ func TestPutGetAllWorkflowInstanceStatuses(t *testing.T) {
 
 	statusEvent := models.WorkflowInstanceStatusEvent{
 		Uuid:      processorId,
-		Status:    "NOT_STARTED",
+		Status:    models.WorkflowInstanceStatusNotStarted,
 		Timestamp: int(now),
 	}
 	err = dynamo_store.Put(context.Background(), workflowInstanceId, statusEvent)
@@ -42,7 +42,7 @@ func TestPutGetAllWorkflowInstanceStatuses(t *testing.T) {
 
 	statusEvent = models.WorkflowInstanceStatusEvent{
 		Uuid:      processorId,
-		Status:    "STARTED",
+		Status:    models.WorkflowInstanceStatusStarted,
 		Timestamp: int(now) + 1,
 	}
 	err = dynamo_store.Put(context.Background(), workflowInstanceId, statusEvent)

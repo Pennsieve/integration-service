@@ -70,7 +70,7 @@ func (t *ComputeTrigger) Run(ctx context.Context) error {
 	// store initial status for workflow instance
 	err = t.WorkflowInstanceStatusStore.Put(ctx, integrationId, models.WorkflowInstanceStatusEvent{
 		Uuid:      integrationId,
-		Status:    "NOT_STARTED",
+		Status:    models.WorkflowInstanceStatusNotStarted,
 		Timestamp: int(startedAt.Unix()),
 	})
 	if err != nil {
@@ -81,7 +81,7 @@ func (t *ComputeTrigger) Run(ctx context.Context) error {
 	for _, p := range workflows {
 		err = t.WorkflowInstanceStatusStore.Put(ctx, integrationId, models.WorkflowInstanceStatusEvent{
 			Uuid:      p.Uuid,
-			Status:    "NOT_STARTED",
+			Status:    models.WorkflowInstanceStatusNotStarted,
 			Timestamp: int(startedAt.Unix()),
 		})
 		if err != nil {

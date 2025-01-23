@@ -54,7 +54,7 @@ func GetWorkflowInstanceStatusHandler(ctx context.Context, request events.APIGat
 	response := models.WorkflowInstanceStatus{
 		StatusMetadata: models.StatusMetadata{
 			Uuid:        workflowInstance.Uuid,
-			Status:      "NOT_STARTED",
+			Status:      models.WorkflowInstanceStatusNotStarted,
 			StartedAt:   workflowInstance.StartedAt,
 			CompletedAt: workflowInstance.CompletedAt,
 		},
@@ -112,9 +112,9 @@ func groupStatusesByProcessor(workflowInstanceStatuses []store_dynamodb.Workflow
 		}
 
 		switch item.Status {
-		case "STARTED":
+		case models.WorkflowInstanceStatusStarted:
 			ps.StartedAt = time.Unix(int64(item.Timestamp), 0).UTC().String()
-		case "FAILED", "SUCCEEDED", "CANCELLED":
+		case models.WorkflowInstanceStatusFailed, models.WorkflowInstanceStatusSucceeded, models.WorkflowInstanceStatusCanceled:
 			ps.CompletedAt = time.Unix(int64(item.Timestamp), 0).UTC().String()
 		}
 
