@@ -15,7 +15,8 @@ func TestRun(t *testing.T) {
 
 	mockClient := mocks.NewMockClient()
 	mockStore := mocks.NewMockDynamoDBStore()
-	computeTrigger := compute_trigger.NewComputeTrigger(mockClient, integration, mockStore, organizationId)
+	mockWorkflowInstanceStatusStore := mocks.NewMockDynamoDBWorkflowInstanceStatusStore()
+	computeTrigger := compute_trigger.NewComputeTrigger(mockClient, integration, mockStore, mockWorkflowInstanceStatusStore, organizationId)
 	ctx := context.Background()
 	err := computeTrigger.Run(ctx)
 	if err != nil {
