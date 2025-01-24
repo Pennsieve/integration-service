@@ -125,6 +125,14 @@ resource "aws_iam_role" "integration_service_lambda_role" {
 EOF
 }
 
+resource "aws_lambda_permission" "integration_service_api_api_gateway_lambda_permission" {
+  statement_id  = "AllowExecutionFromGateway"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.integration_service_lambda.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn = "${data.terraform_remote_state.api_gateway.outputs.execution_arn}/*"
+}
+
 resource "aws_iam_policy" "integration_service_lambda_iam_policy" {
   name   = "${var.environment_name}-${var.service_name}-integration-service-lambda-iam-policy-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
   path   = "/"
