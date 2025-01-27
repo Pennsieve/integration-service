@@ -43,7 +43,9 @@ func PostWorkflowInstancesHandler(ctx context.Context, request events.APIGateway
 
 	integrationsTable := os.Getenv("INTEGRATIONS_TABLE")
 	dynamo_store := store_dynamodb.NewWorkflowInstanceDatabaseStore(dynamoDBClient, integrationsTable)
-	workflow_instance_status_dynamo_store := store_dynamodb.NewWorkflowInstanceStatusDatabaseStore(dynamoDBClient, integrationsTable)
+
+	workflowInstanceStatusTable := os.Getenv("WORKFLOW_INSTANCE_STATUS_TABLE")
+	workflow_instance_status_dynamo_store := store_dynamodb.NewWorkflowInstanceStatusDatabaseStore(dynamoDBClient, workflowInstanceStatusTable)
 
 	// create compute node trigger
 	httpClient := clients.NewComputeRestClient(&http.Client{}, integration.ComputeNode.ComputeNodeGatewayUrl)
