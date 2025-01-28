@@ -71,14 +71,14 @@ func CreateWorkflowInstanceStatusTable(dynamoDBClient *dynamodb.Client, tableNam
 			AttributeName: aws.String("workflowInstanceUuid"),
 			AttributeType: types.ScalarAttributeTypeS,
 		}, {
-			AttributeName: aws.String("timestamp"),
-			AttributeType: types.ScalarAttributeTypeN,
+			AttributeName: aws.String("processorUuid#timestamp"),
+			AttributeType: types.ScalarAttributeTypeS,
 		}},
 		KeySchema: []types.KeySchemaElement{{
 			AttributeName: aws.String("workflowInstanceUuid"),
 			KeyType:       types.KeyTypeHash,
 		}, {
-			AttributeName: aws.String("timestamp"),
+			AttributeName: aws.String("processorUuid#timestamp"),
 			KeyType:       types.KeyTypeRange,
 		}},
 		TableName:   aws.String(tableName),

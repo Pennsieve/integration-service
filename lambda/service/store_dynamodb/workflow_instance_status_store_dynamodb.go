@@ -57,6 +57,11 @@ func (r *WorkflowInstanceStatusDatabaseStore) Put(ctx context.Context, uuid stri
 
 	item, err := attributevalue.MarshalMap(status)
 
+	pk := status.GetKey()
+	for k, v := range pk {
+		item[k] = v
+	}
+
 	if err != nil {
 		return err
 	}
