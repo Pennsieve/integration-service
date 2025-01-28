@@ -40,18 +40,6 @@ func TestPutGetAllWorkflowInstanceStatuses(t *testing.T) {
 		t.Errorf("error inserting items into table: %v", err)
 	}
 
-	// test new processor, same timestamp and status
-	statusEvent = models.WorkflowInstanceStatusEvent{
-		Uuid:      uuid.NewString(),
-		Status:    models.WorkflowInstanceStatusNotStarted,
-		Timestamp: int(now),
-	}
-	err = dynamo_store.Put(context.Background(), workflowInstanceId, statusEvent)
-	if err != nil {
-		t.Errorf("error inserting items into table: %v", err)
-	}
-
-	// test new status for processor
 	statusEvent = models.WorkflowInstanceStatusEvent{
 		Uuid:      processorId,
 		Status:    models.WorkflowInstanceStatusStarted,
@@ -67,7 +55,7 @@ func TestPutGetAllWorkflowInstanceStatuses(t *testing.T) {
 		t.Errorf("error getting item in table: %v", err)
 	}
 
-	assert.Len(t, statuses, 3)
+	assert.Len(t, statuses, 2)
 
 	// delete table
 	err = DeleteTable(dynamoDBClient, tableName)
@@ -83,14 +71,14 @@ func CreateWorkflowInstanceStatusTable(dynamoDBClient *dynamodb.Client, tableNam
 			AttributeName: aws.String("workflowInstanceUuid"),
 			AttributeType: types.ScalarAttributeTypeS,
 		}, {
-			AttributeName: aws.String("processorUuid#timestamp"),
-			AttributeType: types.ScalarAttributeTypeS,
+			AttributeName: aws.String("timestamp"),
+			AttributeType: types.ScalarAttributeTypeN,
 		}},
 		KeySchema: []types.KeySchemaElement{{
 			AttributeName: aws.String("workflowInstanceUuid"),
 			KeyType:       types.KeyTypeHash,
 		}, {
-			AttributeName: aws.String("processorUuid#timestamp"),
+			AttributeName: aws.String("timestamp"),
 			KeyType:       types.KeyTypeRange,
 		}},
 		TableName:   aws.String(tableName),
