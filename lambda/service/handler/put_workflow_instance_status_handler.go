@@ -31,7 +31,7 @@ func PutWorkflowInstanceStatusHandler(ctx context.Context, request events.APIGat
 	if !models.IsValidWorkflowInstanceStatus(requestBody.Status) {
 		return events.APIGatewayV2HTTPResponse{
 			StatusCode: http.StatusBadRequest,
-			Body:       handlerError(handlerName, errors.New(fmt.Sprintf("invalid workflow instance status: %s", requestBody.Status))),
+			Body:       handlerError(handlerName, fmt.Errorf("invalid workflow instance status: %s", requestBody.Status)),
 		}, nil
 	}
 
@@ -59,7 +59,7 @@ func PutWorkflowInstanceStatusHandler(ctx context.Context, request events.APIGat
 	if err != nil {
 		return events.APIGatewayV2HTTPResponse{
 			StatusCode: http.StatusInternalServerError,
-			Body:       handlerError(handlerName, errors.New(fmt.Sprintf("invalid workflow definition found in workflow instance: %s", workflowInstance.Uuid))),
+			Body:       handlerError(handlerName, fmt.Errorf("invalid workflow definition found in workflow instance: %s", workflowInstance.Uuid)),
 		}, nil
 	}
 
@@ -89,8 +89,23 @@ func PutWorkflowInstanceStatusHandler(ctx context.Context, request events.APIGat
 	if err != nil {
 		return events.APIGatewayV2HTTPResponse{
 			StatusCode: http.StatusInternalServerError,
-			Body:       handlerError(handlerName, errors.New("failed to record workflow instance event")),
+			Body:       handlerError(handlerName, errors.New("failed to record workflow instance status event")),
 		}, nil
+	}
+
+	// HACK for HACKATHON: if a processor failed, set the overall workflow instance status to failed
+	if requestBody.Uuid != workflowInstance.Uuid && requestBody.Status == models.WorkflowInstanceStatusFailed {
+		err = workflowInstanceStatusStore.Put(ctx, workflowInstance.Uuid, models.WorkflowInstanceStatusEvent{
+			Uuid:      workflowInstance.Uuid,
+			Status:    requestBody.Status,
+			Timestamp: requestBody.Timestamp,
+		})
+		if err != nil {
+			return events.APIGatewayV2HTTPResponse{
+				StatusCode: http.StatusInternalServerError,
+				Body:       handlerError(handlerName, errors.New("failed to record workflow instance status event")),
+			}, nil
+		}
 	}
 
 	response := struct {
