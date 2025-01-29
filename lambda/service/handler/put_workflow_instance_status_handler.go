@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"time"
@@ -38,6 +39,7 @@ func PutWorkflowInstanceStatusHandler(ctx context.Context, request events.APIGat
 
 	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
+		log.Print(err)
 		return events.APIGatewayV2HTTPResponse{
 			StatusCode: http.StatusInternalServerError,
 			Body:       handlerError(handlerName, ErrConfig),
@@ -50,6 +52,7 @@ func PutWorkflowInstanceStatusHandler(ctx context.Context, request events.APIGat
 
 	workflowInstance, err := workflowInstanceStore.GetById(ctx, uuid)
 	if err != nil {
+		log.Print(err)
 		return events.APIGatewayV2HTTPResponse{
 			StatusCode: http.StatusNotFound,
 			Body:       handlerError(handlerName, ErrNoRecordsFound),
@@ -58,6 +61,7 @@ func PutWorkflowInstanceStatusHandler(ctx context.Context, request events.APIGat
 
 	workflow, err := mappers.ExtractWorkflow(workflowInstance.Workflow)
 	if err != nil {
+		log.Print(err)
 		return events.APIGatewayV2HTTPResponse{
 			StatusCode: http.StatusInternalServerError,
 			Body:       handlerError(handlerName, fmt.Errorf("invalid workflow definition found in workflow instance: %s", workflowInstance.Uuid)),
@@ -88,6 +92,7 @@ func PutWorkflowInstanceStatusHandler(ctx context.Context, request events.APIGat
 
 	err = workflowInstanceStatusStore.Put(ctx, workflowInstance.Uuid, requestBody)
 	if err != nil {
+		log.Print(err)
 		return events.APIGatewayV2HTTPResponse{
 			StatusCode: http.StatusInternalServerError,
 			Body:       handlerError(handlerName, errors.New("failed to record workflow instance status event")),
@@ -103,6 +108,7 @@ func PutWorkflowInstanceStatusHandler(ctx context.Context, request events.APIGat
 			Timestamp: requestBody.Timestamp,
 		})
 		if err != nil {
+			log.Print(err)
 			return events.APIGatewayV2HTTPResponse{
 				StatusCode: http.StatusInternalServerError,
 				Body:       handlerError(handlerName, errors.New("failed to record workflow instance status event")),
@@ -113,6 +119,7 @@ func PutWorkflowInstanceStatusHandler(ctx context.Context, request events.APIGat
 		}
 		err = workflowInstanceStore.Update(ctx, updatedWorkflowInstance, workflowInstance.Uuid)
 		if err != nil {
+			log.Print(err)
 			return events.APIGatewayV2HTTPResponse{
 				StatusCode: http.StatusInternalServerError,
 				Body:       handlerError(handlerName, ErrDynamoDB),
@@ -128,6 +135,7 @@ func PutWorkflowInstanceStatusHandler(ctx context.Context, request events.APIGat
 
 	jsonResponse, err := json.Marshal(response)
 	if err != nil {
+		log.Print(err)
 		return events.APIGatewayV2HTTPResponse{
 			StatusCode: http.StatusInternalServerError,
 			Body:       handlerError(handlerName, ErrMarshaling),
