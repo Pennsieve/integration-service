@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -94,6 +95,7 @@ func PutWorkflowInstanceStatusHandler(ctx context.Context, request events.APIGat
 	}
 
 	// HACK for HACKATHON: if a processor failed, set the overall workflow instance status to failed
+	// ALSO set the CompletedAt on the workflow instance
 	if requestBody.Uuid != workflowInstance.Uuid && requestBody.Status == models.WorkflowInstanceStatusFailed {
 		err = workflowInstanceStatusStore.Put(ctx, workflowInstance.Uuid, models.WorkflowInstanceStatusEvent{
 			Uuid:      workflowInstance.Uuid,
@@ -104,6 +106,16 @@ func PutWorkflowInstanceStatusHandler(ctx context.Context, request events.APIGat
 			return events.APIGatewayV2HTTPResponse{
 				StatusCode: http.StatusInternalServerError,
 				Body:       handlerError(handlerName, errors.New("failed to record workflow instance status event")),
+			}, nil
+		}
+		updatedWorkflowInstance := store_dynamodb.WorkflowInstance{
+			CompletedAt: time.Unix(int64(requestBody.Timestamp), 0).UTC().String(),
+		}
+		err = workflowInstanceStore.Update(ctx, updatedWorkflowInstance, workflowInstance.Uuid)
+		if err != nil {
+			return events.APIGatewayV2HTTPResponse{
+				StatusCode: http.StatusInternalServerError,
+				Body:       handlerError(handlerName, ErrDynamoDB),
 			}, nil
 		}
 	}
