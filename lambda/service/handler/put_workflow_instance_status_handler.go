@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -31,12 +33,13 @@ func PutWorkflowInstanceStatusHandler(ctx context.Context, request events.APIGat
 	if !models.IsValidWorkflowInstanceStatus(requestBody.Status) {
 		return events.APIGatewayV2HTTPResponse{
 			StatusCode: http.StatusBadRequest,
-			Body:       handlerError(handlerName, errors.New(fmt.Sprintf("invalid workflow instance status: %s", requestBody.Status))),
+			Body:       handlerError(handlerName, fmt.Errorf("invalid workflow instance status: %s", requestBody.Status)),
 		}, nil
 	}
 
 	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
+		log.Print(err)
 		return events.APIGatewayV2HTTPResponse{
 			StatusCode: http.StatusInternalServerError,
 			Body:       handlerError(handlerName, ErrConfig),
@@ -49,6 +52,7 @@ func PutWorkflowInstanceStatusHandler(ctx context.Context, request events.APIGat
 
 	workflowInstance, err := workflowInstanceStore.GetById(ctx, uuid)
 	if err != nil {
+		log.Print(err)
 		return events.APIGatewayV2HTTPResponse{
 			StatusCode: http.StatusNotFound,
 			Body:       handlerError(handlerName, ErrNoRecordsFound),
@@ -57,9 +61,10 @@ func PutWorkflowInstanceStatusHandler(ctx context.Context, request events.APIGat
 
 	workflow, err := mappers.ExtractWorkflow(workflowInstance.Workflow)
 	if err != nil {
+		log.Print(err)
 		return events.APIGatewayV2HTTPResponse{
 			StatusCode: http.StatusInternalServerError,
-			Body:       handlerError(handlerName, errors.New(fmt.Sprintf("invalid workflow definition found in workflow instance: %s", workflowInstance.Uuid))),
+			Body:       handlerError(handlerName, fmt.Errorf("invalid workflow definition found in workflow instance: %s", workflowInstance.Uuid)),
 		}, nil
 	}
 
@@ -87,10 +92,39 @@ func PutWorkflowInstanceStatusHandler(ctx context.Context, request events.APIGat
 
 	err = workflowInstanceStatusStore.Put(ctx, workflowInstance.Uuid, requestBody)
 	if err != nil {
+		log.Print(err)
 		return events.APIGatewayV2HTTPResponse{
 			StatusCode: http.StatusInternalServerError,
-			Body:       handlerError(handlerName, errors.New("failed to record workflow instance event")),
+			Body:       handlerError(handlerName, errors.New("failed to record workflow instance status event")),
 		}, nil
+	}
+
+	// HACK for HACKATHON: if a processor failed, set the overall workflow instance status to failed
+	// ALSO set the CompletedAt on the workflow instance
+	if requestBody.Uuid != workflowInstance.Uuid && requestBody.Status == models.WorkflowInstanceStatusFailed {
+		err = workflowInstanceStatusStore.Put(ctx, workflowInstance.Uuid, models.WorkflowInstanceStatusEvent{
+			Uuid:      workflowInstance.Uuid,
+			Status:    requestBody.Status,
+			Timestamp: requestBody.Timestamp,
+		})
+		if err != nil {
+			log.Print(err)
+			return events.APIGatewayV2HTTPResponse{
+				StatusCode: http.StatusInternalServerError,
+				Body:       handlerError(handlerName, errors.New("failed to record workflow instance status event")),
+			}, nil
+		}
+		updatedWorkflowInstance := store_dynamodb.WorkflowInstance{
+			CompletedAt: time.Unix(int64(requestBody.Timestamp), 0).UTC().String(),
+		}
+		err = workflowInstanceStore.Update(ctx, updatedWorkflowInstance, workflowInstance.Uuid)
+		if err != nil {
+			log.Print(err)
+			return events.APIGatewayV2HTTPResponse{
+				StatusCode: http.StatusInternalServerError,
+				Body:       handlerError(handlerName, ErrDynamoDB),
+			}, nil
+		}
 	}
 
 	response := struct {
@@ -101,6 +135,7 @@ func PutWorkflowInstanceStatusHandler(ctx context.Context, request events.APIGat
 
 	jsonResponse, err := json.Marshal(response)
 	if err != nil {
+		log.Print(err)
 		return events.APIGatewayV2HTTPResponse{
 			StatusCode: http.StatusInternalServerError,
 			Body:       handlerError(handlerName, ErrMarshaling),
