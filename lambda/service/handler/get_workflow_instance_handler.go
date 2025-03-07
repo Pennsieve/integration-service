@@ -49,6 +49,7 @@ func GetWorkflowInstanceHandler(ctx context.Context, request events.APIGatewayV2
 		PackageIDs:    integration.PackageIds,
 		Workflow:      integration.Workflow,
 		Params:        integration.Params,
+		Status:        integration.Status,
 		StartedAt:     integration.StartedAt,
 		CompletedAt:   integration.CompletedAt,
 	})

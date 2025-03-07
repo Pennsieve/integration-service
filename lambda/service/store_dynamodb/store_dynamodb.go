@@ -4,12 +4,14 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go/aws"
+	"github.com/pennsieve/integration-service/service/models"
 )
 
 type DynamoDBStore interface {
@@ -17,6 +19,7 @@ type DynamoDBStore interface {
 	GetById(context.Context, string) (WorkflowInstance, error)
 	Get(context.Context, string, map[string]string) ([]WorkflowInstance, error)
 	Update(context.Context, WorkflowInstance, string) error
+	SetStatus(context.Context, string, models.WorkflowInstanceStatusEvent) error
 }
 
 type WorkflowInstanceDatabaseStore struct {
@@ -28,8 +31,8 @@ func NewWorkflowInstanceDatabaseStore(db *dynamodb.Client, tableName string) Dyn
 	return &WorkflowInstanceDatabaseStore{db, tableName}
 }
 
-func (r *WorkflowInstanceDatabaseStore) Insert(ctx context.Context, instanceId WorkflowInstance) error {
-	item, err := attributevalue.MarshalMap(instanceId)
+func (r *WorkflowInstanceDatabaseStore) Insert(ctx context.Context, instance WorkflowInstance) error {
+	item, err := attributevalue.MarshalMap(instance)
 	if err != nil {
 		return err
 	}
@@ -113,6 +116,43 @@ func (r *WorkflowInstanceDatabaseStore) Update(ctx context.Context, workflowInst
 	})
 	if err != nil {
 		return fmt.Errorf("error updating instance: %w", err)
+	}
+
+	return nil
+}
+
+func (r *WorkflowInstanceDatabaseStore) SetStatus(ctx context.Context, workflowInstanceUuid string, event models.WorkflowInstanceStatusEvent) error {
+	updateExpression := "SET #status = :status"
+	expressionAttributeNames := map[string]string{"#status": "status"}
+	expressionAttributeValues := map[string]types.AttributeValue{
+		":status": &types.AttributeValueMemberS{Value: event.Status},
+	}
+
+	if event.Status == models.WorkflowInstanceStatusStarted {
+		updateExpression += ", #startedAt = :startedAt"
+		expressionAttributeNames["#startedAt"] = "startedAt"
+		expressionAttributeValues[":startedAt"] = &types.AttributeValueMemberS{Value: time.Unix(int64(event.Timestamp), 0).Format(time.RFC3339)}
+	} else if models.IsEndStateWorkflowInstanceStatus(event.Status) {
+		updateExpression += ", #completedAt = :completedAt"
+		expressionAttributeNames["#completedAt"] = "completedAt"
+		expressionAttributeValues[":completedAt"] = &types.AttributeValueMemberS{Value: time.Unix(int64(event.Timestamp), 0).Format(time.RFC3339)}
+	}
+
+	key, err := attributevalue.MarshalMap(WorkflowInstanceKey{Uuid: workflowInstanceUuid})
+	if err != nil {
+		return fmt.Errorf("error marshaling key for update: %w", err)
+	}
+
+	_, err = r.DB.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName:                 aws.String(r.TableName),
+		Key:                       key,
+		UpdateExpression:          aws.String(updateExpression),
+		ExpressionAttributeNames:  expressionAttributeNames,
+		ExpressionAttributeValues: expressionAttributeValues,
+		ReturnValues:              types.ReturnValueUpdatedNew,
+	})
+	if err != nil {
+		return fmt.Errorf("error setting workflow instance status: %w", err)
 	}
 
 	return nil

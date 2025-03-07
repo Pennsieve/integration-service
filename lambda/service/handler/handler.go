@@ -26,11 +26,12 @@ func IntegrationServiceHandler(ctx context.Context, request events.APIGatewayV2H
 	router.POST("/workflows/instances", PostWorkflowInstancesHandler)
 	router.GET("/workflows/instances", GetWorkflowInstancesHandler)
 	router.GET("/workflows/instances/{id}", GetWorkflowInstanceHandler)
-	router.PUT("/workflows/instances", PutWorkflowInstancesHandler)
+	router.PUT("/workflows/instances", PutWorkflowInstancesHandler) // deprecated
 
 	router.GET("/workflows/instances/{id}/logs", GetWorkflowInstanceLogsHandler)
 
 	router.PUT("/workflows/instances/{id}/status", PutWorkflowInstanceStatusHandler)
+	router.PUT("/workflows/instances/{id}/processor/{processorId}/status", PutWorkflowInstanceStatusHandler)
 	router.GET("/workflows/instances/{id}/status", GetWorkflowInstanceStatusHandler)
 
 	return router.Start(ctx, request)

@@ -21,33 +21,33 @@ type Trigger interface {
 }
 
 type ComputeTrigger struct {
-	Client                      clients.Client
-	Integration                 models.WorkflowInstance
-	Store                       store_dynamodb.DynamoDBStore
-	WorkflowInstanceStatusStore store_dynamodb.WorkflowInstanceStatusDBStore
-	OrganizationId              string
+	Client                               clients.Client
+	Integration                          models.WorkflowInstance
+	Store                                store_dynamodb.DynamoDBStore
+	WorkflowInstanceProcessorStatusStore store_dynamodb.WorkflowInstanceProcessorStatusDBStore
+	OrganizationId                       string
 }
 
 func NewComputeTrigger(
 	client clients.Client,
 	integration models.WorkflowInstance,
 	store store_dynamodb.DynamoDBStore,
-	workflowInstanceStatusStore store_dynamodb.WorkflowInstanceStatusDBStore,
+	workflowInstanceProcessorStatusStore store_dynamodb.WorkflowInstanceProcessorStatusDBStore,
 	organizationId string,
 ) Trigger {
-	return &ComputeTrigger{client, integration, store, workflowInstanceStatusStore, organizationId}
+	return &ComputeTrigger{client, integration, store, workflowInstanceProcessorStatusStore, organizationId}
 }
 
 // runs trigger
 func (t *ComputeTrigger) Run(ctx context.Context) error {
 	id := uuid.New()
 	integrationId := id.String()
-	startedAt := time.Now().UTC()
+	now := time.Now().UTC()
 
 	// persist to dynamodb
 	store_integration := store_dynamodb.WorkflowInstance{
 		Uuid:                  integrationId,
-		Name:                  utils.RunName(t.Integration.Name, startedAt),
+		Name:                  utils.RunName(t.Integration.Name, now),
 		ComputeNodeUuid:       t.Integration.ComputeNode.ComputeNodeUuid,
 		ComputeNodeGatewayUrl: t.Integration.ComputeNode.ComputeNodeGatewayUrl,
 		DatasetNodeId:         t.Integration.DatasetNodeID,
@@ -55,7 +55,7 @@ func (t *ComputeTrigger) Run(ctx context.Context) error {
 		Workflow:              t.Integration.Workflow,
 		Params:                t.Integration.Params,
 		OrganizationId:        t.OrganizationId,
-		StartedAt:             startedAt.String(),
+		Status:                models.WorkflowInstanceStatusNotStarted,
 	}
 
 	workflows, err := mappers.ExtractWorkflow(t.Integration.Workflow)
@@ -72,23 +72,12 @@ func (t *ComputeTrigger) Run(ctx context.Context) error {
 		return err
 	}
 
-	// store initial status for workflow instance
-	err = t.WorkflowInstanceStatusStore.Put(ctx, integrationId, models.WorkflowInstanceStatusEvent{
-		Uuid:      integrationId,
-		Status:    models.WorkflowInstanceStatusNotStarted,
-		Timestamp: int(startedAt.Unix()),
-	})
-	if err != nil {
-		return err
-	}
-
 	// store initial status for workflow instance processors
 	for _, p := range workflows {
-		err = t.WorkflowInstanceStatusStore.Put(ctx, integrationId, models.WorkflowInstanceStatusEvent{
-			Uuid:      p.Uuid,
-			Status:    models.WorkflowInstanceStatusNotStarted,
-			Timestamp: int(startedAt.Unix()),
+		err = t.WorkflowInstanceProcessorStatusStore.Put(ctx, integrationId, p.Uuid, models.WorkflowInstanceStatusEvent{
+			Status: models.WorkflowInstanceStatusNotStarted,
 		})
+
 		if err != nil {
 			return err
 		}

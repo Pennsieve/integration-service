@@ -56,20 +56,29 @@ func (r *MockDynamoDBStore) Update(ctx context.Context, integration store_dynamo
 	return nil
 }
 
+func (r *MockDynamoDBStore) SetStatus(ctx context.Context, workflowInstanceUuid string, event models.WorkflowInstanceStatusEvent) error {
+
+	return nil
+}
+
 func NewMockDynamoDBStore() store_dynamodb.DynamoDBStore {
 	return &MockDynamoDBStore{}
 }
 
 type MockDynamoDBWorkflowInstanceStatusStore struct{}
 
-func (r *MockDynamoDBWorkflowInstanceStatusStore) Put(ctx context.Context, uuid string, event models.WorkflowInstanceStatusEvent) error {
+func (r *MockDynamoDBWorkflowInstanceStatusStore) Put(ctx context.Context, workflowInstanceUuid string, processorUuid string, event models.WorkflowInstanceStatusEvent) error {
 	return nil
 }
 
-func (r *MockDynamoDBWorkflowInstanceStatusStore) GetAll(ctx context.Context, uuid string) ([]store_dynamodb.WorkflowInstanceStatus, error) {
-	return []store_dynamodb.WorkflowInstanceStatus{}, nil
+func (r *MockDynamoDBWorkflowInstanceStatusStore) SetStatus(ctx context.Context, workflowInstanceUuid string, processorUuid string, event models.WorkflowInstanceStatusEvent) error {
+	return nil
 }
 
-func NewMockDynamoDBWorkflowInstanceStatusStore() store_dynamodb.WorkflowInstanceStatusDBStore {
+func (r *MockDynamoDBWorkflowInstanceStatusStore) GetAll(ctx context.Context, uuid string) ([]store_dynamodb.WorkflowInstanceProcessorStatus, error) {
+	return []store_dynamodb.WorkflowInstanceProcessorStatus{}, nil
+}
+
+func NewMockDynamoDBWorkflowInstanceStatusStore() store_dynamodb.WorkflowInstanceProcessorStatusDBStore {
 	return &MockDynamoDBWorkflowInstanceStatusStore{}
 }

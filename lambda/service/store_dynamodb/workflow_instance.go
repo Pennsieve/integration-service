@@ -15,6 +15,7 @@ type WorkflowInstance struct {
 	Workflow              interface{} `dynamodbav:"workflow"`
 	Params                interface{} `dynamodbav:"params"`
 	OrganizationId        string      `dynamodbav:"organizationId"`
+	Status                string      `dynamodbav:"status"`
 	StartedAt             string      `dynamodbav:"startedAt"`
 	CompletedAt           string      `dynamodbav:"completedAt"`
 }

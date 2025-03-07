@@ -15,6 +15,7 @@ import (
 	"github.com/pennsieve/integration-service/service/store_dynamodb"
 )
 
+// DEPRECATED -- use PutWorkflowInstanceStatusHandler
 func PutWorkflowInstancesHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	handlerName := "PutWorkflowInstancesHandler"
 	var integration models.WorkflowInstance

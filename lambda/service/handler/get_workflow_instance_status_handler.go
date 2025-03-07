@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
-	"time"
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -38,10 +37,10 @@ func GetWorkflowInstanceStatusHandler(ctx context.Context, request events.APIGat
 		}, nil
 	}
 
-	workflowInstanceStatusTable := os.Getenv("WORKFLOW_INSTANCE_STATUS_TABLE")
-	workflowInstanceStatusStore := store_dynamodb.NewWorkflowInstanceStatusDatabaseStore(dynamoDBClient, workflowInstanceStatusTable)
+	workflowInstanceProcessorStatusTable := os.Getenv("WORKFLOW_INSTANCE_PROCESSOR_STATUS_TABLE")
+	workflowInstanceProcessorStatusStore := store_dynamodb.NewWorkflowInstanceProcessorStatusDatabaseStore(dynamoDBClient, workflowInstanceProcessorStatusTable)
 
-	workflowInstanceStatuses, err := workflowInstanceStatusStore.GetAll(ctx, uuid)
+	processorStatuses, err := workflowInstanceProcessorStatusStore.GetAll(ctx, uuid)
 	if err != nil {
 		return events.APIGatewayV2HTTPResponse{
 			StatusCode: http.StatusNotFound,
@@ -49,27 +48,25 @@ func GetWorkflowInstanceStatusHandler(ctx context.Context, request events.APIGat
 		}, nil
 	}
 
-	statuses := groupStatusesByProcessor(workflowInstanceStatuses)
-
 	response := models.WorkflowInstanceStatus{
 		StatusMetadata: models.StatusMetadata{
 			Uuid:        workflowInstance.Uuid,
-			Status:      models.WorkflowInstanceStatusNotStarted,
+			Status:      workflowInstance.Status,
 			StartedAt:   workflowInstance.StartedAt,
 			CompletedAt: workflowInstance.CompletedAt,
 		},
 		Processors: []models.WorkflowProcessorStatus{},
 	}
 
-	for _, status := range statuses {
-		ps := status.ProcessorStatus
-		if ps.Uuid == workflowInstance.Uuid {
-			response.Status = ps.Status
-		} else {
-			response.Processors = append(response.Processors, models.WorkflowProcessorStatus{
-				StatusMetadata: ps,
-			})
-		}
+	for _, ps := range processorStatuses {
+		response.Processors = append(response.Processors, models.WorkflowProcessorStatus{
+			StatusMetadata: models.StatusMetadata{
+				Uuid:        ps.ProcessorUuid,
+				Status:      ps.Status,
+				StartedAt:   ps.StartedAt,
+				CompletedAt: ps.CompletedAt,
+			},
+		})
 	}
 
 	jsonResponse, err := json.Marshal(response)
@@ -84,48 +81,4 @@ func GetWorkflowInstanceStatusHandler(ctx context.Context, request events.APIGat
 		StatusCode: http.StatusOK,
 		Body:       string(jsonResponse),
 	}, nil
-}
-
-// Aggregates processor status events into a single current state
-type groupedProcessorStatuses map[string]struct {
-	ProcessorStatus models.StatusMetadata
-	Latest          store_dynamodb.WorkflowInstanceStatus
-}
-
-func groupStatusesByProcessor(workflowInstanceStatuses []store_dynamodb.WorkflowInstanceStatus) groupedProcessorStatuses {
-	statuses := make(groupedProcessorStatuses)
-
-	for _, item := range workflowInstanceStatuses {
-		current, exists := statuses[item.ProcessorUuid]
-		ps, latest := current.ProcessorStatus, current.Latest
-		if !exists {
-			ps = models.StatusMetadata{
-				Uuid:   item.ProcessorUuid,
-				Status: item.Status,
-			}
-			latest = item
-		}
-
-		if item.Timestamp > latest.Timestamp {
-			latest = item
-			ps.Status = item.Status
-		}
-
-		switch item.Status {
-		case models.WorkflowInstanceStatusStarted:
-			ps.StartedAt = time.Unix(int64(item.Timestamp), 0).UTC().String()
-		case models.WorkflowInstanceStatusFailed, models.WorkflowInstanceStatusSucceeded, models.WorkflowInstanceStatusCanceled:
-			ps.CompletedAt = time.Unix(int64(item.Timestamp), 0).UTC().String()
-		}
-
-		statuses[item.ProcessorUuid] = struct {
-			ProcessorStatus models.StatusMetadata
-			Latest          store_dynamodb.WorkflowInstanceStatus
-		}{
-			ProcessorStatus: ps,
-			Latest:          latest,
-		}
-	}
-
-	return statuses
 }
