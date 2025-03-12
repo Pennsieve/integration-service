@@ -15,6 +15,8 @@ import (
 	"github.com/pennsieve/integration-service/service/models"
 )
 
+var ErrWorkflowInstanceNotFound = errors.New("workflow instance not found")
+
 type DynamoDBStore interface {
 	Insert(context.Context, WorkflowInstance) error
 	GetById(context.Context, string) (WorkflowInstance, error)
@@ -57,7 +59,7 @@ func (r *WorkflowInstanceDatabaseStore) GetById(ctx context.Context, instanceId 
 		err = fmt.Errorf("couldn't get info about %v. Here's why: %w", instanceId, err)
 	} else {
 		if len(response.Item) == 0 {
-			err = errors.New("workflow instance not found")
+			err = ErrWorkflowInstanceNotFound
 		} else {
 			err = attributevalue.UnmarshalMap(response.Item, &workflowInstance)
 			if err != nil {

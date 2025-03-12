@@ -21,10 +21,10 @@ help:
 test:
 	mkdir -p test-dynamodb-data
 	chmod -R 777 test-dynamodb-data
-	docker-compose -f docker-compose.test.yml down --remove-orphans
+	docker compose -f docker-compose.test.yml down --remove-orphans
 	mkdir -p data conf
 	chmod -R 777 data conf
-	docker-compose -f docker-compose.test.yml up --build --exit-code-from local_tests local_tests
+	docker compose -f docker-compose.test.yml up --build --exit-code-from local_tests local_tests
 	make clean
 
 # Run dockerized tests (used on Jenkins)
@@ -38,7 +38,7 @@ test-ci:
 
 # Spin down active docker containers.
 docker-clean:
-	docker-compose -f docker-compose.test.yml down
+	docker compose -f docker-compose.test.yml down
 
 # Build lambda and create ZIP file
 package:

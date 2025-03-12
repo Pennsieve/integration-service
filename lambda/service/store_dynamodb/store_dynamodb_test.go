@@ -131,6 +131,30 @@ func TestInsertGet(t *testing.T) {
 
 }
 
+func TestNoIntegrationInstance(t *testing.T) {
+	tableName := "integrations"
+	dynamoDBClient := getClient()
+
+	// create table
+	_, err := CreateWorkflowInstancesTable(dynamoDBClient, tableName)
+	if err != nil {
+		t.Fatalf("err creating table")
+	}
+	t.Cleanup(func() {
+		// delete table
+		err = DeleteTable(dynamoDBClient, tableName)
+		if err != nil {
+			t.Fatalf("err deleting table")
+		}
+	})
+
+	store := store_dynamodb.NewWorkflowInstanceDatabaseStore(dynamoDBClient, tableName)
+	integrationId := uuid.NewString()
+	_, err = store.GetById(context.Background(), integrationId)
+	assert.ErrorIs(t, store_dynamodb.ErrWorkflowInstanceNotFound, err)
+
+}
+
 func TestInsertPut(t *testing.T) {
 	tableName := "integrations"
 	dynamoDBClient := getClient()
