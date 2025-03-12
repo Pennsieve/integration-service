@@ -2,6 +2,7 @@ package store_dynamodb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -47,15 +48,21 @@ func (r *WorkflowInstanceDatabaseStore) Insert(ctx context.Context, instance Wor
 
 func (r *WorkflowInstanceDatabaseStore) GetById(ctx context.Context, instanceId string) (WorkflowInstance, error) {
 	workflowInstance := WorkflowInstance{Uuid: instanceId}
+
 	response, err := r.DB.GetItem(ctx, &dynamodb.GetItemInput{
 		Key: workflowInstance.GetKey(), TableName: aws.String(r.TableName),
 	})
+
 	if err != nil {
-		log.Printf("couldn't get info about %v. Here's why: %v\n", instanceId, err)
+		err = fmt.Errorf("couldn't get info about %v. Here's why: %w", instanceId, err)
 	} else {
-		err = attributevalue.UnmarshalMap(response.Item, &workflowInstance)
-		if err != nil {
-			log.Printf("couldn't unmarshal response. Here's why: %v\n", err)
+		if len(response.Item) == 0 {
+			err = errors.New("workflow instance not found")
+		} else {
+			err = attributevalue.UnmarshalMap(response.Item, &workflowInstance)
+			if err != nil {
+				err = fmt.Errorf("couldn't unmarshal response. Here's why: %w", err)
+			}
 		}
 	}
 
