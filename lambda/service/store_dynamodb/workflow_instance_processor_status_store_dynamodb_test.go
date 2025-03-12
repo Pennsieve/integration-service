@@ -1,4 +1,4 @@
-package store_dynamodb_test
+package store_dynamodb
 
 import (
 	"context"
@@ -11,7 +11,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/google/uuid"
 	"github.com/pennsieve/integration-service/service/models"
-	"github.com/pennsieve/integration-service/service/store_dynamodb"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -25,7 +24,7 @@ func TestWorkflowInstanceProcessorStatusTable(t *testing.T) {
 		t.Fatalf("err creating table")
 	}
 
-	dynamo_store := store_dynamodb.NewWorkflowInstanceProcessorStatusDatabaseStore(dynamoDBClient, tableName)
+	dynamo_store := NewWorkflowInstanceProcessorStatusDatabaseStore(dynamoDBClient, tableName)
 	workflowInstanceId := uuid.NewString()
 	processorId := uuid.NewString()
 	now := time.Now().Unix()
