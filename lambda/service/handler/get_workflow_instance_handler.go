@@ -18,7 +18,7 @@ func GetWorkflowInstanceHandler(ctx context.Context, request events.APIGatewayV2
 	handlerName := "GetWorkflowInstanceHandler"
 	uuid := request.PathParameters["id"]
 
-	cfg, err := config.LoadDefaultConfig(context.Background())
+	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		log.Println(err.Error())
 		return events.APIGatewayV2HTTPResponse{

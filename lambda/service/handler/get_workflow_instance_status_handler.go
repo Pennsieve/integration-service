@@ -2,7 +2,7 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 
@@ -17,12 +17,14 @@ func GetWorkflowInstanceStatusHandler(ctx context.Context, request events.APIGat
 	handlerName := "GetWorkflowInstanceStatusHandler"
 	uuid := request.PathParameters["id"]
 
-	cfg, err := config.LoadDefaultConfig(context.Background())
+	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
-		return events.APIGatewayV2HTTPResponse{
-			StatusCode: http.StatusInternalServerError,
-			Body:       handlerError(handlerName, ErrConfig),
-		}, nil
+		return APIErrorResponse(
+			handlerName,
+			http.StatusInternalServerError,
+			ErrConfig.Error(),
+			err,
+		), nil
 	}
 	dynamoDBClient := dynamodb.NewFromConfig(cfg)
 
@@ -31,10 +33,12 @@ func GetWorkflowInstanceStatusHandler(ctx context.Context, request events.APIGat
 
 	workflowInstance, err := workflowInstanceStore.GetById(ctx, uuid)
 	if err != nil {
-		return events.APIGatewayV2HTTPResponse{
-			StatusCode: http.StatusNotFound,
-			Body:       handlerError(handlerName, ErrNoRecordsFound),
-		}, nil
+		return APIErrorResponse(
+			handlerName,
+			http.StatusNotFound,
+			fmt.Sprintf("workflow instance with id=%s not found", uuid),
+			err,
+		), nil
 	}
 
 	workflowInstanceProcessorStatusTable := os.Getenv("WORKFLOW_INSTANCE_PROCESSOR_STATUS_TABLE")
@@ -42,10 +46,12 @@ func GetWorkflowInstanceStatusHandler(ctx context.Context, request events.APIGat
 
 	processorStatuses, err := workflowInstanceProcessorStatusStore.GetAll(ctx, uuid)
 	if err != nil {
-		return events.APIGatewayV2HTTPResponse{
-			StatusCode: http.StatusNotFound,
-			Body:       handlerError(handlerName, ErrNoRecordsFound),
-		}, nil
+		return APIErrorResponse(
+			handlerName,
+			http.StatusInternalServerError,
+			fmt.Sprintf("failed to fetch statuses for workflow instance with id=%s", uuid),
+			err,
+		), nil
 	}
 
 	response := models.WorkflowInstanceStatus{
@@ -69,16 +75,5 @@ func GetWorkflowInstanceStatusHandler(ctx context.Context, request events.APIGat
 		})
 	}
 
-	jsonResponse, err := json.Marshal(response)
-	if err != nil {
-		return events.APIGatewayV2HTTPResponse{
-			StatusCode: http.StatusInternalServerError,
-			Body:       handlerError(handlerName, ErrMarshaling),
-		}, err
-	}
-
-	return events.APIGatewayV2HTTPResponse{
-		StatusCode: http.StatusOK,
-		Body:       string(jsonResponse),
-	}, nil
+	return APIJsonResponse(handlerName, http.StatusOK, response), nil
 }
