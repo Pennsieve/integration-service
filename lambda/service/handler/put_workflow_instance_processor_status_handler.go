@@ -18,7 +18,7 @@ import (
 func PutWorkflowInstanceProcessorStatusHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	handlerName := "PutWorkflowInstanceProcessorStatusHandler"
 	uuid := request.PathParameters["id"]
-	processorUuid := request.PathParameters["processorUuid"]
+	processorUuid := request.PathParameters["processorId"]
 
 	var requestBody models.WorkflowInstanceStatusEvent
 	if err := json.Unmarshal([]byte(request.Body), &requestBody); err != nil {
