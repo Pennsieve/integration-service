@@ -1,4 +1,4 @@
-package store_dynamodb_test
+package store_dynamodb
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/google/uuid"
-	"github.com/pennsieve/integration-service/service/store_dynamodb"
+	"github.com/pennsieve/integration-service/service/models"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -51,14 +51,14 @@ func TestInsertGetById(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err creating table")
 	}
-	dynamo_store := store_dynamodb.NewWorkflowInstanceDatabaseStore(dynamoDBClient, tableName)
+	dynamo_store := NewWorkflowInstanceDatabaseStore(dynamoDBClient, tableName)
 	id := uuid.New()
 	integrationId := id.String()
 	packageIds := []string{"packageId1", "packageId2"}
 	params := `{
 		"target_path" : "output-folder"
 	}`
-	store_integration := store_dynamodb.WorkflowInstance{
+	store_integration := WorkflowInstance{
 		Uuid:          integrationId,
 		DatasetNodeId: "xyz",
 		PackageIds:    packageIds,
@@ -93,14 +93,14 @@ func TestInsertGet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err creating table")
 	}
-	dynamo_store := store_dynamodb.NewWorkflowInstanceDatabaseStore(dynamoDBClient, tableName)
+	dynamo_store := NewWorkflowInstanceDatabaseStore(dynamoDBClient, tableName)
 	id := uuid.New()
 	integrationId := id.String()
 	packageIds := []string{"packageId1", "packageId2"}
 	params := `{
 		"target_path" : "output-folder"
 	}`
-	store_integration := store_dynamodb.WorkflowInstance{
+	store_integration := WorkflowInstance{
 		Uuid:            integrationId,
 		ComputeNodeUuid: "someComputeNodeUuid",
 		DatasetNodeId:   "someDatasetNodeId",
@@ -131,6 +131,30 @@ func TestInsertGet(t *testing.T) {
 
 }
 
+func TestNoIntegrationInstance(t *testing.T) {
+	tableName := "integrations"
+	dynamoDBClient := getClient()
+
+	// create table
+	_, err := CreateWorkflowInstancesTable(dynamoDBClient, tableName)
+	if err != nil {
+		t.Fatalf("err creating table")
+	}
+	t.Cleanup(func() {
+		// delete table
+		err = DeleteTable(dynamoDBClient, tableName)
+		if err != nil {
+			t.Fatalf("err deleting table")
+		}
+	})
+
+	store := NewWorkflowInstanceDatabaseStore(dynamoDBClient, tableName)
+	integrationId := uuid.NewString()
+	_, err = store.GetById(context.Background(), integrationId)
+	assert.ErrorIs(t, ErrWorkflowInstanceNotFound, err)
+
+}
+
 func TestInsertPut(t *testing.T) {
 	tableName := "integrations"
 	dynamoDBClient := getClient()
@@ -141,14 +165,14 @@ func TestInsertPut(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err creating table")
 	}
-	dynamo_store := store_dynamodb.NewWorkflowInstanceDatabaseStore(dynamoDBClient, tableName)
+	dynamo_store := NewWorkflowInstanceDatabaseStore(dynamoDBClient, tableName)
 	id := uuid.New()
 	integrationId := id.String()
 	packageIds := []string{"packageId1", "packageId2"}
 	params := `{
 		"target_path" : "output-folder"
 	}`
-	store_integration := store_dynamodb.WorkflowInstance{
+	store_integration := WorkflowInstance{
 		Uuid:            integrationId,
 		ComputeNodeUuid: "someComputeNodeUuid",
 		DatasetNodeId:   "someDatasetNodeId",
@@ -162,7 +186,7 @@ func TestInsertPut(t *testing.T) {
 		t.Errorf("error inserting item into table %v", err)
 	}
 
-	updated_store_integration := store_dynamodb.WorkflowInstance{
+	updated_store_integration := WorkflowInstance{
 		CompletedAt: time.Now().UTC().String(),
 	}
 
@@ -185,6 +209,68 @@ func TestInsertPut(t *testing.T) {
 		t.Fatalf("err creating table")
 	}
 
+}
+
+func TestSetStatus(t *testing.T) {
+	tableName := "integrations"
+	dynamoDBClient := getClient()
+	organizationId := "someOrganizationId"
+
+	_, err := CreateWorkflowInstancesTable(dynamoDBClient, tableName)
+	assert.NoError(t, err, "error while creating workflow instance table in DynamoDB")
+
+	workflowInstanceStore := NewWorkflowInstanceDatabaseStore(dynamoDBClient, tableName)
+	id := uuid.New()
+	integrationId := id.String()
+	packageIds := []string{"packageId1", "packageId2"}
+	params := `{
+		"target_path" : "output-folder"
+	}`
+	store_integration := WorkflowInstance{
+		Uuid:            integrationId,
+		ComputeNodeUuid: "someComputeNodeUuid",
+		DatasetNodeId:   "someDatasetNodeId",
+		PackageIds:      packageIds,
+		Params:          params,
+		OrganizationId:  organizationId,
+	}
+	err = workflowInstanceStore.Insert(context.Background(), store_integration)
+	if err != nil {
+		t.Errorf("error inserting item into table %v", err)
+	}
+
+	instance, err := workflowInstanceStore.GetById(context.Background(), integrationId)
+	assert.NoError(t, err)
+	assert.Zero(t, instance.StartedAt)
+	assert.Zero(t, instance.CompletedAt)
+
+	err = workflowInstanceStore.SetStatus(context.Background(), integrationId, models.WorkflowInstanceStatusEvent{
+		Status:    models.WorkflowInstanceStatusStarted,
+		Timestamp: int(time.Now().Unix()),
+	})
+	assert.NoError(t, err, "failed to update workflow instance status to STARTED")
+
+	instance, err = workflowInstanceStore.GetById(context.Background(), integrationId)
+	assert.NoError(t, err)
+
+	assert.NotZero(t, instance.StartedAt)
+	assert.Zero(t, instance.CompletedAt)
+
+	err = workflowInstanceStore.SetStatus(context.Background(), integrationId, models.WorkflowInstanceStatusEvent{
+		Status:    models.WorkflowInstanceStatusSucceeded,
+		Timestamp: int(time.Now().Unix()),
+	})
+	assert.NoError(t, err, "failed to update workflow instance status to SUCCEEDED")
+
+	instance, err = workflowInstanceStore.GetById(context.Background(), integrationId)
+	assert.NoError(t, err)
+
+	assert.NotZero(t, instance.StartedAt)
+	assert.NotZero(t, instance.CompletedAt)
+
+	// delete table
+	err = DeleteTable(dynamoDBClient, tableName)
+	assert.NoError(t, err, "error while deleting workflow instance table from dynamodb")
 }
 
 func CreateWorkflowInstancesTable(dynamoDBClient *dynamodb.Client, tableName string) (*types.TableDescription, error) {

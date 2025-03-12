@@ -1,4 +1,4 @@
-package store_dynamodb_test
+package store_dynamodb
 
 import (
 	"context"
@@ -10,7 +10,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/google/uuid"
-	"github.com/pennsieve/integration-service/service/store_dynamodb"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -23,13 +22,13 @@ func TestInsertGetWorkflows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err creating table")
 	}
-	dynamo_store := store_dynamodb.NewWorkflowDatabaseStore(dynamoDBClient, tableName)
+	dynamo_store := NewWorkflowDatabaseStore(dynamoDBClient, tableName)
 	id := uuid.New()
 	workflowUuid := id.String()
 	processors := []string{"appUuid1", "appUuid2", "appUuid3"}
 	organizationId := "someOrganizationId"
 
-	workflow := store_dynamodb.Workflow{
+	workflow := Workflow{
 		Uuid:           workflowUuid,
 		Name:           "cytof-pipeline",
 		Description:    "End-to-end CyTOF pipeline",
@@ -68,13 +67,13 @@ func TestInsertGetByIdWorkflows(t *testing.T) {
 	if err != nil {
 		t.Fatalf("err creating table")
 	}
-	dynamo_store := store_dynamodb.NewWorkflowDatabaseStore(dynamoDBClient, tableName)
+	dynamo_store := NewWorkflowDatabaseStore(dynamoDBClient, tableName)
 	id := uuid.New()
 	workflowUuid := id.String()
 	processors := []string{"appUuid1", "appUuid2", "appUuid3"}
 	organizationId := "someOrganizationId"
 
-	workflow := store_dynamodb.Workflow{
+	workflow := Workflow{
 		Uuid:           workflowUuid,
 		Name:           "cytof-pipeline",
 		Description:    "End-to-end CyTOF pipeline",

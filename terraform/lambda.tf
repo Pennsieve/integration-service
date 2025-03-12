@@ -52,7 +52,7 @@ resource "aws_lambda_function" "integration_service_lambda" {
       LOG_LEVEL = "info",
       INTEGRATIONS_TABLE = aws_dynamodb_table.integrations_table.name,
       WORKFLOWS_TABLE = aws_dynamodb_table.workflows_table.name,
-      WORKFLOW_INSTANCE_STATUS_TABLE = aws_dynamodb_table.workflow_instance_status_table.name,
+      WORKFLOW_INSTANCE_PROCESSOR_STATUS_TABLE = aws_dynamodb_table.workflow_instance_processor_status_table.name,
     }
   }
 }

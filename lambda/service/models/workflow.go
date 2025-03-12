@@ -11,6 +11,7 @@ type WorkflowInstance struct {
 	PackageIDs    []string    `json:"packageIds"`
 	Workflow      interface{} `json:"workflow,omitempty"`
 	Params        interface{} `json:"params,omitempty"`
+	Status        string      `json:"status"`
 	StartedAt     string      `json:"startedAt"`
 	CompletedAt   string      `json:"completedAt"`
 }
@@ -33,7 +34,7 @@ type StatusMetadata struct {
 
 type WorkflowInstanceStatus struct {
 	StatusMetadata
-	Processors []WorkflowProcessorStatus `json:"processors"`
+	Processors []WorkflowProcessorStatus `json:"workflow"`
 }
 
 type WorkflowProcessorStatus struct {
@@ -41,7 +42,6 @@ type WorkflowProcessorStatus struct {
 }
 
 type WorkflowInstanceStatusEvent struct {
-	Uuid      string `json:"uuid"`
 	Status    string `json:"status"`
 	Timestamp int    `json:"timestamp"`
 }
@@ -60,6 +60,14 @@ func IsValidWorkflowInstanceStatus(status string) bool {
 		WorkflowInstanceStatusNotStarted,
 		WorkflowInstanceStatusStarted,
 		WorkflowInstanceStatusCanceling,
+		WorkflowInstanceStatusCanceled,
+		WorkflowInstanceStatusSucceeded,
+		WorkflowInstanceStatusFailed,
+	}, status)
+}
+
+func IsEndStateWorkflowInstanceStatus(status string) bool {
+	return slices.Contains([]string{
 		WorkflowInstanceStatusCanceled,
 		WorkflowInstanceStatusSucceeded,
 		WorkflowInstanceStatusFailed,
