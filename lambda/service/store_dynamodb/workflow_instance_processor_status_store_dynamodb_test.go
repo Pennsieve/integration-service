@@ -41,7 +41,7 @@ func TestWorkflowInstanceProcessorStatusTable(t *testing.T) {
 
 	// insert same workflow new processor status (should be included in GetAll)
 	statusEvent = models.WorkflowInstanceStatusEvent{
-		Status:    models.WorkflowInstanceStatusNotStarted,
+		Status:    models.WorkflowInstanceStatusSucceeded,
 		Timestamp: int(now),
 	}
 	err = dynamo_store.Put(context.Background(), workflowInstanceId, uuid.NewString(), statusEvent)
@@ -74,6 +74,10 @@ func TestWorkflowInstanceProcessorStatusTable(t *testing.T) {
 	for _, status := range statuses {
 		if status.ProcessorUuid == processorId {
 			assert.Equal(t, status.Status, models.WorkflowInstanceStatusStarted)
+			assert.NotZero(t, status.StartedAt)
+		} else {
+			assert.Equal(t, status.Status, models.WorkflowInstanceStatusSucceeded)
+			assert.NotZero(t, status.CompletedAt)
 		}
 	}
 
