@@ -41,6 +41,7 @@ func GetWorkflowInstanceHandler(ctx context.Context, request events.APIGatewayV2
 
 	m, err := json.Marshal(models.WorkflowInstance{
 		Uuid: integration.Uuid,
+		Name: integration.Name,
 		ComputeNode: models.ComputeNode{
 			ComputeNodeUuid:       integration.ComputeNodeUuid,
 			ComputeNodeGatewayUrl: integration.ComputeNodeGatewayUrl,
