@@ -84,10 +84,22 @@ type IntegrationResponse struct {
 }
 
 type Workflow struct {
-	Uuid        string   `json:"uuid"`
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Processors  []string `json:"processors"`
-	CreatedAt   string   `json:"createdAt"`
-	CreatedBy   string   `json:"createdBy"`
+	Uuid        string       `json:"uuid"`
+	Name        string       `json:"name"`
+	Description string       `json:"description"`
+	Processors  []Processors `json:"processors"`
+	CreatedAt   string       `json:"createdAt"`
+	CreatedBy   string       `json:"createdBy"`
+}
+
+type Processors struct {
+	Uuid                     string
+	Name                     string
+	Description              string
+	ApplicationContainerName string
+	ApplicationId            string // taskDefnId
+	InputDataTypeUuid        string
+	OutputDataTypeUuid       string
+	CodeRepoUuid             string
+	DependsOn                []string
 }
