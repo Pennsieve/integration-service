@@ -98,11 +98,8 @@ type Processors struct {
 	Description              string
 	ApplicationContainerName string
 	ApplicationId            string // taskDefnId
-	// ApplicationType          string // processor, pre, post
-	// "params": string
-	// "commandArguments": []string,
-	InputDataTypeUuid  string
-	OutputDataTypeUuid string
-	CodeRepoUuid       string
-	DependsOn          []string
+	InputDataTypeUuid        string
+	OutputDataTypeUuid       string
+	CodeRepoUuid             string
+	DependsOn                []string
 }
