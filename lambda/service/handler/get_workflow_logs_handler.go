@@ -13,7 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/pennsieve/integration-service/service/clients"
-	credentialsretriever "github.com/pennsieve/integration-service/service/credentials_retriever"
+	cr "github.com/pennsieve/integration-service/service/credentials_retriever"
 	"github.com/pennsieve/integration-service/service/log_retriever"
 	"github.com/pennsieve/integration-service/service/mappers"
 	"github.com/pennsieve/integration-service/service/store_dynamodb"
@@ -43,9 +43,9 @@ func GetWorkflowInstanceLogsHandler(ctx context.Context, request events.APIGatew
 	dynamoDBClient := dynamodb.NewFromConfig(cfg)
 
 	integrationsTable := os.Getenv("INTEGRATIONS_TABLE")
-	dynamo_store := store_dynamodb.NewWorkflowInstanceDatabaseStore(dynamoDBClient, integrationsTable)
+	dynamoStore := store_dynamodb.NewWorkflowInstanceDatabaseStore(dynamoDBClient, integrationsTable)
 
-	integration, err := dynamo_store.GetById(ctx, uuid)
+	integration, err := dynamoStore.GetById(ctx, uuid)
 	if err != nil {
 		log.Println(err.Error())
 		return events.APIGatewayV2HTTPResponse{
@@ -63,8 +63,20 @@ func GetWorkflowInstanceLogsHandler(ctx context.Context, request events.APIGatew
 
 	}
 
+	// get computeNode
+	computeNodesTable := os.Getenv("COMPUTE_NODES_TABLE")
+	nodeStore := store_dynamodb.NewNodeDatabaseStore(dynamoDBClient, computeNodesTable)
+	computeNode, err := nodeStore.GetById(ctx, integration.ComputeNodeUuid)
+	if err != nil {
+		log.Println(err.Error())
+		return events.APIGatewayV2HTTPResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       handlerError(handlerName, ErrNoRecordsFound),
+		}, nil
+	}
+
 	// get Credentials
-	retriever := credentialsretriever.NewAWSCredentialsRetriever("accountId", cfg)
+	retriever := cr.NewAWSCredentialsRetriever(computeNode.AccountId, cfg)
 	creds, err := retriever.Run(ctx)
 	if err != nil {
 		log.Fatal("error running retriever", err.Error())
@@ -74,7 +86,8 @@ func GetWorkflowInstanceLogsHandler(ctx context.Context, request events.APIGatew
 	httpClient := clients.NewComputeRestClient(&http.Client{}, fmt.Sprintf("%s/logs", integration.ComputeNodeGatewayUrl),
 		v4.NewSigner(),
 		creds,
-		"")
+		"us-east-1", // temporary default
+	)
 	logRetriever := log_retriever.NewLogRetriever(httpClient, uuid, applicationUuid)
 	// retrieve logs
 	resp, err := logRetriever.Run(ctx)

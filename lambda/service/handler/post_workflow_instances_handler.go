@@ -13,7 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/pennsieve/integration-service/service/clients"
 	"github.com/pennsieve/integration-service/service/compute_trigger"
-	credentialsretriever "github.com/pennsieve/integration-service/service/credentials_retriever"
+	cr "github.com/pennsieve/integration-service/service/credentials_retriever"
 	"github.com/pennsieve/integration-service/service/models"
 	"github.com/pennsieve/integration-service/service/store_dynamodb"
 	"github.com/pennsieve/pennsieve-go-core/pkg/authorizer"
@@ -49,8 +49,20 @@ func PostWorkflowInstancesHandler(ctx context.Context, request events.APIGateway
 	workflowInstanceProcessorStatusTable := os.Getenv("WORKFLOW_INSTANCE_PROCESSOR_STATUS_TABLE")
 	workflow_instance_processor_status_dynamo_store := store_dynamodb.NewWorkflowInstanceProcessorStatusDatabaseStore(dynamoDBClient, workflowInstanceProcessorStatusTable)
 
+	// get computeNode
+	computeNodesTable := os.Getenv("COMPUTE_NODES_TABLE")
+	nodeStore := store_dynamodb.NewNodeDatabaseStore(dynamoDBClient, computeNodesTable)
+	computeNode, err := nodeStore.GetById(ctx, integration.ComputeNode.ComputeNodeUuid)
+	if err != nil {
+		log.Println(err.Error())
+		return events.APIGatewayV2HTTPResponse{
+			StatusCode: http.StatusNotFound,
+			Body:       handlerError(handlerName, ErrNoRecordsFound),
+		}, nil
+	}
+
 	// get creds
-	retriever := credentialsretriever.NewAWSCredentialsRetriever("accountId", cfg)
+	retriever := cr.NewAWSCredentialsRetriever(computeNode.AccountId, cfg)
 	creds, err := retriever.Run(ctx)
 	if err != nil {
 		log.Fatal("error running retriever", err.Error())
@@ -60,7 +72,7 @@ func PostWorkflowInstancesHandler(ctx context.Context, request events.APIGateway
 		integration.ComputeNode.ComputeNodeGatewayUrl,
 		v4.NewSigner(),
 		creds,
-		"",
+		"us-east-1", // temporary default
 	)
 	computeTrigger := compute_trigger.NewComputeTrigger(httpClient, integration, dynamo_store, workflow_instance_processor_status_dynamo_store, organizationId)
 	// run
