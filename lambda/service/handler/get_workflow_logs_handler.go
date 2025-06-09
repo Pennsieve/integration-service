@@ -42,10 +42,10 @@ func GetWorkflowInstanceLogsHandler(ctx context.Context, request events.APIGatew
 	}
 	dynamoDBClient := dynamodb.NewFromConfig(cfg)
 
-	integrationsTable := os.Getenv("INTEGRATIONS_TABLE")
-	dynamoStore := store_dynamodb.NewWorkflowInstanceDatabaseStore(dynamoDBClient, integrationsTable)
+	workflowInstancesTable := os.Getenv("INTEGRATIONS_TABLE")
+	dynamoStore := store_dynamodb.NewWorkflowInstanceDatabaseStore(dynamoDBClient, workflowInstancesTable)
 
-	integration, err := dynamoStore.GetById(ctx, uuid)
+	workflowInstance, err := dynamoStore.GetById(ctx, uuid)
 	if err != nil {
 		log.Println(err.Error())
 		return events.APIGatewayV2HTTPResponse{
@@ -54,7 +54,7 @@ func GetWorkflowInstanceLogsHandler(ctx context.Context, request events.APIGatew
 		}, nil
 	}
 
-	if integration.ComputeNodeGatewayUrl == "" {
+	if workflowInstance.ComputeNodeGatewayUrl == "" {
 		log.Println("compute node URL required")
 		return events.APIGatewayV2HTTPResponse{
 			StatusCode: http.StatusUnprocessableEntity,
@@ -63,27 +63,15 @@ func GetWorkflowInstanceLogsHandler(ctx context.Context, request events.APIGatew
 
 	}
 
-	// get computeNode
-	computeNodesTable := os.Getenv("COMPUTE_NODES_TABLE")
-	nodeStore := store_dynamodb.NewNodeDatabaseStore(dynamoDBClient, computeNodesTable)
-	computeNode, err := nodeStore.GetById(ctx, integration.ComputeNodeUuid)
-	if err != nil {
-		log.Println(err.Error())
-		return events.APIGatewayV2HTTPResponse{
-			StatusCode: http.StatusNotFound,
-			Body:       handlerError(handlerName, ErrNoRecordsFound),
-		}, nil
-	}
-
 	// get Credentials
-	retriever := cr.NewAWSCredentialsRetriever(computeNode.AccountId, cfg)
+	retriever := cr.NewAWSCredentialsRetriever(workflowInstance.AccountId, cfg)
 	creds, err := retriever.Run(ctx)
 	if err != nil {
 		log.Fatal("error running retriever", err.Error())
 	}
 
 	// create compute node trigger
-	httpClient := clients.NewComputeRestClient(&http.Client{}, fmt.Sprintf("%s/logs", integration.ComputeNodeGatewayUrl),
+	httpClient := clients.NewComputeRestClient(&http.Client{}, fmt.Sprintf("%s/logs", workflowInstance.ComputeNodeGatewayUrl),
 		v4.NewSigner(),
 		creds,
 		"us-east-1", // temporary default
