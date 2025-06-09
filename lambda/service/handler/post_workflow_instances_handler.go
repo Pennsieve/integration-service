@@ -8,10 +8,12 @@ import (
 	"os"
 
 	"github.com/aws/aws-lambda-go/events"
+	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/pennsieve/integration-service/service/clients"
 	"github.com/pennsieve/integration-service/service/compute_trigger"
+	credentialsretriever "github.com/pennsieve/integration-service/service/credentials_retriever"
 	"github.com/pennsieve/integration-service/service/models"
 	"github.com/pennsieve/integration-service/service/store_dynamodb"
 	"github.com/pennsieve/pennsieve-go-core/pkg/authorizer"
@@ -47,8 +49,19 @@ func PostWorkflowInstancesHandler(ctx context.Context, request events.APIGateway
 	workflowInstanceProcessorStatusTable := os.Getenv("WORKFLOW_INSTANCE_PROCESSOR_STATUS_TABLE")
 	workflow_instance_processor_status_dynamo_store := store_dynamodb.NewWorkflowInstanceProcessorStatusDatabaseStore(dynamoDBClient, workflowInstanceProcessorStatusTable)
 
+	// get creds
+	retriever := credentialsretriever.NewAWSCredentialsRetriever("accountId", cfg)
+	creds, err := retriever.Run(ctx)
+	if err != nil {
+		log.Fatal("error running retriever", err.Error())
+	}
 	// create compute node trigger
-	httpClient := clients.NewComputeRestClient(&http.Client{}, integration.ComputeNode.ComputeNodeGatewayUrl)
+	httpClient := clients.NewComputeRestClient(&http.Client{},
+		integration.ComputeNode.ComputeNodeGatewayUrl,
+		v4.NewSigner(),
+		creds,
+		"",
+	)
 	computeTrigger := compute_trigger.NewComputeTrigger(httpClient, integration, dynamo_store, workflow_instance_processor_status_dynamo_store, organizationId)
 	// run
 	if err := computeTrigger.Run(ctx); err != nil {

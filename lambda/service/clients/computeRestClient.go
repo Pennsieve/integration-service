@@ -3,19 +3,26 @@ package clients
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 )
 
 type ComputeRestClient struct {
 	Client     *http.Client
 	ComputeURL string
+	Signer     *v4.Signer
+	Creds      aws.Credentials
+	Region     string
 }
 
-func NewComputeRestClient(client *http.Client, url string) Client {
-	return &ComputeRestClient{client, url}
+func NewComputeRestClient(client *http.Client, url string, signer *v4.Signer, creds aws.Credentials, region string) Client {
+	return &ComputeRestClient{client, url, signer, creds, region}
 }
 
 func (c *ComputeRestClient) Execute(ctx context.Context, b bytes.Buffer) ([]byte, error) {
@@ -24,6 +31,12 @@ func (c *ComputeRestClient) Execute(ctx context.Context, b bytes.Buffer) ([]byte
 	if err != nil {
 		log.Println(err.Error())
 		return nil, err
+	}
+
+	// sign the request
+	err = c.Signer.SignHTTP(ctx, c.Creds, req, "", "compute-gateway", c.Region, time.Now())
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign request: %w", err)
 	}
 
 	triggerContext, cancel := context.WithTimeout(ctx, requestDuration)
@@ -61,6 +74,13 @@ func (c *ComputeRestClient) Retrieve(ctx context.Context, params map[string]stri
 	retrievalContext, cancel := context.WithTimeout(ctx, requestDuration)
 	defer cancel()
 	req = req.WithContext(retrievalContext)
+
+	// sign the request
+	err = c.Signer.SignHTTP(ctx, c.Creds, req, "", "compute-gateway", c.Region, time.Now())
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign request: %w", err)
+	}
+
 	resp, err := c.Client.Do(req)
 	if err != nil {
 		log.Println(err.Error())

@@ -1,0 +1,45 @@
+package credentialsretriever
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
+)
+
+type Retriever interface {
+	Run(context.Context) (aws.Credentials, error)
+}
+
+type AWSCredentialsRetriever struct {
+	AccountId string
+	Config    aws.Config
+}
+
+func NewAWSCredentialsRetriever(accountId string, cfg aws.Config) Retriever {
+	return &AWSCredentialsRetriever{accountId, cfg}
+}
+
+func (r *AWSCredentialsRetriever) Run(ctx context.Context) (aws.Credentials, error) {
+	log.Println("assuming role ...")
+
+	stsClient := sts.NewFromConfig(r.Config)
+
+	provisionerAccountId, err := stsClient.GetCallerIdentity(ctx,
+		&sts.GetCallerIdentityInput{})
+	if err != nil {
+		return aws.Credentials{}, err
+	}
+
+	roleArn := fmt.Sprintf("arn:aws:iam::%s:role/ROLE-%s", r.AccountId, *provisionerAccountId.Account)
+	appCreds := stscreds.NewAssumeRoleProvider(stsClient, roleArn)
+	credentials, err := appCreds.Retrieve(ctx)
+	if err != nil {
+		return aws.Credentials{}, err
+	}
+
+	return credentials, nil
+}
