@@ -160,17 +160,6 @@ data "aws_iam_policy_document" "integration_service_lambda_iam_policy_document" 
   }
 
   statement {
-    sid    = "PassRole"
-    effect = "Allow"
-    actions = [
-      "iam:PassRole",
-    ]
-    resources = [
-      "*"
-    ]
-  }
-
-  statement {
     sid = "LambdaAccessToDynamoDB"
     effect = "Allow"
 
@@ -196,6 +185,16 @@ data "aws_iam_policy_document" "integration_service_lambda_iam_policy_document" 
     ]
 
   }
+
+  statement {
+      sid    = "GatewayAssumeRole"
+      effect = "Allow"
+      actions = [
+        "sts:AssumeRole"
+      ]
+      resources = ["arn:aws:iam::*:role/ROLE-*"]
+    }
+
 
 }
 

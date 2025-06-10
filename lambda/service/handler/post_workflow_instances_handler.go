@@ -60,7 +60,7 @@ func PostWorkflowInstancesHandler(ctx context.Context, request events.APIGateway
 		workflowInstance.ComputeNode.ComputeNodeGatewayUrl,
 		v4.NewSigner(),
 		creds,
-		"us-east-1", // temporary default
+		os.Getenv("REGION"),
 	)
 	computeTrigger := compute_trigger.NewComputeTrigger(httpClient, workflowInstance, dynamo_store, workflow_instance_processor_status_dynamo_store, organizationId)
 	// run
