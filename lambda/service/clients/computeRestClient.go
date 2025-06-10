@@ -65,6 +65,11 @@ func (c *ComputeRestClient) Retrieve(ctx context.Context, params map[string]stri
 		return nil, err
 	}
 
+	req.Header.Set("Content-Type", "application/json")
+
+	// If using STS creds
+	req.Header.Set("x-amz-security-token", c.Creds.SessionToken)
+
 	q := req.URL.Query()
 	for k, v := range params {
 		q.Add(k, v)
