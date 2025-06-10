@@ -82,7 +82,7 @@ func (c *ComputeRestClient) Retrieve(ctx context.Context, params map[string]stri
 	fmt.Println("Region:", c.Region)
 
 	// sign the request
-	err = c.Signer.SignHTTP(ctx, c.Creds, req, "UNSIGNED-PAYLOAD", "lambda", c.Region, time.Now())
+	err = c.Signer.SignHTTP(ctx, c.Creds, req, "UNSIGNED-PAYLOAD", "lambda", c.Region, time.Now().UTC())
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign request: %w", err)
 	}
