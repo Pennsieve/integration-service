@@ -32,7 +32,7 @@ func GetWorkflowInstanceLogsHandler(ctx context.Context, request events.APIGatew
 		}, nil
 	}
 
-	cfg, err := config.LoadDefaultConfig(context.Background())
+	cfg, err := config.LoadDefaultConfig(context.Background(), config.WithRegion("us-east-1"))
 	if err != nil {
 		log.Println(err.Error())
 		return events.APIGatewayV2HTTPResponse{
