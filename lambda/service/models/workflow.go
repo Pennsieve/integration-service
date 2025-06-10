@@ -7,6 +7,7 @@ type WorkflowInstance struct {
 	Name          string      `json:"name"`
 	ApplicationID int64       `json:"applicationId,omitempty"`
 	ComputeNode   ComputeNode `json:"computeNode,omitempty"`
+	Account       Account     `json:"account"`
 	DatasetNodeID string      `json:"datasetId"`
 	PackageIDs    []string    `json:"packageIds"`
 	Workflow      interface{} `json:"workflow,omitempty"`
@@ -90,4 +91,10 @@ type Workflow struct {
 	Processors  []string `json:"processors"`
 	CreatedAt   string   `json:"createdAt"`
 	CreatedBy   string   `json:"createdBy"`
+}
+
+type Account struct {
+	Uuid        string `json:"uuid"`
+	AccountId   string `json:"accountId"`
+	AccountType string `json:"accountType"`
 }

@@ -8,10 +8,12 @@ import (
 	"os"
 
 	"github.com/aws/aws-lambda-go/events"
+	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/pennsieve/integration-service/service/clients"
 	"github.com/pennsieve/integration-service/service/compute_trigger"
+	cr "github.com/pennsieve/integration-service/service/credentials_retriever"
 	"github.com/pennsieve/integration-service/service/models"
 	"github.com/pennsieve/integration-service/service/store_dynamodb"
 	"github.com/pennsieve/pennsieve-go-core/pkg/authorizer"
@@ -19,8 +21,8 @@ import (
 
 func PostWorkflowInstancesHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	handlerName := "PostWorkflowInstancesHandler"
-	var integration models.WorkflowInstance
-	if err := json.Unmarshal([]byte(request.Body), &integration); err != nil {
+	var workflowInstance models.WorkflowInstance
+	if err := json.Unmarshal([]byte(request.Body), &workflowInstance); err != nil {
 		log.Println(err.Error())
 		return events.APIGatewayV2HTTPResponse{
 			StatusCode: http.StatusInternalServerError,
@@ -41,15 +43,26 @@ func PostWorkflowInstancesHandler(ctx context.Context, request events.APIGateway
 	}
 	dynamoDBClient := dynamodb.NewFromConfig(cfg)
 
-	integrationsTable := os.Getenv("INTEGRATIONS_TABLE")
-	dynamo_store := store_dynamodb.NewWorkflowInstanceDatabaseStore(dynamoDBClient, integrationsTable)
+	workflowInstancesTable := os.Getenv("INTEGRATIONS_TABLE")
+	dynamo_store := store_dynamodb.NewWorkflowInstanceDatabaseStore(dynamoDBClient, workflowInstancesTable)
 
 	workflowInstanceProcessorStatusTable := os.Getenv("WORKFLOW_INSTANCE_PROCESSOR_STATUS_TABLE")
 	workflow_instance_processor_status_dynamo_store := store_dynamodb.NewWorkflowInstanceProcessorStatusDatabaseStore(dynamoDBClient, workflowInstanceProcessorStatusTable)
 
+	// get creds
+	retriever := cr.NewAWSCredentialsRetriever(workflowInstance.Account.AccountId, cfg)
+	creds, err := retriever.Run(ctx)
+	if err != nil {
+		log.Fatal("error running retriever", err.Error())
+	}
 	// create compute node trigger
-	httpClient := clients.NewComputeRestClient(&http.Client{}, integration.ComputeNode.ComputeNodeGatewayUrl)
-	computeTrigger := compute_trigger.NewComputeTrigger(httpClient, integration, dynamo_store, workflow_instance_processor_status_dynamo_store, organizationId)
+	httpClient := clients.NewComputeRestClient(&http.Client{},
+		workflowInstance.ComputeNode.ComputeNodeGatewayUrl,
+		v4.NewSigner(),
+		creds,
+		"us-east-1", // temporary default
+	)
+	computeTrigger := compute_trigger.NewComputeTrigger(httpClient, workflowInstance, dynamo_store, workflow_instance_processor_status_dynamo_store, organizationId)
 	// run
 	if err := computeTrigger.Run(ctx); err != nil {
 		log.Println(err.Error())
