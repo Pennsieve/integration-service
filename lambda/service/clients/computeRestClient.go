@@ -76,7 +76,7 @@ func (c *ComputeRestClient) Retrieve(ctx context.Context, params map[string]stri
 	req = req.WithContext(retrievalContext)
 
 	// sign the request
-	err = c.Signer.SignHTTP(ctx, c.Creds, req, "", "compute-gateway", c.Region, time.Now())
+	err = c.Signer.SignHTTP(ctx, c.Creds, req, "UNSIGNED-PAYLOAD", "lambda", c.Region, time.Now())
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign request: %w", err)
 	}
