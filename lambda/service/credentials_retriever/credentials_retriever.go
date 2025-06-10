@@ -27,7 +27,7 @@ func NewAWSCredentialsRetriever(accountId string, cfg aws.Config) Retriever {
 func (r *AWSCredentialsRetriever) Run(ctx context.Context) (aws.Credentials, error) {
 	log.Println("assuming role ...")
 
-	cfg, err := config.LoadDefaultConfig(context.Background())
+	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		return aws.Credentials{}, err
 	}
