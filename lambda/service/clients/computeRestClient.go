@@ -67,9 +67,6 @@ func (c *ComputeRestClient) Retrieve(ctx context.Context, params map[string]stri
 
 	req.Header.Set("Content-Type", "application/json")
 
-	// If using STS creds
-	req.Header.Set("x-amz-security-token", c.Creds.SessionToken)
-
 	q := req.URL.Query()
 	for k, v := range params {
 		q.Add(k, v)
@@ -79,6 +76,10 @@ func (c *ComputeRestClient) Retrieve(ctx context.Context, params map[string]stri
 	retrievalContext, cancel := context.WithTimeout(ctx, requestDuration)
 	defer cancel()
 	req = req.WithContext(retrievalContext)
+
+	fmt.Println("AccessKey:", c.Creds.AccessKeyID)
+	fmt.Println("SessionToken present:", c.Creds.SessionToken != "")
+	fmt.Println("Region:", c.Region)
 
 	// sign the request
 	err = c.Signer.SignHTTP(ctx, c.Creds, req, "UNSIGNED-PAYLOAD", "lambda", c.Region, time.Now())
