@@ -70,11 +70,13 @@ func GetWorkflowInstanceLogsHandler(ctx context.Context, request events.APIGatew
 		log.Fatal("error running retriever", err.Error())
 	}
 
+	log.Println(creds)
+
 	// create compute node trigger
 	httpClient := clients.NewComputeRestClient(&http.Client{}, fmt.Sprintf("%s/logs", workflowInstance.ComputeNodeGatewayUrl),
 		v4.NewSigner(),
 		creds,
-		"us-east-1", // temporary default
+		os.Getenv("REGION"),
 	)
 	logRetriever := log_retriever.NewLogRetriever(httpClient, uuid, applicationUuid)
 	// retrieve logs

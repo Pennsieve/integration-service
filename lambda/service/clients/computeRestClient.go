@@ -87,6 +87,9 @@ func (c *ComputeRestClient) Retrieve(ctx context.Context, params map[string]stri
 		return nil, err
 	}
 
+	// Log response status
+	log.Printf("Response Status: %s", resp.Status)
+
 	defer resp.Body.Close()
 	s, err := io.ReadAll(resp.Body)
 	if err != nil {
