@@ -154,10 +154,20 @@ data "aws_iam_policy_document" "integration_service_lambda_iam_policy_document" 
       "ec2:DescribeNetworkInterfaces",
       "ec2:DeleteNetworkInterface",
       "ec2:AssignPrivateIpAddresses",
-      "ec2:UnassignPrivateIpAddresses",
-      "sts:GetCallerIdentity"
+      "ec2:UnassignPrivateIpAddresses"
     ]
     resources = ["*"]
+  }
+
+  statement {
+    sid    = "PassRole"
+    effect = "Allow"
+    actions = [
+      "iam:PassRole",
+    ]
+    resources = [
+      "*"
+    ]
   }
 
   statement {
