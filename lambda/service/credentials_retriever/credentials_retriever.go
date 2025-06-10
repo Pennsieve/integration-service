@@ -28,12 +28,14 @@ func (r *AWSCredentialsRetriever) Run(ctx context.Context) (aws.Credentials, err
 
 	stsClient := sts.NewFromConfig(r.Config)
 
+	log.Println("getting provisioner account ...")
 	provisionerAccountId, err := stsClient.GetCallerIdentity(ctx,
 		&sts.GetCallerIdentityInput{})
 	if err != nil {
 		return aws.Credentials{}, err
 	}
 
+	log.Println("getting roleArn ...")
 	roleArn := fmt.Sprintf("arn:aws:iam::%s:role/ROLE-%s", r.AccountId, *provisionerAccountId.Account)
 	log.Println(roleArn)
 	appCreds := stscreds.NewAssumeRoleProvider(stsClient, roleArn)
@@ -41,6 +43,7 @@ func (r *AWSCredentialsRetriever) Run(ctx context.Context) (aws.Credentials, err
 	if err != nil {
 		return aws.Credentials{}, err
 	}
+	log.Println("done getting creds ...")
 
 	return credentials, nil
 }
