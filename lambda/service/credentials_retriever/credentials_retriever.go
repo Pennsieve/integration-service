@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -27,9 +28,10 @@ func NewAWSCredentialsRetriever(accountId string, cfg aws.Config) Retriever {
 func (r *AWSCredentialsRetriever) Run(ctx context.Context) (aws.Credentials, error) {
 	log.Println("assuming role ...")
 
-	cfg, err := config.LoadDefaultConfig(ctx)
+	cfg, err := config.LoadDefaultConfig(ctx,
+		config.WithRegion(os.Getenv("REGION")))
 	if err != nil {
-		return aws.Credentials{}, err
+		return aws.Credentials{}, fmt.Errorf("failed to load config: %w", err)
 	}
 
 	log.Println(cfg)
@@ -39,6 +41,7 @@ func (r *AWSCredentialsRetriever) Run(ctx context.Context) (aws.Credentials, err
 	provisionerAccountId, err := stsClient.GetCallerIdentity(ctx,
 		&sts.GetCallerIdentityInput{})
 	if err != nil {
+		log.Println("callerIdentity error")
 		return aws.Credentials{}, err
 	}
 
@@ -48,6 +51,7 @@ func (r *AWSCredentialsRetriever) Run(ctx context.Context) (aws.Credentials, err
 	appCreds := stscreds.NewAssumeRoleProvider(stsClient, roleArn)
 	credentials, err := appCreds.Retrieve(ctx)
 	if err != nil {
+		log.Println("appCreds.Retrieve error")
 		return aws.Credentials{}, err
 	}
 	log.Println("done getting creds ...")
