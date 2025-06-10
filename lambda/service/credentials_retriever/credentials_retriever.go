@@ -6,6 +6,7 @@ import (
 	"log"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
@@ -26,7 +27,13 @@ func NewAWSCredentialsRetriever(accountId string, cfg aws.Config) Retriever {
 func (r *AWSCredentialsRetriever) Run(ctx context.Context) (aws.Credentials, error) {
 	log.Println("assuming role ...")
 
-	stsClient := sts.NewFromConfig(r.Config)
+	cfg, err := config.LoadDefaultConfig(context.Background())
+	if err != nil {
+		return aws.Credentials{}, err
+	}
+
+	log.Println(cfg)
+	stsClient := sts.NewFromConfig(cfg)
 
 	log.Println("getting provisioner account ...")
 	provisionerAccountId, err := stsClient.GetCallerIdentity(ctx,
