@@ -15,6 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/aws/smithy-go/logging"
@@ -135,10 +136,12 @@ func (c *ComputeRestClient) Retrieve(ctx context.Context, params map[string]stri
 	fmt.Println("Region:", c.Region)
 
 	// Create STS client
-	stsClient = sts.NewFromConfig(cfg)
+	newStsClient := sts.NewFromConfig(cfg, func(o *sts.Options) {
+		o.Credentials = credentials.NewStaticCredentialsProvider(creds.AccessKeyID, creds.SecretAccessKey, creds.SessionToken)
+	})
 
 	// Call GetCallerIdentity
-	caller, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+	caller, err := newStsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +151,8 @@ func (c *ComputeRestClient) Retrieve(ctx context.Context, params map[string]stri
 
 	const emptyStringSHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 	// sign the request
-	err = c.Signer.SignHTTP(ctx, creds, req, emptyStringSHA256, "lambda", c.Region, time.Now(),
+	signer := v4.NewSigner()
+	err = signer.SignHTTP(ctx, creds, req, emptyStringSHA256, "lambda", c.Region, time.Now(),
 		func(o *v4.SignerOptions) {
 			o.LogSigning = true
 			o.Logger = logging.NewStandardLogger(os.Stderr)
