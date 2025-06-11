@@ -3,6 +3,8 @@ package clients
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
@@ -33,10 +35,20 @@ func (c *ComputeRestClient) Execute(ctx context.Context, b bytes.Buffer) ([]byte
 		return nil, err
 	}
 
+	req.Header.Set("Content-Type", "application/json")
+
+	// Compute SHA256 hash of the payload
+	sum := sha256.Sum256(b.Bytes())
+	payloadHash := hex.EncodeToString(sum[:])
+
 	// sign the request
-	err = c.Signer.SignHTTP(ctx, c.Creds, req, "", "compute-gateway", c.Region, time.Now())
+	err = c.Signer.SignHTTP(ctx, c.Creds, req, payloadHash, "lambda", c.Region, time.Now())
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign request: %w", err)
+	}
+
+	for k, v := range req.Header {
+		fmt.Printf("%s: %s\n", k, v)
 	}
 
 	triggerContext, cancel := context.WithTimeout(ctx, requestDuration)
@@ -47,6 +59,9 @@ func (c *ComputeRestClient) Execute(ctx context.Context, b bytes.Buffer) ([]byte
 		log.Println(err.Error())
 		return nil, err
 	}
+
+	// Log response status
+	log.Printf("Response Status: %s", resp.Status)
 
 	defer resp.Body.Close()
 	s, err := io.ReadAll(resp.Body)
@@ -81,10 +96,16 @@ func (c *ComputeRestClient) Retrieve(ctx context.Context, params map[string]stri
 	fmt.Println("SessionToken present:", c.Creds.SessionToken != "")
 	fmt.Println("Region:", c.Region)
 
+	const emptyStringSHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
 	// sign the request
-	err = c.Signer.SignHTTP(ctx, c.Creds, req, "UNSIGNED-PAYLOAD", "lambda", c.Region, time.Now().UTC())
+	err = c.Signer.SignHTTP(ctx, c.Creds, req, emptyStringSHA256, "lambda", c.Region, time.Now())
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign request: %w", err)
+	}
+
+	for k, v := range req.Header {
+		fmt.Printf("%s: %s\n", k, v)
 	}
 
 	resp, err := c.Client.Do(req)
