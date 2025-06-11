@@ -77,7 +77,8 @@ func GetWorkflowInstanceLogsHandler(ctx context.Context, request events.APIGatew
 		v4.NewSigner(),
 		creds,
 		os.Getenv("REGION"),
-		cfg)
+		cfg,
+		workflowInstance.AccountId)
 	logRetriever := log_retriever.NewLogRetriever(httpClient, uuid, applicationUuid)
 	// retrieve logs
 	resp, err := logRetriever.Run(ctx)

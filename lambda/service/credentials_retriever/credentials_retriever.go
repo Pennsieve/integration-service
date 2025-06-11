@@ -48,6 +48,7 @@ func (r *AWSCredentialsRetriever) Run(ctx context.Context) (aws.Credentials, err
 	log.Println("getting roleArn ...")
 	roleArn := fmt.Sprintf("arn:aws:iam::%s:role/ROLE-%s", r.AccountId, *provisionerAccountId.Account)
 	log.Println(roleArn)
+
 	appCreds := stscreds.NewAssumeRoleProvider(stsClient, roleArn)
 	credentials, err := appCreds.Retrieve(ctx)
 	if err != nil {
