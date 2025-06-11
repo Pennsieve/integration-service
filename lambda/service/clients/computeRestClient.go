@@ -111,6 +111,7 @@ func (c *ComputeRestClient) Retrieve(ctx context.Context, params map[string]stri
 		return nil, err
 	}
 
+	fmt.Println("buckets ...")
 	for _, b := range buckets.Buckets {
 		fmt.Println(*b.Name)
 	}
