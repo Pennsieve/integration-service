@@ -61,7 +61,7 @@ func PostWorkflowInstancesHandler(ctx context.Context, request events.APIGateway
 		v4.NewSigner(),
 		creds,
 		os.Getenv("REGION"),
-	)
+		cfg)
 	computeTrigger := compute_trigger.NewComputeTrigger(httpClient, workflowInstance, dynamo_store, workflow_instance_processor_status_dynamo_store, organizationId)
 	// run
 	if err := computeTrigger.Run(ctx); err != nil {
