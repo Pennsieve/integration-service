@@ -9,22 +9,28 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/smithy-go/logging"
 )
 
 type ComputeRestClient struct {
 	Client     *http.Client
 	ComputeURL string
-	Signer     *v4.Signer
-	Creds      aws.Credentials
-	Region     string
+
+	Signer *v4.Signer
+	Creds  aws.Credentials
+	Region string
+	Config aws.Config
 }
 
-func NewComputeRestClient(client *http.Client, url string, signer *v4.Signer, creds aws.Credentials, region string) Client {
-	return &ComputeRestClient{client, url, signer, creds, region}
+func NewComputeRestClient(client *http.Client, url string, signer *v4.Signer, creds aws.Credentials, region string, cfg aws.Config) Client {
+	return &ComputeRestClient{client, url, signer, creds, region, cfg}
 }
 
 func (c *ComputeRestClient) Execute(ctx context.Context, b bytes.Buffer) ([]byte, error) {
@@ -96,10 +102,27 @@ func (c *ComputeRestClient) Retrieve(ctx context.Context, params map[string]stri
 	fmt.Println("SessionToken present:", c.Creds.SessionToken != "")
 	fmt.Println("Region:", c.Region)
 
-	const emptyStringSHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+	// test if you can list buckets
+	client := s3.NewFromConfig(c.Config, func(o *s3.Options) {
+		o.Credentials = credentials.NewStaticCredentialsProvider(c.Creds.AccessKeyID, c.Creds.SecretAccessKey, c.Creds.SessionToken)
+	})
+	buckets, err := client.ListBuckets(ctx, &s3.ListBucketsInput{})
+	if err != nil {
+		return nil, err
+	}
 
+	for _, b := range buckets.Buckets {
+		fmt.Println(*b.Name)
+	}
+
+	const emptyStringSHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 	// sign the request
-	err = c.Signer.SignHTTP(ctx, c.Creds, req, emptyStringSHA256, "lambda", c.Region, time.Now())
+	err = c.Signer.SignHTTP(ctx, c.Creds, req, emptyStringSHA256, "lambda", c.Region, time.Now(),
+		func(o *v4.SignerOptions) {
+			o.LogSigning = true
+			o.Logger = logging.NewStandardLogger(os.Stderr)
+		},
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign request: %w", err)
 	}
