@@ -25,15 +25,13 @@ type ComputeRestClient struct {
 	Client     *http.Client
 	ComputeURL string
 
-	Signer    *v4.Signer
-	Creds     aws.Credentials
 	Region    string
 	Config    aws.Config
 	AccountId string
 }
 
-func NewComputeRestClient(client *http.Client, url string, signer *v4.Signer, creds aws.Credentials, region string, cfg aws.Config, accountId string) Client {
-	return &ComputeRestClient{client, url, signer, creds, region, cfg, accountId}
+func NewComputeRestClient(client *http.Client, url string, region string, cfg aws.Config, accountId string) Client {
+	return &ComputeRestClient{client, url, region, cfg, accountId}
 }
 
 func (c *ComputeRestClient) Execute(ctx context.Context, b bytes.Buffer) ([]byte, error) {
@@ -46,12 +44,61 @@ func (c *ComputeRestClient) Execute(ctx context.Context, b bytes.Buffer) ([]byte
 
 	req.Header.Set("Content-Type", "application/json")
 
+	// get credentials
+	stsClient := sts.NewFromConfig(c.Config)
+
+	log.Println("getting provisioner account ...")
+	provisionerAccountId, err := stsClient.GetCallerIdentity(ctx,
+		&sts.GetCallerIdentityInput{})
+	if err != nil {
+		log.Println("callerIdentity error")
+		return nil, err
+	}
+	fmt.Printf("ARN of provisioner: %s\n", *provisionerAccountId.Arn)
+
+	log.Println("getting roleArn ...")
+	roleArn := fmt.Sprintf("arn:aws:iam::%s:role/ROLE-%s", c.AccountId, *provisionerAccountId.Account)
+	log.Println(roleArn)
+
+	appCreds := stscreds.NewAssumeRoleProvider(stsClient, roleArn)
+	creds, err := appCreds.Retrieve(ctx)
+	if err != nil {
+		log.Println("appCreds.Retrieve error")
+		return nil, err
+	}
+	log.Println("done getting creds ...")
+
+	// reload config
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Println("AccessKey:", creds.AccessKeyID)
+	fmt.Println("SessionToken present:", creds.SessionToken != "")
+	fmt.Println("Region:", c.Region)
+
+	// Create STS client
+	newStsClient := sts.NewFromConfig(cfg, func(o *sts.Options) {
+		o.Credentials = credentials.NewStaticCredentialsProvider(creds.AccessKeyID, creds.SecretAccessKey, creds.SessionToken)
+	})
+
+	// Call GetCallerIdentity
+	caller, err := newStsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+	if err != nil {
+		return nil, err
+	}
+
+	// Print the ARN of the assumed role
+	fmt.Printf("ARN of assumed role: %s\n", *caller.Arn)
+
 	// Compute SHA256 hash of the payload
 	sum := sha256.Sum256(b.Bytes())
 	payloadHash := hex.EncodeToString(sum[:])
 
 	// sign the request
-	err = c.Signer.SignHTTP(ctx, c.Creds, req, payloadHash, "lambda", c.Region, time.Now())
+	signer := v4.NewSigner()
+	err = signer.SignHTTP(ctx, creds, req, payloadHash, "lambda", c.Region, time.Now())
 	if err != nil {
 		return nil, fmt.Errorf("failed to sign request: %w", err)
 	}
