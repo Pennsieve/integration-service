@@ -9,11 +9,9 @@ import (
 	"os"
 
 	"github.com/aws/aws-lambda-go/events"
-	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/pennsieve/integration-service/service/clients"
-	cr "github.com/pennsieve/integration-service/service/credentials_retriever"
 	"github.com/pennsieve/integration-service/service/log_retriever"
 	"github.com/pennsieve/integration-service/service/mappers"
 	"github.com/pennsieve/integration-service/service/store_dynamodb"
@@ -63,19 +61,8 @@ func GetWorkflowInstanceLogsHandler(ctx context.Context, request events.APIGatew
 
 	}
 
-	// get Credentials
-	retriever := cr.NewAWSCredentialsRetriever(workflowInstance.AccountId, cfg)
-	creds, err := retriever.Run(ctx)
-	if err != nil {
-		log.Fatal("error running retriever", err.Error())
-	}
-
-	log.Println(creds)
-
 	// create compute node trigger
 	httpClient := clients.NewComputeRestClient(&http.Client{}, fmt.Sprintf("%slogs", workflowInstance.ComputeNodeGatewayUrl),
-		v4.NewSigner(),
-		creds,
 		os.Getenv("REGION"),
 		cfg,
 		workflowInstance.AccountId)
