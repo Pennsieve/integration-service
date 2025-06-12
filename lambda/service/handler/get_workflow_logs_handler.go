@@ -73,7 +73,7 @@ func GetWorkflowInstanceLogsHandler(ctx context.Context, request events.APIGatew
 	log.Println(creds)
 
 	// create compute node trigger
-	httpClient := clients.NewComputeRestClient(&http.Client{}, fmt.Sprintf("%s/logs", workflowInstance.ComputeNodeGatewayUrl),
+	httpClient := clients.NewComputeRestClient(&http.Client{}, fmt.Sprintf("%slogs", workflowInstance.ComputeNodeGatewayUrl),
 		v4.NewSigner(),
 		creds,
 		os.Getenv("REGION"),

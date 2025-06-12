@@ -83,13 +83,12 @@ func (c *ComputeRestClient) Execute(ctx context.Context, b bytes.Buffer) ([]byte
 
 func (c *ComputeRestClient) Retrieve(ctx context.Context, params map[string]string) ([]byte, error) {
 	requestDuration := 30 * time.Second
+	log.Println("url: ", c.ComputeURL)
 	req, err := http.NewRequest(http.MethodGet, c.ComputeURL, nil)
 	if err != nil {
 		log.Println(err.Error())
 		return nil, err
 	}
-
-	req.Header.Set("Content-Type", "application/json")
 
 	q := req.URL.Query()
 	for k, v := range params {
