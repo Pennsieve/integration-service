@@ -56,6 +56,7 @@ func PostWorkflowInstancesHandler(ctx context.Context, request events.APIGateway
 			Body:       handlerError(handlerName, ErrNoRecordsFound),
 		}, nil
 	}
+	log.Println(tempWorkflowInstance)
 	// create compute node trigger
 	httpClient := clients.NewComputeRestClient(&http.Client{},
 		workflowInstance.ComputeNode.ComputeNodeGatewayUrl,
