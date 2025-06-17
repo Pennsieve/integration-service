@@ -63,7 +63,7 @@ func GetWorkflowInstanceLogsHandler(ctx context.Context, request events.APIGatew
 
 	computeNodesTable := os.Getenv("COMPUTE_NODES_TABLE")
 	compute_nodes_store := store_dynamodb.NewNodeDatabaseStore(dynamoDBClient, computeNodesTable)
-	computeNode, err := compute_nodes_store.GetById(ctx, workflowInstance.ComputeNode.ComputeNodeUuid)
+	computeNode, err := compute_nodes_store.GetById(ctx, workflowInstance.ComputeNodeUuid)
 	if err != nil {
 		log.Println(err.Error())
 		return events.APIGatewayV2HTTPResponse{
