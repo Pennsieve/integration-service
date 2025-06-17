@@ -16,9 +16,9 @@ import (
 	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
-	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/aws/smithy-go/logging"
+	"github.com/pennsieve/integration-service/service/credentials_retriever"
 )
 
 type ComputeRestClient struct {
@@ -45,28 +45,11 @@ func (c *ComputeRestClient) Execute(ctx context.Context, b bytes.Buffer) ([]byte
 
 	req.Header.Set("Content-Type", "application/json")
 
-	// get credentials
-	stsClient := sts.NewFromConfig(c.Config)
-
-	log.Println("getting provisioner account ...")
-	provisionerAccountId, err := stsClient.GetCallerIdentity(ctx,
-		&sts.GetCallerIdentityInput{})
+	retriever := credentials_retriever.NewAWSCredentialsRetriever(c.AccountId, c.Config)
+	creds, err := retriever.Run(ctx)
 	if err != nil {
-		log.Println("callerIdentity error: ", err.Error())
 		return nil, err
 	}
-	fmt.Printf("ARN of provisioner: %s\n", *provisionerAccountId.Arn)
-
-	log.Println("getting roleArn ...")
-	roleArn := fmt.Sprintf("arn:aws:iam::%s:role/ROLE-%s", c.AccountId, *provisionerAccountId.Account)
-
-	appCreds := stscreds.NewAssumeRoleProvider(stsClient, roleArn)
-	creds, err := appCreds.Retrieve(ctx)
-	if err != nil {
-		log.Println("appCreds.Retrieve error: ", err.Error())
-		return nil, err
-	}
-	log.Println("done getting creds ...")
 
 	// reload config
 	cfg, err := config.LoadDefaultConfig(ctx)
@@ -144,28 +127,11 @@ func (c *ComputeRestClient) Retrieve(ctx context.Context, params map[string]stri
 	defer cancel()
 	req = req.WithContext(retrievalContext)
 
-	// get credentials
-	stsClient := sts.NewFromConfig(c.Config)
-
-	log.Println("getting provisioner account ...")
-	provisionerAccountId, err := stsClient.GetCallerIdentity(ctx,
-		&sts.GetCallerIdentityInput{})
+	retriever := credentials_retriever.NewAWSCredentialsRetriever(c.AccountId, c.Config)
+	creds, err := retriever.Run(ctx)
 	if err != nil {
-		log.Println("callerIdentity error: ", err.Error())
 		return nil, err
 	}
-	fmt.Printf("ARN of provisioner: %s\n", *provisionerAccountId.Arn)
-
-	log.Println("getting roleArn ...")
-	roleArn := fmt.Sprintf("arn:aws:iam::%s:role/ROLE-%s", c.AccountId, *provisionerAccountId.Account)
-
-	appCreds := stscreds.NewAssumeRoleProvider(stsClient, roleArn)
-	creds, err := appCreds.Retrieve(ctx)
-	if err != nil {
-		log.Println("appCreds.Retrieve error")
-		return nil, err
-	}
-	log.Println("done getting creds ...")
 
 	// reload config
 	cfg, err := config.LoadDefaultConfig(ctx)
