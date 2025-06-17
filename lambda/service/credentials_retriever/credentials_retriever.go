@@ -1,13 +1,11 @@
-package credentialsretriever
+package credentials_retriever
 
 import (
 	"context"
 	"fmt"
 	"log"
-	"os"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials/stscreds"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
@@ -25,37 +23,30 @@ func NewAWSCredentialsRetriever(accountId string, cfg aws.Config) Retriever {
 	return &AWSCredentialsRetriever{accountId, cfg}
 }
 
-func (r *AWSCredentialsRetriever) Run(ctx context.Context) (aws.Credentials, error) {
-	log.Println("assuming role ...")
-
-	cfg, err := config.LoadDefaultConfig(ctx,
-		config.WithRegion(os.Getenv("REGION")))
-	if err != nil {
-		return aws.Credentials{}, fmt.Errorf("failed to load config: %w", err)
-	}
-
-	log.Println(cfg)
-	stsClient := sts.NewFromConfig(cfg)
+func (c *AWSCredentialsRetriever) Run(ctx context.Context) (aws.Credentials, error) {
+	log.Println("running credentials retriever")
+	// get credentials
+	stsClient := sts.NewFromConfig(c.Config)
 
 	log.Println("getting provisioner account ...")
 	provisionerAccountId, err := stsClient.GetCallerIdentity(ctx,
 		&sts.GetCallerIdentityInput{})
 	if err != nil {
-		log.Println("callerIdentity error")
+		log.Println("callerIdentity error: ", err.Error())
 		return aws.Credentials{}, err
 	}
+	fmt.Printf("ARN of provisioner: %s\n", *provisionerAccountId.Arn)
 
 	log.Println("getting roleArn ...")
-	roleArn := fmt.Sprintf("arn:aws:iam::%s:role/ROLE-%s", r.AccountId, *provisionerAccountId.Account)
-	log.Println(roleArn)
+	roleArn := fmt.Sprintf("arn:aws:iam::%s:role/ROLE-%s", c.AccountId, *provisionerAccountId.Account)
 
 	appCreds := stscreds.NewAssumeRoleProvider(stsClient, roleArn)
-	credentials, err := appCreds.Retrieve(ctx)
+	creds, err := appCreds.Retrieve(ctx)
 	if err != nil {
-		log.Println("appCreds.Retrieve error")
+		log.Println("appCreds.Retrieve error: ", err.Error())
 		return aws.Credentials{}, err
 	}
 	log.Println("done getting creds ...")
 
-	return credentials, nil
+	return creds, nil
 }
