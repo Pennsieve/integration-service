@@ -35,6 +35,7 @@ func NewComputeRestClient(client *http.Client, url string, region string, cfg aw
 }
 
 func (c *ComputeRestClient) Execute(ctx context.Context, b bytes.Buffer) ([]byte, error) {
+	log.Println("Starting execute: IAM")
 	requestDuration := 30 * time.Second
 	req, err := http.NewRequest(http.MethodPost, c.ComputeURL, &b)
 	if err != nil {
@@ -51,19 +52,18 @@ func (c *ComputeRestClient) Execute(ctx context.Context, b bytes.Buffer) ([]byte
 	provisionerAccountId, err := stsClient.GetCallerIdentity(ctx,
 		&sts.GetCallerIdentityInput{})
 	if err != nil {
-		log.Println("callerIdentity error")
+		log.Println("callerIdentity error: ", err.Error())
 		return nil, err
 	}
 	fmt.Printf("ARN of provisioner: %s\n", *provisionerAccountId.Arn)
 
 	log.Println("getting roleArn ...")
 	roleArn := fmt.Sprintf("arn:aws:iam::%s:role/ROLE-%s", c.AccountId, *provisionerAccountId.Account)
-	log.Println(roleArn)
 
 	appCreds := stscreds.NewAssumeRoleProvider(stsClient, roleArn)
 	creds, err := appCreds.Retrieve(ctx)
 	if err != nil {
-		log.Println("appCreds.Retrieve error")
+		log.Println("appCreds.Retrieve error: ", err.Error())
 		return nil, err
 	}
 	log.Println("done getting creds ...")
@@ -73,10 +73,6 @@ func (c *ComputeRestClient) Execute(ctx context.Context, b bytes.Buffer) ([]byte
 	if err != nil {
 		return nil, err
 	}
-
-	fmt.Println("AccessKey:", creds.AccessKeyID)
-	fmt.Println("SessionToken present:", creds.SessionToken != "")
-	fmt.Println("Region:", c.Region)
 
 	// Create STS client
 	newStsClient := sts.NewFromConfig(cfg, func(o *sts.Options) {
@@ -129,6 +125,7 @@ func (c *ComputeRestClient) Execute(ctx context.Context, b bytes.Buffer) ([]byte
 }
 
 func (c *ComputeRestClient) Retrieve(ctx context.Context, params map[string]string) ([]byte, error) {
+	log.Println("Starting retrieve: IAM")
 	requestDuration := 30 * time.Second
 	log.Println("url: ", c.ComputeURL)
 	req, err := http.NewRequest(http.MethodGet, c.ComputeURL, nil)
@@ -154,14 +151,13 @@ func (c *ComputeRestClient) Retrieve(ctx context.Context, params map[string]stri
 	provisionerAccountId, err := stsClient.GetCallerIdentity(ctx,
 		&sts.GetCallerIdentityInput{})
 	if err != nil {
-		log.Println("callerIdentity error")
+		log.Println("callerIdentity error: ", err.Error())
 		return nil, err
 	}
 	fmt.Printf("ARN of provisioner: %s\n", *provisionerAccountId.Arn)
 
 	log.Println("getting roleArn ...")
 	roleArn := fmt.Sprintf("arn:aws:iam::%s:role/ROLE-%s", c.AccountId, *provisionerAccountId.Account)
-	log.Println(roleArn)
 
 	appCreds := stscreds.NewAssumeRoleProvider(stsClient, roleArn)
 	creds, err := appCreds.Retrieve(ctx)
@@ -176,10 +172,6 @@ func (c *ComputeRestClient) Retrieve(ctx context.Context, params map[string]stri
 	if err != nil {
 		return nil, err
 	}
-
-	fmt.Println("AccessKey:", creds.AccessKeyID)
-	fmt.Println("SessionToken present:", creds.SessionToken != "")
-	fmt.Println("Region:", c.Region)
 
 	// Create STS client
 	newStsClient := sts.NewFromConfig(cfg, func(o *sts.Options) {
@@ -220,6 +212,67 @@ func (c *ComputeRestClient) Retrieve(ctx context.Context, params map[string]stri
 
 	// Log response status
 	log.Printf("Response Status: %s", resp.Status)
+
+	defer resp.Body.Close()
+	s, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Println(err.Error())
+		return s, err
+	}
+	return s, nil
+}
+
+// Legacy non-IAM implementations for fallback
+func (c *ComputeRestClient) ExecuteLegacy(ctx context.Context, b bytes.Buffer) ([]byte, error) {
+	log.Println("Starting execute: LEGACY")
+	requestDuration := 30 * time.Second
+	req, err := http.NewRequest(http.MethodPost, c.ComputeURL, &b)
+	if err != nil {
+		log.Println(err.Error())
+		return nil, err
+	}
+
+	triggerContext, cancel := context.WithTimeout(ctx, requestDuration)
+	defer cancel()
+	req = req.WithContext(triggerContext)
+	resp, err := c.Client.Do(req)
+	if err != nil {
+		log.Println(err.Error())
+		return nil, err
+	}
+
+	defer resp.Body.Close()
+	s, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Println(err.Error())
+		return s, err
+	}
+	return s, nil
+}
+
+func (c *ComputeRestClient) RetrieveLegacy(ctx context.Context, params map[string]string) ([]byte, error) {
+	log.Println("Starting retrieve: LEGACY")
+	requestDuration := 30 * time.Second
+	req, err := http.NewRequest(http.MethodGet, c.ComputeURL, nil)
+	if err != nil {
+		log.Println(err.Error())
+		return nil, err
+	}
+
+	q := req.URL.Query()
+	for k, v := range params {
+		q.Add(k, v)
+	}
+	req.URL.RawQuery = q.Encode()
+
+	retrievalContext, cancel := context.WithTimeout(ctx, requestDuration)
+	defer cancel()
+	req = req.WithContext(retrievalContext)
+	resp, err := c.Client.Do(req)
+	if err != nil {
+		log.Println(err.Error())
+		return nil, err
+	}
 
 	defer resp.Body.Close()
 	s, err := io.ReadAll(resp.Body)

@@ -3,6 +3,7 @@ package log_retriever
 import (
 	"context"
 	"log"
+	"os"
 
 	"github.com/pennsieve/integration-service/service/clients"
 )
@@ -27,12 +28,21 @@ func (t *LogRetriever) Run(ctx context.Context) ([]byte, error) {
 		"integrationId":   t.WorkflowInstanceId,
 		"applicationUuid": t.ApplicationUuid,
 	}
-	resp, err := t.Client.Retrieve(ctx, params)
+
+	var resp []byte
+	var respError error
+	authenticationMode := os.Getenv("COMPUTE_GATEWAY_AUTHENTICATION_TYPE")
+	if authenticationMode == "IAM" {
+		resp, respError = t.Client.Retrieve(ctx, params)
+	} else {
+		resp, respError = t.Client.RetrieveLegacy(ctx, params)
+	}
+
 	// handle responses:
 	// currently we expect a 2xx response and no errors?
-	if err != nil {
-		log.Println(err)
-		return nil, err
+	if respError != nil {
+		log.Println(respError.Error())
+		return nil, respError
 	}
 
 	return resp, nil

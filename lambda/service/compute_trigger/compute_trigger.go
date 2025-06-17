@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log"
+	"os"
 	"time"
 
 	"github.com/google/uuid"
@@ -55,7 +56,6 @@ func (t *ComputeTrigger) Run(ctx context.Context) error {
 		Workflow:              t.Integration.Workflow,
 		Params:                t.Integration.Params,
 		OrganizationId:        t.OrganizationId,
-		AccountId:             t.Integration.Account.AccountId, // set accountId after retrieving
 		Status:                models.WorkflowInstanceStatusNotStarted,
 	}
 
@@ -93,11 +93,19 @@ func (t *ComputeTrigger) Run(ctx context.Context) error {
 		return err
 	}
 
-	resp, err := t.Client.Execute(ctx, *bytes.NewBuffer(b))
+	var resp []byte
+	var respError error
+	authenticationMode := os.Getenv("COMPUTE_GATEWAY_AUTHENTICATION_TYPE")
+	if authenticationMode == "IAM" {
+		resp, respError = t.Client.Execute(ctx, *bytes.NewBuffer(b))
+	} else {
+		resp, respError = t.Client.ExecuteLegacy(ctx, *bytes.NewBuffer(b))
+	}
+
 	// handle responses:
 	// currently we expect a 2xx response and no errors?
-	if err != nil {
-		log.Println(err)
+	if respError != nil {
+		log.Println(respError.Error())
 		return err
 	}
 	log.Println(string(resp))
