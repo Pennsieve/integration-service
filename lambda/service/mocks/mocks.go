@@ -20,6 +20,14 @@ func (c *MockClient) Retrieve(ctx context.Context, p map[string]string) ([]byte,
 	return nil, nil
 }
 
+func (c *MockClient) ExecuteLegacy(ctx context.Context, b bytes.Buffer) ([]byte, error) {
+	return nil, nil
+}
+
+func (c *MockClient) RetrieveLegacy(ctx context.Context, p map[string]string) ([]byte, error) {
+	return nil, nil
+}
+
 func NewMockClient() clients.Client {
 	return &MockClient{}
 }

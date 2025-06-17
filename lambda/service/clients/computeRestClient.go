@@ -219,3 +219,62 @@ func (c *ComputeRestClient) Retrieve(ctx context.Context, params map[string]stri
 	}
 	return s, nil
 }
+
+// Legacy non-IAM implementations for fallback
+func (c *ComputeRestClient) ExecuteLegacy(ctx context.Context, b bytes.Buffer) ([]byte, error) {
+	requestDuration := 30 * time.Second
+	req, err := http.NewRequest(http.MethodPost, c.ComputeURL, &b)
+	if err != nil {
+		log.Println(err.Error())
+		return nil, err
+	}
+
+	triggerContext, cancel := context.WithTimeout(ctx, requestDuration)
+	defer cancel()
+	req = req.WithContext(triggerContext)
+	resp, err := c.Client.Do(req)
+	if err != nil {
+		log.Println(err.Error())
+		return nil, err
+	}
+
+	defer resp.Body.Close()
+	s, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Println(err.Error())
+		return s, err
+	}
+	return s, nil
+}
+
+func (c *ComputeRestClient) RetrieveLegacy(ctx context.Context, params map[string]string) ([]byte, error) {
+	requestDuration := 30 * time.Second
+	req, err := http.NewRequest(http.MethodGet, c.ComputeURL, nil)
+	if err != nil {
+		log.Println(err.Error())
+		return nil, err
+	}
+
+	q := req.URL.Query()
+	for k, v := range params {
+		q.Add(k, v)
+	}
+	req.URL.RawQuery = q.Encode()
+
+	retrievalContext, cancel := context.WithTimeout(ctx, requestDuration)
+	defer cancel()
+	req = req.WithContext(retrievalContext)
+	resp, err := c.Client.Do(req)
+	if err != nil {
+		log.Println(err.Error())
+		return nil, err
+	}
+
+	defer resp.Body.Close()
+	s, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Println(err.Error())
+		return s, err
+	}
+	return s, nil
+}
