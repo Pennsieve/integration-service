@@ -51,19 +51,18 @@ func (c *ComputeRestClient) Execute(ctx context.Context, b bytes.Buffer) ([]byte
 	provisionerAccountId, err := stsClient.GetCallerIdentity(ctx,
 		&sts.GetCallerIdentityInput{})
 	if err != nil {
-		log.Println("callerIdentity error")
+		log.Println("callerIdentity error: ", err.Error())
 		return nil, err
 	}
 	fmt.Printf("ARN of provisioner: %s\n", *provisionerAccountId.Arn)
 
 	log.Println("getting roleArn ...")
 	roleArn := fmt.Sprintf("arn:aws:iam::%s:role/ROLE-%s", c.AccountId, *provisionerAccountId.Account)
-	log.Println(roleArn)
 
 	appCreds := stscreds.NewAssumeRoleProvider(stsClient, roleArn)
 	creds, err := appCreds.Retrieve(ctx)
 	if err != nil {
-		log.Println("appCreds.Retrieve error")
+		log.Println("appCreds.Retrieve error: ", err.Error())
 		return nil, err
 	}
 	log.Println("done getting creds ...")
@@ -73,10 +72,6 @@ func (c *ComputeRestClient) Execute(ctx context.Context, b bytes.Buffer) ([]byte
 	if err != nil {
 		return nil, err
 	}
-
-	fmt.Println("AccessKey:", creds.AccessKeyID)
-	fmt.Println("SessionToken present:", creds.SessionToken != "")
-	fmt.Println("Region:", c.Region)
 
 	// Create STS client
 	newStsClient := sts.NewFromConfig(cfg, func(o *sts.Options) {
@@ -154,14 +149,13 @@ func (c *ComputeRestClient) Retrieve(ctx context.Context, params map[string]stri
 	provisionerAccountId, err := stsClient.GetCallerIdentity(ctx,
 		&sts.GetCallerIdentityInput{})
 	if err != nil {
-		log.Println("callerIdentity error")
+		log.Println("callerIdentity error: ", err.Error())
 		return nil, err
 	}
 	fmt.Printf("ARN of provisioner: %s\n", *provisionerAccountId.Arn)
 
 	log.Println("getting roleArn ...")
 	roleArn := fmt.Sprintf("arn:aws:iam::%s:role/ROLE-%s", c.AccountId, *provisionerAccountId.Account)
-	log.Println(roleArn)
 
 	appCreds := stscreds.NewAssumeRoleProvider(stsClient, roleArn)
 	creds, err := appCreds.Retrieve(ctx)
@@ -176,10 +170,6 @@ func (c *ComputeRestClient) Retrieve(ctx context.Context, params map[string]stri
 	if err != nil {
 		return nil, err
 	}
-
-	fmt.Println("AccessKey:", creds.AccessKeyID)
-	fmt.Println("SessionToken present:", creds.SessionToken != "")
-	fmt.Println("Region:", c.Region)
 
 	// Create STS client
 	newStsClient := sts.NewFromConfig(cfg, func(o *sts.Options) {

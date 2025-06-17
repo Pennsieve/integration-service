@@ -55,7 +55,6 @@ func (t *ComputeTrigger) Run(ctx context.Context) error {
 		Workflow:              t.Integration.Workflow,
 		Params:                t.Integration.Params,
 		OrganizationId:        t.OrganizationId,
-		AccountId:             t.Integration.Account.AccountId, // set accountId after retrieving
 		Status:                models.WorkflowInstanceStatusNotStarted,
 	}
 
