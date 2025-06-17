@@ -241,6 +241,7 @@ func (c *ComputeRestClient) ExecuteLegacy(ctx context.Context, b bytes.Buffer) (
 		return nil, err
 	}
 
+	log.Printf("Response Status: %s", resp.Status)
 	defer resp.Body.Close()
 	s, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -273,6 +274,8 @@ func (c *ComputeRestClient) RetrieveLegacy(ctx context.Context, params map[strin
 		log.Println(err.Error())
 		return nil, err
 	}
+
+	log.Printf("Response Status: %s", resp.Status)
 
 	defer resp.Body.Close()
 	s, err := io.ReadAll(resp.Body)
