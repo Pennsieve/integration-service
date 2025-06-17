@@ -24,6 +24,7 @@ func NewAWSCredentialsRetriever(accountId string, cfg aws.Config) Retriever {
 }
 
 func (c *AWSCredentialsRetriever) Run(ctx context.Context) (aws.Credentials, error) {
+	log.Println("running credentials retriever")
 	// get credentials
 	stsClient := sts.NewFromConfig(c.Config)
 
