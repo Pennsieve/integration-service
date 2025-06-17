@@ -47,22 +47,23 @@ func PostWorkflowInstancesHandler(ctx context.Context, request events.APIGateway
 	workflowInstanceProcessorStatusTable := os.Getenv("WORKFLOW_INSTANCE_PROCESSOR_STATUS_TABLE")
 	workflow_instance_processor_status_dynamo_store := store_dynamodb.NewWorkflowInstanceProcessorStatusDatabaseStore(dynamoDBClient, workflowInstanceProcessorStatusTable)
 
-	// get temporary accountId for testing
-	tempWorkflowInstance, err := dynamo_store.GetById(ctx, "ab8b8a16-56eb-415d-86ee-56f2692fd9d1")
+	computeNodesTable := os.Getenv("COMPUTE_NODES_TABLE")
+	compute_nodes_store := store_dynamodb.NewNodeDatabaseStore(dynamoDBClient, computeNodesTable)
+	computeNode, err := compute_nodes_store.GetById(ctx, workflowInstance.ComputeNode.ComputeNodeUuid)
 	if err != nil {
 		log.Println(err.Error())
 		return events.APIGatewayV2HTTPResponse{
-			StatusCode: http.StatusNotFound,
-			Body:       handlerError(handlerName, ErrNoRecordsFound),
+			StatusCode: http.StatusInternalServerError,
+			Body:       handlerError(handlerName, ErrDynamoDB),
 		}, nil
 	}
-	log.Println(tempWorkflowInstance)
+
 	// create compute node trigger
 	httpClient := clients.NewComputeRestClient(&http.Client{},
 		workflowInstance.ComputeNode.ComputeNodeGatewayUrl,
 		os.Getenv("REGION"),
 		cfg,
-		tempWorkflowInstance.AccountId)
+		computeNode.AccountId)
 	computeTrigger := compute_trigger.NewComputeTrigger(httpClient, workflowInstance, dynamo_store, workflow_instance_processor_status_dynamo_store, organizationId)
 	// run
 	if err := computeTrigger.Run(ctx); err != nil {

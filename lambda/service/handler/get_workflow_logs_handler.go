@@ -61,11 +61,22 @@ func GetWorkflowInstanceLogsHandler(ctx context.Context, request events.APIGatew
 
 	}
 
+	computeNodesTable := os.Getenv("COMPUTE_NODES_TABLE")
+	compute_nodes_store := store_dynamodb.NewNodeDatabaseStore(dynamoDBClient, computeNodesTable)
+	computeNode, err := compute_nodes_store.GetById(ctx, workflowInstance.ComputeNodeUuid)
+	if err != nil {
+		log.Println(err.Error())
+		return events.APIGatewayV2HTTPResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       handlerError(handlerName, ErrDynamoDB),
+		}, nil
+	}
+
 	// create compute node trigger
 	httpClient := clients.NewComputeRestClient(&http.Client{}, fmt.Sprintf("%slogs", workflowInstance.ComputeNodeGatewayUrl),
 		os.Getenv("REGION"),
 		cfg,
-		workflowInstance.AccountId)
+		computeNode.AccountId)
 	logRetriever := log_retriever.NewLogRetriever(httpClient, uuid, applicationUuid)
 	// retrieve logs
 	resp, err := logRetriever.Run(ctx)
