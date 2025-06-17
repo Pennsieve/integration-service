@@ -35,6 +35,7 @@ func NewComputeRestClient(client *http.Client, url string, region string, cfg aw
 }
 
 func (c *ComputeRestClient) Execute(ctx context.Context, b bytes.Buffer) ([]byte, error) {
+	log.Println("Starting execute: IAM")
 	requestDuration := 30 * time.Second
 	req, err := http.NewRequest(http.MethodPost, c.ComputeURL, &b)
 	if err != nil {
@@ -124,6 +125,7 @@ func (c *ComputeRestClient) Execute(ctx context.Context, b bytes.Buffer) ([]byte
 }
 
 func (c *ComputeRestClient) Retrieve(ctx context.Context, params map[string]string) ([]byte, error) {
+	log.Println("Starting retrieve: IAM")
 	requestDuration := 30 * time.Second
 	log.Println("url: ", c.ComputeURL)
 	req, err := http.NewRequest(http.MethodGet, c.ComputeURL, nil)
@@ -222,6 +224,7 @@ func (c *ComputeRestClient) Retrieve(ctx context.Context, params map[string]stri
 
 // Legacy non-IAM implementations for fallback
 func (c *ComputeRestClient) ExecuteLegacy(ctx context.Context, b bytes.Buffer) ([]byte, error) {
+	log.Println("Starting execute: LEGACY")
 	requestDuration := 30 * time.Second
 	req, err := http.NewRequest(http.MethodPost, c.ComputeURL, &b)
 	if err != nil {
@@ -248,6 +251,7 @@ func (c *ComputeRestClient) ExecuteLegacy(ctx context.Context, b bytes.Buffer) (
 }
 
 func (c *ComputeRestClient) RetrieveLegacy(ctx context.Context, params map[string]string) ([]byte, error) {
+	log.Println("Starting retrieve: LEGACY")
 	requestDuration := 30 * time.Second
 	req, err := http.NewRequest(http.MethodGet, c.ComputeURL, nil)
 	if err != nil {
