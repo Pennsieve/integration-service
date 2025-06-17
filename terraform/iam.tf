@@ -181,7 +181,9 @@ data "aws_iam_policy_document" "integration_service_lambda_iam_policy_document" 
       aws_dynamodb_table.workflow_instance_status_table.arn,
       "${aws_dynamodb_table.workflow_instance_status_table.arn}/*",
       aws_dynamodb_table.workflow_instance_processor_status_table.arn,
-      "${aws_dynamodb_table.workflow_instance_processor_status_table.arn}/*"
+      "${aws_dynamodb_table.workflow_instance_processor_status_table.arn}/*",
+      data.terraform_remote_state.compute_node_service.outputs.compute_nodes_table_arn,
+      "${data.terraform_remote_state.compute_node_service.outputs.compute_nodes_table_arn}/*",
     ]
 
   }

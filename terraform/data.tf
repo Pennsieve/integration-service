@@ -72,3 +72,15 @@ data "terraform_remote_state" "pennsieve_postgres" {
     profile = var.aws_account
   }
 }
+
+# Import compute node service
+data "terraform_remote_state" "compute_node_service" {
+  backend = "s3"
+
+  config = {
+    bucket  = "${var.aws_account}-terraform-state"
+    key     = "aws/${data.aws_region.current_region.name}/${var.vpc_name}/${var.environment_name}/compute-node-service/terraform.tfstate"
+    region  = "us-east-1"
+    profile = var.aws_account
+  }
+}
