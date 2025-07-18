@@ -90,6 +90,10 @@ func (r *WorkflowInstanceDatabaseStore) Get(ctx context.Context, organizationId 
 		return workflowInstances, fmt.Errorf("error building expression: %w", err)
 	}
 
+	log.Println("expr.Names(): ", expr.Names())
+	log.Println("expr.Values(): ", expr.Values())
+	log.Println("expr.Values(): ", expr.Filter())
+
 	response, err := r.DB.Scan(ctx, &dynamodb.ScanInput{
 		ExpressionAttributeNames:  expr.Names(),
 		ExpressionAttributeValues: expr.Values(),
@@ -99,6 +103,11 @@ func (r *WorkflowInstanceDatabaseStore) Get(ctx context.Context, organizationId 
 	})
 	if err != nil {
 		return workflowInstances, fmt.Errorf("error getting instances: %w", err)
+	}
+
+	// Check if pagination is needed
+	if response.LastEvaluatedKey != nil {
+		log.Println("more items to fetch, LastEvaluatedKey:", response.LastEvaluatedKey)
 	}
 
 	err = attributevalue.UnmarshalListOfMaps(response.Items, &workflowInstances)
