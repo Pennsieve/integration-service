@@ -73,44 +73,63 @@ func (r *WorkflowInstanceDatabaseStore) GetById(ctx context.Context, instanceId 
 
 func (r *WorkflowInstanceDatabaseStore) Get(ctx context.Context, organizationId string, params map[string]string) ([]WorkflowInstance, error) {
 	workflowInstances := []WorkflowInstance{}
+	var allItems []map[string]types.AttributeValue
+	var lastEvaluatedKey map[string]types.AttributeValue
 
-	var c expression.ConditionBuilder
-	c = expression.Name("organizationId").Equal((expression.Value(organizationId)))
+	for {
+		var c expression.ConditionBuilder
+		c = expression.Name("organizationId").Equal((expression.Value(organizationId)))
 
-	if computeNodeUuid, found := params["computeNodeUuid"]; found {
-		c = c.And(expression.Name("computeNodeUuid").Equal((expression.Value(computeNodeUuid))))
+		if computeNodeUuid, found := params["computeNodeUuid"]; found {
+			c = c.And(expression.Name("computeNodeUuid").Equal((expression.Value(computeNodeUuid))))
+		}
+
+		if datasetNodeId, found := params["datasetNodeId"]; found {
+			c = c.And(expression.Name("datasetNodeId").Equal((expression.Value(datasetNodeId))))
+		}
+
+		expr, err := expression.NewBuilder().WithFilter(c).Build()
+		if err != nil {
+			return workflowInstances, fmt.Errorf("error building expression: %w", err)
+		}
+
+		log.Println("expr.Names(): ", expr.Names())
+		log.Println("expr.Values(): ", expr.Values())
+		log.Println("expr.Values(): ", expr.Filter())
+
+		input := &dynamodb.ScanInput{
+			ExpressionAttributeNames:  expr.Names(),
+			ExpressionAttributeValues: expr.Values(),
+			FilterExpression:          expr.Filter(),
+			ProjectionExpression:      expr.Projection(),
+			TableName:                 aws.String(r.TableName),
+		}
+		// Add pagination key if this is not the first request
+		if lastEvaluatedKey != nil {
+			input.ExclusiveStartKey = lastEvaluatedKey
+		}
+
+		response, err := r.DB.Scan(ctx, input)
+		if err != nil {
+			return workflowInstances, fmt.Errorf("error getting instances: %w", err)
+		}
+
+		// Check if pagination is needed
+		if response.LastEvaluatedKey != nil {
+			log.Println("more items to fetch, LastEvaluatedKey:", response.LastEvaluatedKey)
+		}
+
+		allItems = append(allItems, response.Items...)
+
+		if response.LastEvaluatedKey == nil {
+			break // No more items
+		}
+
+		lastEvaluatedKey = response.LastEvaluatedKey
+
 	}
 
-	if datasetNodeId, found := params["datasetNodeId"]; found {
-		c = c.And(expression.Name("datasetNodeId").Equal((expression.Value(datasetNodeId))))
-	}
-
-	expr, err := expression.NewBuilder().WithFilter(c).Build()
-	if err != nil {
-		return workflowInstances, fmt.Errorf("error building expression: %w", err)
-	}
-
-	log.Println("expr.Names(): ", expr.Names())
-	log.Println("expr.Values(): ", expr.Values())
-	log.Println("expr.Values(): ", expr.Filter())
-
-	response, err := r.DB.Scan(ctx, &dynamodb.ScanInput{
-		ExpressionAttributeNames:  expr.Names(),
-		ExpressionAttributeValues: expr.Values(),
-		FilterExpression:          expr.Filter(),
-		ProjectionExpression:      expr.Projection(),
-		TableName:                 aws.String(r.TableName),
-	})
-	if err != nil {
-		return workflowInstances, fmt.Errorf("error getting instances: %w", err)
-	}
-
-	// Check if pagination is needed
-	if response.LastEvaluatedKey != nil {
-		log.Println("more items to fetch, LastEvaluatedKey:", response.LastEvaluatedKey)
-	}
-
-	err = attributevalue.UnmarshalListOfMaps(response.Items, &workflowInstances)
+	err := attributevalue.UnmarshalListOfMaps(allItems, &workflowInstances)
 	if err != nil {
 		return workflowInstances, fmt.Errorf("error unmarshaling instances: %w", err)
 	}
