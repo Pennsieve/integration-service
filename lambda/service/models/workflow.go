@@ -84,10 +84,19 @@ type IntegrationResponse struct {
 }
 
 type Workflow struct {
-	Uuid        string   `json:"uuid"`
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Processors  []string `json:"processors"`
-	CreatedAt   string   `json:"createdAt"`
-	CreatedBy   string   `json:"createdBy"`
+	Uuid        string      `json:"uuid"`
+	Name        string      `json:"name"`
+	Description string      `json:"description"`
+	Processors  []Processor `json:"processors"`
+	CreatedAt   string      `json:"createdAt"`
+	CreatedBy   string      `json:"createdBy"`
+}
+
+type Processor struct {
+	SourceUrl    string                `json:"sourceUrl"`
+	Dependencies []ProcessorDependency `json:"dependencies"`
+}
+
+type ProcessorDependency struct {
+	SourceUrl string `json:"sourceUrl"`
 }

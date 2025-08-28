@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/google/uuid"
+	"github.com/pennsieve/integration-service/service/models"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -25,7 +26,24 @@ func TestInsertGetWorkflows(t *testing.T) {
 	dynamo_store := NewWorkflowDatabaseStore(dynamoDBClient, tableName)
 	id := uuid.New()
 	workflowUuid := id.String()
-	processors := []string{"appUuid1", "appUuid2", "appUuid3"}
+	processors := []models.Processor{
+		{
+			SourceUrl:    "appUrl1",
+			Dependencies: []models.ProcessorDependency{},
+		},
+		{
+			SourceUrl: "appUrl2",
+			Dependencies: []models.ProcessorDependency{
+				{SourceUrl: "appUrl1"},
+			},
+		},
+		{
+			SourceUrl: "appUrl3",
+			Dependencies: []models.ProcessorDependency{
+				{SourceUrl: "appUrl2"},
+			},
+		},
+	}
 	organizationId := "someOrganizationId"
 
 	workflow := Workflow{
@@ -70,7 +88,24 @@ func TestInsertGetByIdWorkflows(t *testing.T) {
 	dynamo_store := NewWorkflowDatabaseStore(dynamoDBClient, tableName)
 	id := uuid.New()
 	workflowUuid := id.String()
-	processors := []string{"appUuid1", "appUuid2", "appUuid3"}
+	processors := []models.Processor{
+		{
+			SourceUrl:    "appUrl1",
+			Dependencies: []models.ProcessorDependency{},
+		},
+		{
+			SourceUrl: "appUrl2",
+			Dependencies: []models.ProcessorDependency{
+				{SourceUrl: "appUrl1"},
+			},
+		},
+		{
+			SourceUrl: "appUrl3",
+			Dependencies: []models.ProcessorDependency{
+				{SourceUrl: "appUrl2"},
+			},
+		},
+	}
 	organizationId := "someOrganizationId"
 
 	workflow := Workflow{
