@@ -6,13 +6,13 @@ import (
 )
 
 type Workflow struct {
-	Uuid           string   `dynamodbav:"uuid"`
-	Name           string   `dynamodbav:"name"`
-	Description    string   `dynamodbav:"description"`
-	Processors     []string `dynamodbav:"processors"`
-	OrganizationId string   `dynamodbav:"organizationId"`
-	CreatedAt      string   `dynamodbav:"createdAt"`
-	CreatedBy      string   `dynamodbav:"createdBy"`
+	Uuid           string      `dynamodbav:"uuid"`
+	Name           string      `dynamodbav:"name"`
+	Description    string      `dynamodbav:"description"`
+	Processors     interface{} `dynamodbav:"processors"`
+	OrganizationId string      `dynamodbav:"organizationId"`
+	CreatedAt      string      `dynamodbav:"createdAt"`
+	CreatedBy      string      `dynamodbav:"createdBy"`
 }
 
 type WorkflowKey struct {
