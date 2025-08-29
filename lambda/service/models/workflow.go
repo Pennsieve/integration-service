@@ -94,7 +94,7 @@ type Workflow struct {
 
 type Processor struct {
 	SourceUrl string                `json:"sourceUrl"`
-	DependsOn []ProcessorDependency `json:"dependencies"`
+	DependsOn []ProcessorDependency `json:"dependsOn"`
 }
 
 type ProcessorDependency struct {
