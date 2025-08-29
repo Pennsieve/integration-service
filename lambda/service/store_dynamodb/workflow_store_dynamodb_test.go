@@ -28,18 +28,18 @@ func TestInsertGetWorkflows(t *testing.T) {
 	workflowUuid := id.String()
 	processors := []models.Processor{
 		{
-			SourceUrl:    "appUrl1",
-			Dependencies: []models.ProcessorDependency{},
+			SourceUrl: "appUrl1",
+			DependsOn: []models.ProcessorDependency{},
 		},
 		{
 			SourceUrl: "appUrl2",
-			Dependencies: []models.ProcessorDependency{
+			DependsOn: []models.ProcessorDependency{
 				{SourceUrl: "appUrl1"},
 			},
 		},
 		{
 			SourceUrl: "appUrl3",
-			Dependencies: []models.ProcessorDependency{
+			DependsOn: []models.ProcessorDependency{
 				{SourceUrl: "appUrl2"},
 			},
 		},
@@ -90,18 +90,18 @@ func TestInsertGetByIdWorkflows(t *testing.T) {
 	workflowUuid := id.String()
 	processors := []models.Processor{
 		{
-			SourceUrl:    "appUrl1",
-			Dependencies: []models.ProcessorDependency{},
+			SourceUrl: "appUrl1",
+			DependsOn: []models.ProcessorDependency{},
 		},
 		{
 			SourceUrl: "appUrl2",
-			Dependencies: []models.ProcessorDependency{
+			DependsOn: []models.ProcessorDependency{
 				{SourceUrl: "appUrl1"},
 			},
 		},
 		{
 			SourceUrl: "appUrl3",
-			Dependencies: []models.ProcessorDependency{
+			DependsOn: []models.ProcessorDependency{
 				{SourceUrl: "appUrl2"},
 			},
 		},
