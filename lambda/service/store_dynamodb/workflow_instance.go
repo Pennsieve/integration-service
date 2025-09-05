@@ -13,6 +13,7 @@ type WorkflowInstance struct {
 	DatasetNodeId         string      `dynamodbav:"datasetNodeId"`
 	PackageIds            []string    `dynamodbav:"packageIds"`
 	Workflow              interface{} `dynamodbav:"workflow"`
+	WorkflowUuid          string      `dynamodbav:"workflowUuid"`
 	Params                interface{} `dynamodbav:"params"`
 	OrganizationId        string      `dynamodbav:"organizationId"`
 	AccountId             string      `dynamodbav:"accountId"`
