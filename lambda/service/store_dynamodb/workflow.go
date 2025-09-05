@@ -11,6 +11,8 @@ type Workflow struct {
 	Description    string      `dynamodbav:"description"`
 	Processors     interface{} `dynamodbav:"processors"`
 	OrganizationId string      `dynamodbav:"organizationId"`
+	Dag            interface{} `dynamodbav:"dag"`
+	ExecutionOrder [][]string  `dynamodbav:"executionOrder"`
 	CreatedAt      string      `dynamodbav:"createdAt"`
 	CreatedBy      string      `dynamodbav:"createdBy"`
 }

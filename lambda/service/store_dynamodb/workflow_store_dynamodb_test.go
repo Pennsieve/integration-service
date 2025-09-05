@@ -10,6 +10,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/google/uuid"
+	"github.com/pennsieve/integration-service/service/dag"
 	"github.com/pennsieve/integration-service/service/models"
 	"github.com/stretchr/testify/assert"
 )
@@ -45,12 +46,20 @@ func TestInsertGetWorkflows(t *testing.T) {
 		},
 	}
 	organizationId := "someOrganizationId"
+	graph := dag.NewDAG(processors)
+	graphData := graph.GetData()
+	order, err := dag.TopologicalSortLevels(graphData)
+	if err != nil {
+		t.Errorf("error inserting item into table")
+	}
 
 	workflow := Workflow{
 		Uuid:           workflowUuid,
 		Name:           "cytof-pipeline",
 		Description:    "End-to-end CyTOF pipeline",
 		Processors:     processors,
+		Dag:            graphData,
+		ExecutionOrder: order,
 		OrganizationId: organizationId,
 		CreatedAt:      time.Now().UTC().String(),
 		CreatedBy:      "someUser",

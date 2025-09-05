@@ -3,7 +3,6 @@ package dag
 import "github.com/pennsieve/integration-service/service/models"
 
 type Graph interface {
-	Init()
 	GetData() map[string][]string
 }
 
@@ -12,7 +11,7 @@ type DAG struct {
 	Data       map[string][]string
 }
 
-func (d *DAG) Init() {
+func (d *DAG) init() {
 	d.Data = make(map[string][]string)
 	// Initialize the graph with empty adjacency lists
 	for _, processor := range d.Processors {
@@ -27,6 +26,7 @@ func (d *DAG) Init() {
 }
 
 func (d *DAG) GetData() map[string][]string {
+	d.init()
 	return d.Data
 }
 

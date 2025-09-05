@@ -22,6 +22,7 @@ var ErrMarshaling = errors.New("error marshalling item")
 var ErrDynamoDB = errors.New("error performing action on DynamoDB table")
 var ErrMissingParameter = errors.New("missing parameter")
 var ErrRunningLogRetriever = errors.New("error running log retriever")
+var ErrSortingDAG = errors.New("error sorting DAG")
 
 func handlerError(handlerName string, errorMessage error) string {
 	log.Printf("%s: %s", handlerName, errorMessage.Error())

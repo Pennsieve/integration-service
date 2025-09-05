@@ -10,6 +10,7 @@ type WorkflowInstance struct {
 	DatasetNodeID string      `json:"datasetId"`
 	PackageIDs    []string    `json:"packageIds"`
 	Workflow      interface{} `json:"workflow,omitempty"`
+	WorkflowUuid  string      `json:"workflowUuid,omitempty"`
 	Params        interface{} `json:"params,omitempty"`
 	Status        string      `json:"status"`
 	StartedAt     string      `json:"startedAt"`
@@ -84,12 +85,14 @@ type IntegrationResponse struct {
 }
 
 type Workflow struct {
-	Uuid        string      `json:"uuid"`
-	Name        string      `json:"name"`
-	Description string      `json:"description"`
-	Processors  []Processor `json:"processors"`
-	CreatedAt   string      `json:"createdAt"`
-	CreatedBy   string      `json:"createdBy"`
+	Uuid           string              `json:"uuid"`
+	Name           string              `json:"name"`
+	Description    string              `json:"description"`
+	Processors     []Processor         `json:"processors"`
+	Dag            map[string][]string `json:"dag"`
+	ExecutionOrder [][]string          `json:"executionOrder"`
+	CreatedAt      string              `json:"createdAt"`
+	CreatedBy      string              `json:"createdBy"`
 }
 
 type Processor struct {

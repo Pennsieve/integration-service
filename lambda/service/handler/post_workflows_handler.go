@@ -12,6 +12,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/google/uuid"
+	"github.com/pennsieve/integration-service/service/dag"
 	"github.com/pennsieve/integration-service/service/models"
 	"github.com/pennsieve/integration-service/service/store_dynamodb"
 	"github.com/pennsieve/pennsieve-go-core/pkg/authorizer"
@@ -47,12 +48,25 @@ func PostWorkflowsHandler(ctx context.Context, request events.APIGatewayV2HTTPRe
 	id := uuid.New()
 	workflowId := id.String()
 
+	graph := dag.NewDAG(workflow.Processors)
+	graphData := graph.GetData()
+	executionOrder, err := dag.TopologicalSortLevels(graphData)
+	if err != nil {
+		log.Println(err.Error())
+		return events.APIGatewayV2HTTPResponse{
+			StatusCode: http.StatusInternalServerError,
+			Body:       handlerError(handlerName, ErrSortingDAG),
+		}, nil
+	}
+
 	store_workflow := store_dynamodb.Workflow{
 		Uuid:           workflowId,
 		Name:           workflow.Name,
 		Description:    workflow.Description,
 		Processors:     workflow.Processors,
 		OrganizationId: organizationNodeId,
+		Dag:            graphData,
+		ExecutionOrder: executionOrder,
 		CreatedAt:      time.Now().UTC().String(),
 		CreatedBy:      userNodeId,
 	}
