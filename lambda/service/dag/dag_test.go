@@ -40,7 +40,6 @@ func TestDAG(t *testing.T) {
 		},
 	}
 	graph := dag.NewDAG(processors)
-	graph.Init()
 
 	expected := map[string][]string{
 		"appUrl1": {},

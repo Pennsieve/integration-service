@@ -49,8 +49,8 @@ func PostWorkflowsHandler(ctx context.Context, request events.APIGatewayV2HTTPRe
 	workflowId := id.String()
 
 	graph := dag.NewDAG(workflow.Processors)
-	graph.Init()
-	executionOrder, err := dag.TopologicalSortLevels(graph.GetData())
+	graphData := graph.GetData()
+	executionOrder, err := dag.TopologicalSortLevels(graphData)
 	if err != nil {
 		log.Println(err.Error())
 		return events.APIGatewayV2HTTPResponse{
@@ -65,7 +65,7 @@ func PostWorkflowsHandler(ctx context.Context, request events.APIGatewayV2HTTPRe
 		Description:    workflow.Description,
 		Processors:     workflow.Processors,
 		OrganizationId: organizationNodeId,
-		Dag:            workflow.Dag,
+		Dag:            graphData,
 		ExecutionOrder: executionOrder,
 		CreatedAt:      time.Now().UTC().String(),
 		CreatedBy:      userNodeId,
