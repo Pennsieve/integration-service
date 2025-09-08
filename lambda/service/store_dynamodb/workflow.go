@@ -6,15 +6,15 @@ import (
 )
 
 type Workflow struct {
-	Uuid           string      `dynamodbav:"uuid"`
-	Name           string      `dynamodbav:"name"`
-	Description    string      `dynamodbav:"description"`
-	Processors     interface{} `dynamodbav:"processors"`
-	OrganizationId string      `dynamodbav:"organizationId"`
-	Dag            interface{} `dynamodbav:"dag"`
-	ExecutionOrder [][]string  `dynamodbav:"executionOrder"`
-	CreatedAt      string      `dynamodbav:"createdAt"`
-	CreatedBy      string      `dynamodbav:"createdBy"`
+	Uuid           string              `dynamodbav:"uuid"`
+	Name           string              `dynamodbav:"name"`
+	Description    string              `dynamodbav:"description"`
+	Processors     interface{}         `dynamodbav:"processors"`
+	OrganizationId string              `dynamodbav:"organizationId"`
+	Dag            map[string][]string `dynamodbav:"dag"`
+	ExecutionOrder [][]string          `dynamodbav:"executionOrder"`
+	CreatedAt      string              `dynamodbav:"createdAt"`
+	CreatedBy      string              `dynamodbav:"createdBy"`
 }
 
 type WorkflowKey struct {

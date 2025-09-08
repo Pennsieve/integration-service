@@ -56,3 +56,22 @@ func ExtractWorkflow(workflow interface{}) ([]models.WorkflowProcessor, error) {
 
 	return wf, nil
 }
+
+func DynamoDBWorkflowToJsonWorkflow(dynamoWorkflows []store_dynamodb.Workflow) []models.Workflow {
+	workflows := []models.Workflow{}
+
+	for _, a := range dynamoWorkflows {
+		workflows = append(workflows, models.Workflow{
+			Uuid:           a.Uuid,
+			Name:           a.Name,
+			Description:    a.Description,
+			Processors:     a.Processors.([]models.Processor),
+			Dag:            a.Dag,
+			ExecutionOrder: a.ExecutionOrder,
+			CreatedAt:      a.CreatedAt,
+			CreatedBy:      a.CreatedBy,
+		})
+	}
+
+	return workflows
+}
