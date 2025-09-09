@@ -88,7 +88,7 @@ type Workflow struct {
 	Uuid           string              `json:"uuid"`
 	Name           string              `json:"name"`
 	Description    string              `json:"description"`
-	Processors     []Processor         `json:"processors"`
+	Processors     interface{}         `json:"processors"`
 	Dag            map[string][]string `json:"dag"`
 	ExecutionOrder [][]string          `json:"executionOrder"`
 	CreatedAt      string              `json:"createdAt"`
