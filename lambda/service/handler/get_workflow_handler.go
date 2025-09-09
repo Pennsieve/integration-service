@@ -43,7 +43,7 @@ func GetWorkflowHandler(ctx context.Context, request events.APIGatewayV2HTTPRequ
 		Uuid:           workflow.Uuid,
 		Name:           workflow.Name,
 		Description:    workflow.Description,
-		Processors:     workflow.Processors.([]models.Processor),
+		Processors:     workflow.Processors,
 		Dag:            workflow.Dag,
 		ExecutionOrder: workflow.ExecutionOrder,
 		CreatedAt:      workflow.CreatedAt,
