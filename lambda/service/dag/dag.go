@@ -7,15 +7,15 @@ type Graph interface {
 }
 
 type DAG struct {
-	Processors interface{} // []models.Processor
+	Processors []models.Processor
 	Data       map[string][]string
 }
 
 func (d *DAG) init() {
 	d.Data = make(map[string][]string)
 	// Initialize the graph with empty adjacency lists
-	processors := d.Processors.([]models.Processor)
-	for _, processor := range processors {
+
+	for _, processor := range d.Processors {
 		// build adjacency list
 		dependencies := []string{}
 		for _, dependency := range processor.DependsOn {
@@ -31,6 +31,6 @@ func (d *DAG) GetData() map[string][]string {
 	return d.Data
 }
 
-func NewDAG(processors interface{}) Graph {
+func NewDAG(processors []models.Processor) Graph {
 	return &DAG{processors, nil}
 }
