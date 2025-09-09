@@ -3,13 +3,14 @@ package store_dynamodb
 import (
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+	"github.com/pennsieve/integration-service/service/models"
 )
 
 type Workflow struct {
 	Uuid           string              `dynamodbav:"uuid"`
 	Name           string              `dynamodbav:"name"`
 	Description    string              `dynamodbav:"description"`
-	Processors     interface{}         `dynamodbav:"processors"`
+	Processors     []models.Processor  `dynamodbav:"processors"`
 	OrganizationId string              `dynamodbav:"organizationId"`
 	Dag            map[string][]string `dynamodbav:"dag"`
 	ExecutionOrder [][]string          `dynamodbav:"executionOrder"`
