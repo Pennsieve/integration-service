@@ -55,6 +55,7 @@ func (t *ComputeTrigger) Run(ctx context.Context) error {
 		PackageIds:            t.Integration.PackageIDs,
 		Workflow:              t.Integration.Workflow,
 		WorkflowUuid:          t.Integration.WorkflowUuid,
+		InvocationParams:      t.Integration.InvocationParams,
 		Params:                t.Integration.Params,
 		OrganizationId:        t.OrganizationId,
 		Status:                models.WorkflowInstanceStatusNotStarted,
