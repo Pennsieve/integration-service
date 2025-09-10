@@ -100,14 +100,49 @@ func TestInsertGet(t *testing.T) {
 	params := `{
 		"target_path" : "output-folder"
 	}`
+	invocationParams := map[string][]models.ProcessorParam{
+		"some-git-repo1": {
+			{
+				Name:         "cpus",
+				Value:        2,
+				Type:         "integer",
+				DefaultValue: 1,
+				Required:     false,
+			},
+			{
+				Name:         "env",
+				Value:        "prod",
+				Type:         "string",
+				DefaultValue: "dev",
+				Required:     false,
+			},
+		},
+		"some-git-repo2": {
+			{
+				Name:         "maxFiles",
+				Value:        50,
+				Type:         "integer",
+				DefaultValue: 100,
+				Required:     false,
+			},
+			{
+				Name:         "env",
+				Value:        "prod",
+				Type:         "string",
+				DefaultValue: "dev",
+				Required:     false,
+			},
+		},
+	}
 	store_integration := WorkflowInstance{
-		Uuid:            integrationId,
-		ComputeNodeUuid: "someComputeNodeUuid",
-		DatasetNodeId:   "someDatasetNodeId",
-		PackageIds:      packageIds,
-		Params:          params,
-		OrganizationId:  organizationId,
-		StartedAt:       time.Now().UTC().String(),
+		Uuid:             integrationId,
+		ComputeNodeUuid:  "someComputeNodeUuid",
+		DatasetNodeId:    "someDatasetNodeId",
+		PackageIds:       packageIds,
+		InvocationParams: invocationParams,
+		Params:           params,
+		OrganizationId:   organizationId,
+		StartedAt:        time.Now().UTC().String(),
 	}
 	err = dynamo_store.Insert(context.Background(), store_integration)
 	if err != nil {
@@ -123,7 +158,6 @@ func TestInsertGet(t *testing.T) {
 
 	assert.Equal(t, 1, len(integrationItems))
 
-	// delete table
 	err = DeleteTable(dynamoDBClient, tableName)
 	if err != nil {
 		t.Fatalf("err creating table")

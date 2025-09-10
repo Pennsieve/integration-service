@@ -17,15 +17,50 @@ func TestRun(t *testing.T) {
 		{Uuid: uuid.NewString()},
 		{Uuid: uuid.NewString()},
 	}
-	integration := models.WorkflowInstance{
-		Workflow: workflow,
+	invocationParams := map[string][]models.ProcessorParam{
+		"some-git-repo1": {
+			{
+				Name:         "cpus",
+				Value:        2,
+				Type:         "integer",
+				DefaultValue: 1,
+				Required:     false,
+			},
+			{
+				Name:         "env",
+				Value:        "prod",
+				Type:         "string",
+				DefaultValue: "dev",
+				Required:     false,
+			},
+		},
+		"some-git-repo2": {
+			{
+				Name:         "maxFiles",
+				Value:        50,
+				Type:         "integer",
+				DefaultValue: 100,
+				Required:     false,
+			},
+			{
+				Name:         "env",
+				Value:        "prod",
+				Type:         "string",
+				DefaultValue: "dev",
+				Required:     false,
+			},
+		},
+	}
+	workflowInstance := models.WorkflowInstance{
+		Workflow:         workflow,
+		InvocationParams: invocationParams,
 	}
 	organizationId := "someOrganizationId"
 
 	mockClient := mocks.NewMockClient()
 	mockStore := mocks.NewMockDynamoDBStore()
 	mockWorkflowInstanceStatusStore := mocks.NewMockDynamoDBWorkflowInstanceStatusStore()
-	computeTrigger := compute_trigger.NewComputeTrigger(mockClient, integration, mockStore, mockWorkflowInstanceStatusStore, organizationId)
+	computeTrigger := compute_trigger.NewComputeTrigger(mockClient, workflowInstance, mockStore, mockWorkflowInstanceStatusStore, organizationId)
 	ctx := context.Background()
 	err := computeTrigger.Run(ctx)
 	if err != nil {
