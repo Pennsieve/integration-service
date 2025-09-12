@@ -1,6 +1,6 @@
 # integration-service
 - Infrastructure for webhook integration notification system.
-- Infrastructure for external application invocation
+- Infrastructure for workflow invocation
 
 ## Webhook Workflow
 
@@ -12,6 +12,6 @@
 
 ## Integration Service Workflow
 1. Service lambda receives payload from frontend
-2. Payload is validated and authorization to invoke workflow determined
+2. Payload is validated and authorization to invoke workflow determined (TODO)
 3. Payload attributes persisted 
 4. Workflow initiated

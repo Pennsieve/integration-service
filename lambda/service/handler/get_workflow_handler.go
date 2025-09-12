@@ -44,6 +44,7 @@ func GetWorkflowHandler(ctx context.Context, request events.APIGatewayV2HTTPRequ
 		Name:           workflow.Name,
 		Description:    workflow.Description,
 		Processors:     workflow.Processors,
+		OrganizationId: workflow.OrganizationId,
 		Dag:            workflow.Dag,
 		ExecutionOrder: workflow.ExecutionOrder,
 		CreatedAt:      workflow.CreatedAt,
