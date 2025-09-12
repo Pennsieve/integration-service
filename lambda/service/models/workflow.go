@@ -90,6 +90,7 @@ type Workflow struct {
 	Name           string              `json:"name"`
 	Description    string              `json:"description"`
 	Processors     []Processor         `json:"processors"`
+	OrganizationId string              `json:"organizationId"`
 	Dag            map[string][]string `json:"dag"`
 	ExecutionOrder [][]string          `json:"executionOrder"`
 	CreatedAt      string              `json:"createdAt"`
