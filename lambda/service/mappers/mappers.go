@@ -66,6 +66,7 @@ func DynamoDBWorkflowToJsonWorkflow(dynamoWorkflows []store_dynamodb.Workflow) [
 			Name:           a.Name,
 			Description:    a.Description,
 			Processors:     a.Processors,
+			OrganizationId: a.OrganizationId,
 			Dag:            a.Dag,
 			ExecutionOrder: a.ExecutionOrder,
 			CreatedAt:      a.CreatedAt,
