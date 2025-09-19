@@ -1,6 +1,7 @@
 package mappers
 
 import (
+	"context"
 	"encoding/json"
 
 	"github.com/pennsieve/integration-service/service/log_retriever"
@@ -75,4 +76,25 @@ func DynamoDBWorkflowToJsonWorkflow(dynamoWorkflows []store_dynamodb.Workflow) [
 	}
 
 	return workflows
+}
+
+func BuildWorkflow(ctx context.Context, uuid string, store store_dynamodb.WorkflowDBStore) ([]models.WorkflowProcessor, error) {
+	dbWorkflow, err := store.GetById(ctx, uuid)
+	if err != nil {
+		return nil, err
+	}
+
+	workflow := models.Workflow{
+		ExecutionOrder: dbWorkflow.ExecutionOrder,
+	}
+
+	var wf []models.WorkflowProcessor
+	for _, processor := range workflow.ExecutionOrder {
+		// TODO: retrieve application uuid from applications table
+		wf = append(wf, models.WorkflowProcessor{
+			Uuid: processor[0],
+		})
+	}
+
+	return wf, nil
 }

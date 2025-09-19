@@ -42,8 +42,9 @@ func PostWorkflowInstancesHandler(ctx context.Context, request events.APIGateway
 	dynamoDBClient := dynamodb.NewFromConfig(cfg)
 
 	workflowInstancesTable := os.Getenv("INTEGRATIONS_TABLE")
-	dynamo_store := store_dynamodb.NewWorkflowInstanceDatabaseStore(dynamoDBClient, workflowInstancesTable)
-
+	workflowInstanceStore := store_dynamodb.NewWorkflowInstanceDatabaseStore(dynamoDBClient, workflowInstancesTable)
+	workflowTable := os.Getenv("WORKFLOWS_TABLE")
+	workflow_store := store_dynamodb.NewWorkflowDatabaseStore(dynamoDBClient, workflowTable)
 	workflowInstanceProcessorStatusTable := os.Getenv("WORKFLOW_INSTANCE_PROCESSOR_STATUS_TABLE")
 	workflow_instance_processor_status_dynamo_store := store_dynamodb.NewWorkflowInstanceProcessorStatusDatabaseStore(dynamoDBClient, workflowInstanceProcessorStatusTable)
 
@@ -64,7 +65,12 @@ func PostWorkflowInstancesHandler(ctx context.Context, request events.APIGateway
 		os.Getenv("REGION"),
 		cfg,
 		computeNode.AccountId)
-	computeTrigger := compute_trigger.NewComputeTrigger(httpClient, workflowInstance, dynamo_store, workflow_instance_processor_status_dynamo_store, organizationId)
+	computeTrigger := compute_trigger.NewComputeTrigger(httpClient,
+		workflowInstance,
+		workflowInstanceStore,
+		workflow_instance_processor_status_dynamo_store,
+		organizationId,
+		workflow_store)
 	// run
 	if err := computeTrigger.Run(ctx); err != nil {
 		log.Println(err.Error())

@@ -90,3 +90,29 @@ func (r *MockDynamoDBWorkflowInstanceStatusStore) GetAll(ctx context.Context, uu
 func NewMockDynamoDBWorkflowInstanceStatusStore() store_dynamodb.WorkflowInstanceProcessorStatusDBStore {
 	return &MockDynamoDBWorkflowInstanceStatusStore{}
 }
+
+type MockWorkflowDynamoDBStore struct{}
+
+func (r *MockWorkflowDynamoDBStore) Insert(context.Context, store_dynamodb.Workflow) error {
+	return nil
+}
+
+func (r *MockWorkflowDynamoDBStore) GetById(context.Context, string) (store_dynamodb.Workflow, error) {
+
+	return store_dynamodb.Workflow{
+		Uuid: "testUuid",
+		ExecutionOrder: [][]string{
+			{"git://github.url1.com"},
+			{"git://github.url2.com"},
+		},
+	}, nil
+}
+
+func (r *MockWorkflowDynamoDBStore) Get(context.Context, string) ([]store_dynamodb.Workflow, error) {
+
+	return []store_dynamodb.Workflow{}, nil
+}
+
+func NewWorkflowDynamoDBStore() store_dynamodb.WorkflowDBStore {
+	return &MockWorkflowDynamoDBStore{}
+}

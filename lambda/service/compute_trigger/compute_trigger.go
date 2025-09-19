@@ -27,16 +27,18 @@ type ComputeTrigger struct {
 	Store                                store_dynamodb.DynamoDBStore
 	WorkflowInstanceProcessorStatusStore store_dynamodb.WorkflowInstanceProcessorStatusDBStore
 	OrganizationId                       string
+	WorkflowStore                        store_dynamodb.WorkflowDBStore
 }
 
 func NewComputeTrigger(
 	client clients.Client,
 	integration models.WorkflowInstance,
-	store store_dynamodb.DynamoDBStore,
+	workflowInstanceStore store_dynamodb.DynamoDBStore,
 	workflowInstanceProcessorStatusStore store_dynamodb.WorkflowInstanceProcessorStatusDBStore,
 	organizationId string,
+	workflowStore store_dynamodb.WorkflowDBStore,
 ) Trigger {
-	return &ComputeTrigger{client, integration, store, workflowInstanceProcessorStatusStore, organizationId}
+	return &ComputeTrigger{client, integration, workflowInstanceStore, workflowInstanceProcessorStatusStore, organizationId, workflowStore}
 }
 
 // runs trigger
@@ -61,9 +63,18 @@ func (t *ComputeTrigger) Run(ctx context.Context) error {
 		Status:                models.WorkflowInstanceStatusNotStarted,
 	}
 
-	workflows, err := mappers.ExtractWorkflow(t.Integration.Workflow)
-	if err != nil {
-		return err
+	var workflows []models.WorkflowProcessor
+	var err error
+	if t.Integration.WorkflowUuid == "" {
+		workflows, err = mappers.ExtractWorkflow(t.Integration.Workflow)
+		if err != nil {
+			return err
+		}
+	} else {
+		workflows, err = mappers.BuildWorkflow(ctx, t.Integration.WorkflowUuid, t.WorkflowStore)
+		if err != nil {
+			return err
+		}
 	}
 
 	if len(workflows) == 0 {
