@@ -103,7 +103,6 @@ func (r *MockWorkflowDynamoDBStore) GetById(context.Context, string) (store_dyna
 		Uuid: "testUuid",
 		ExecutionOrder: [][]string{
 			{"git://github.url1.com"},
-			{"git://github.url2.com"},
 		},
 	}, nil
 }
@@ -121,7 +120,9 @@ type MockApplicationDynamoDBStore struct{}
 
 func (r *MockApplicationDynamoDBStore) GetBySourceUrl(ctx context.Context, sourceUrl string) ([]store_dynamodb.Application, error) {
 
-	return []store_dynamodb.Application{}, nil
+	return []store_dynamodb.Application{
+		{Uuid: "app-uuid-1", SourceUrl: "git://github.url1.com"},
+	}, nil
 }
 
 func NewApplicationDynamoDBStore() store_dynamodb.ApplicationDBStore {
