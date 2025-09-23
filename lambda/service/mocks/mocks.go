@@ -116,3 +116,14 @@ func (r *MockWorkflowDynamoDBStore) Get(context.Context, string) ([]store_dynamo
 func NewWorkflowDynamoDBStore() store_dynamodb.WorkflowDBStore {
 	return &MockWorkflowDynamoDBStore{}
 }
+
+type MockApplicationDynamoDBStore struct{}
+
+func (r *MockApplicationDynamoDBStore) GetBySourceUrl(ctx context.Context, sourceUrl string) ([]store_dynamodb.Application, error) {
+
+	return []store_dynamodb.Application{}, nil
+}
+
+func NewApplicationDynamoDBStore() store_dynamodb.ApplicationDBStore {
+	return &MockApplicationDynamoDBStore{}
+}

@@ -61,7 +61,8 @@ func TestRun(t *testing.T) {
 	mockWorkflowInstanceStore := mocks.NewMockDynamoDBStore()
 	mockWorkflowInstanceStatusStore := mocks.NewMockDynamoDBWorkflowInstanceStatusStore()
 	mockWorkflowStore := mocks.NewWorkflowDynamoDBStore()
-	computeTrigger := compute_trigger.NewComputeTrigger(mockClient, workflowInstance, mockWorkflowInstanceStore, mockWorkflowInstanceStatusStore, organizationId, mockWorkflowStore)
+	mockApplicationStore := mocks.NewApplicationDynamoDBStore()
+	computeTrigger := compute_trigger.NewComputeTrigger(mockClient, workflowInstance, mockWorkflowInstanceStore, mockWorkflowInstanceStatusStore, organizationId, mockWorkflowStore, mockApplicationStore)
 	ctx := context.Background()
 	err := computeTrigger.Run(ctx)
 	if err != nil {
@@ -111,10 +112,11 @@ func TestRunNoWorkflow(t *testing.T) {
 	organizationId := "someOrganizationId"
 
 	mockClient := mocks.NewMockClient()
-	mockStore := mocks.NewMockDynamoDBStore()
+	mockWorkflowInstanceStore := mocks.NewMockDynamoDBStore()
 	mockWorkflowInstanceStatusStore := mocks.NewMockDynamoDBWorkflowInstanceStatusStore()
 	mockWorkflowStore := mocks.NewWorkflowDynamoDBStore()
-	computeTrigger := compute_trigger.NewComputeTrigger(mockClient, workflowInstance, mockStore, mockWorkflowInstanceStatusStore, organizationId, mockWorkflowStore)
+	mockApplicationStore := mocks.NewApplicationDynamoDBStore()
+	computeTrigger := compute_trigger.NewComputeTrigger(mockClient, workflowInstance, mockWorkflowInstanceStore, mockWorkflowInstanceStatusStore, organizationId, mockWorkflowStore, mockApplicationStore)
 	ctx := context.Background()
 	err := computeTrigger.Run(ctx)
 	if err != nil {
