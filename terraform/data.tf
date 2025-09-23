@@ -84,3 +84,15 @@ data "terraform_remote_state" "compute_node_service" {
     profile = var.aws_account
   }
 }
+
+# Import app-deploy service
+data "terraform_remote_state" "app_deploy_service" {
+  backend = "s3"
+
+  config = {
+    bucket  = "${var.aws_account}-terraform-state"
+    key     = "aws/${data.aws_region.current_region.name}/${var.vpc_name}/${var.environment_name}/app-deploy-service/terraform.tfstate"
+    region  = "us-east-1"
+    profile = var.aws_account
+  }
+}
