@@ -47,6 +47,8 @@ func PostWorkflowInstancesHandler(ctx context.Context, request events.APIGateway
 	workflow_store := store_dynamodb.NewWorkflowDatabaseStore(dynamoDBClient, workflowTable)
 	workflowInstanceProcessorStatusTable := os.Getenv("WORKFLOW_INSTANCE_PROCESSOR_STATUS_TABLE")
 	workflow_instance_processor_status_dynamo_store := store_dynamodb.NewWorkflowInstanceProcessorStatusDatabaseStore(dynamoDBClient, workflowInstanceProcessorStatusTable)
+	applicationsTable := os.Getenv("APPLICATIONS_TABLE")
+	applications_store := store_dynamodb.NewApplicationDatabaseStore(dynamoDBClient, applicationsTable)
 
 	computeNodesTable := os.Getenv("COMPUTE_NODES_TABLE")
 	compute_nodes_store := store_dynamodb.NewNodeDatabaseStore(dynamoDBClient, computeNodesTable)
@@ -70,7 +72,8 @@ func PostWorkflowInstancesHandler(ctx context.Context, request events.APIGateway
 		workflowInstanceStore,
 		workflow_instance_processor_status_dynamo_store,
 		organizationId,
-		workflow_store)
+		workflow_store,
+		applications_store)
 	// run
 	if err := computeTrigger.Run(ctx); err != nil {
 		log.Println(err.Error())

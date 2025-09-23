@@ -3,6 +3,7 @@ package mappers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"github.com/pennsieve/integration-service/service/log_retriever"
 	"github.com/pennsieve/integration-service/service/models"
@@ -78,8 +79,8 @@ func DynamoDBWorkflowToJsonWorkflow(dynamoWorkflows []store_dynamodb.Workflow) [
 	return workflows
 }
 
-func BuildWorkflow(ctx context.Context, uuid string, store store_dynamodb.WorkflowDBStore) ([]models.WorkflowProcessor, error) {
-	dbWorkflow, err := store.GetById(ctx, uuid)
+func BuildWorkflow(ctx context.Context, uuid string, workflowStore store_dynamodb.WorkflowDBStore, applicationStore store_dynamodb.ApplicationDBStore) ([]models.WorkflowProcessor, error) {
+	dbWorkflow, err := workflowStore.GetById(ctx, uuid)
 	if err != nil {
 		return nil, err
 	}
@@ -90,9 +91,15 @@ func BuildWorkflow(ctx context.Context, uuid string, store store_dynamodb.Workfl
 
 	var wf []models.WorkflowProcessor
 	for _, processor := range workflow.ExecutionOrder {
-		// TODO: retrieve application uuid from applications table
+		applications, err := applicationStore.GetBySourceUrl(ctx, processor[0])
+		if err != nil {
+			return nil, err
+		}
+		if len(applications) == 0 {
+			return nil, errors.New("no application found for processor source URL: " + processor[0])
+		}
 		wf = append(wf, models.WorkflowProcessor{
-			Uuid: processor[0],
+			Uuid: applications[0].Uuid,
 		})
 	}
 
