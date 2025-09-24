@@ -66,15 +66,15 @@ func (t *ComputeTrigger) Run(ctx context.Context) error {
 		Status:                models.WorkflowInstanceStatusNotStarted,
 	}
 
-	var workflows []models.WorkflowProcessor
+	var workflow []models.WorkflowProcessor
 	var err error
 	if t.Integration.WorkflowUuid == "" {
-		workflows, err = mappers.ExtractWorkflow(t.Integration.Workflow)
+		workflow, err = mappers.ExtractWorkflow(t.Integration.Workflow)
 		if err != nil {
 			return err
 		}
 	} else {
-		workflows, err = mappers.BuildWorkflow(ctx,
+		workflow, err = mappers.BuildWorkflow(ctx,
 			t.Integration.WorkflowUuid,
 			t.WorkflowStore,
 			t.ApplicationStore)
@@ -83,7 +83,7 @@ func (t *ComputeTrigger) Run(ctx context.Context) error {
 		}
 	}
 
-	if len(workflows) == 0 {
+	if len(workflow) == 0 {
 		return errors.New("cannot trigger compute for workflow instance with empty workflow")
 	}
 
@@ -93,7 +93,7 @@ func (t *ComputeTrigger) Run(ctx context.Context) error {
 	}
 
 	// store initial status for workflow instance processors
-	for _, p := range workflows {
+	for _, p := range workflow {
 		err = t.WorkflowInstanceProcessorStatusStore.Put(ctx, integrationId, p.Uuid, models.WorkflowInstanceStatusEvent{
 			Status: models.WorkflowInstanceStatusNotStarted,
 		})
