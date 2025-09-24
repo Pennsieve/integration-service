@@ -53,6 +53,10 @@ func PutWorkflowInstanceProcessorStatusHandler(ctx context.Context, request even
 
 	workflowInstanceTable := os.Getenv("INTEGRATIONS_TABLE")
 	workflowInstanceStore := store_dynamodb.NewWorkflowInstanceDatabaseStore(dynamoDBClient, workflowInstanceTable)
+	workflowTable := os.Getenv("WORKFLOWS_TABLE")
+	workflowStore := store_dynamodb.NewWorkflowDatabaseStore(dynamoDBClient, workflowTable)
+	applicationsTable := os.Getenv("APPLICATIONS_TABLE")
+	applicationsStore := store_dynamodb.NewApplicationDatabaseStore(dynamoDBClient, applicationsTable)
 
 	workflowInstance, err := workflowInstanceStore.GetById(ctx, uuid)
 	if err != nil {
@@ -64,14 +68,30 @@ func PutWorkflowInstanceProcessorStatusHandler(ctx context.Context, request even
 		), nil
 	}
 
-	workflow, err := mappers.ExtractWorkflow(workflowInstance.Workflow)
-	if err != nil {
-		return APIErrorResponse(
-			handlerName,
-			http.StatusInternalServerError,
-			fmt.Sprintf("invalid workflow definition found in workflow instance: %s", workflowInstance.Uuid),
-			err,
-		), nil
+	var workflow []models.WorkflowProcessor
+	if workflowInstance.WorkflowUuid == "" {
+		workflow, err = mappers.ExtractWorkflow(workflowInstance.Workflow)
+		if err != nil {
+			return APIErrorResponse(
+				handlerName,
+				http.StatusInternalServerError,
+				fmt.Sprintf("v1: invalid workflow definition found in workflow instance: %s", workflowInstance.Uuid),
+				err,
+			), nil
+		}
+	} else {
+		workflow, err = mappers.BuildWorkflow(ctx,
+			workflowInstance.WorkflowUuid,
+			workflowStore,
+			applicationsStore)
+		if err != nil {
+			return APIErrorResponse(
+				handlerName,
+				http.StatusInternalServerError,
+				fmt.Sprintf("v2: could not retrieve workflow for workflow instance: %s", workflowInstance.Uuid),
+				err,
+			), nil
+		}
 	}
 
 	validProcessorId := func() bool {
