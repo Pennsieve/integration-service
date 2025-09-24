@@ -13,7 +13,6 @@ type DAG struct {
 
 func (d *DAG) init() {
 	d.Data = make(map[string][]string)
-	// Initialize the graph with empty adjacency lists
 
 	for _, processor := range d.Processors {
 		// build adjacency list

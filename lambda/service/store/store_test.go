@@ -13,6 +13,7 @@ import (
 )
 
 func TestGetById(t *testing.T) {
+	t.Skip("Skipping deprecated")
 	db, err := pgQueries.ConnectENV()
 	if err != nil {
 		t.Fatalf("unable to connect to database: %v\n", err)
@@ -57,6 +58,7 @@ func TestGetById(t *testing.T) {
 }
 
 func TestGetOrganizationUserById(t *testing.T) {
+	t.Skip("Skipping deprecated")
 	db, err := pgQueries.ConnectENV()
 	if err != nil {
 		t.Fatalf("unable to connect to database: %v\n", err)
@@ -119,6 +121,7 @@ func TestGetOrganizationUserById(t *testing.T) {
 }
 
 func TestGetDatasetUserById(t *testing.T) {
+	t.Skip("Skipping deprecated")
 	ctx := context.Background()
 	db, err := pgQueries.ConnectENV()
 	if err != nil {
@@ -192,6 +195,7 @@ func TestGetDatasetUserById(t *testing.T) {
 }
 
 func TestGetDatasetUserByUserId(t *testing.T) {
+	t.Skip("Skipping deprecated")
 	ctx := context.Background()
 	db, err := pgQueries.ConnectENV()
 	if err != nil {

@@ -21,14 +21,15 @@ func DynamoDBIntegrationToJsonIntegration(dynamoIntegrations []store_dynamodb.Wo
 				ComputeNodeUuid:       a.ComputeNodeUuid,
 				ComputeNodeGatewayUrl: a.ComputeNodeGatewayUrl,
 			},
-			DatasetNodeID: a.DatasetNodeId,
-			PackageIDs:    a.PackageIds,
-			Workflow:      a.Workflow,
-			WorkflowUuid:  a.WorkflowUuid,
-			Params:        a.Params,
-			Status:        a.Status,
-			StartedAt:     a.StartedAt,
-			CompletedAt:   a.CompletedAt,
+			DatasetNodeID:    a.DatasetNodeId,
+			PackageIDs:       a.PackageIds,
+			Workflow:         a.Workflow,
+			WorkflowUuid:     a.WorkflowUuid,
+			InvocationParams: a.InvocationParams,
+			Params:           a.Params,
+			Status:           a.Status,
+			StartedAt:        a.StartedAt,
+			CompletedAt:      a.CompletedAt,
 		})
 	}
 
