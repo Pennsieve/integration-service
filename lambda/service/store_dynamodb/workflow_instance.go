@@ -15,6 +15,7 @@ type WorkflowInstance struct {
 	PackageIds            []string                           `dynamodbav:"packageIds"`
 	Workflow              interface{}                        `dynamodbav:"workflow"`
 	WorkflowUuid          string                             `dynamodbav:"workflowUuid"`
+	ExecutionOrder        [][]string                         `dynamodbav:"executionOrder"`
 	InvocationParams      map[string][]models.ProcessorParam `dynamodbav:"invocationParams"`
 	Params                interface{}                        `dynamodbav:"params"`
 	OrganizationId        string                             `dynamodbav:"organizationId"`
