@@ -46,14 +46,15 @@ func GetWorkflowInstanceHandler(ctx context.Context, request events.APIGatewayV2
 			ComputeNodeUuid:       integration.ComputeNodeUuid,
 			ComputeNodeGatewayUrl: integration.ComputeNodeGatewayUrl,
 		},
-		DatasetNodeID: integration.DatasetNodeId,
-		PackageIDs:    integration.PackageIds,
-		Workflow:      integration.Workflow,
-		WorkflowUuid:  integration.WorkflowUuid,
-		Params:        integration.Params,
-		Status:        integration.Status,
-		StartedAt:     integration.StartedAt,
-		CompletedAt:   integration.CompletedAt,
+		DatasetNodeID:  integration.DatasetNodeId,
+		PackageIDs:     integration.PackageIds,
+		Workflow:       integration.Workflow,
+		WorkflowUuid:   integration.WorkflowUuid,
+		ExecutionOrder: integration.ExecutionOrder,
+		Params:         integration.Params,
+		Status:         integration.Status,
+		StartedAt:      integration.StartedAt,
+		CompletedAt:    integration.CompletedAt,
 	})
 	if err != nil {
 		log.Println(err.Error())
