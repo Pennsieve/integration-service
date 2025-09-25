@@ -51,9 +51,14 @@ func (t *ComputeTrigger) Run(ctx context.Context) error {
 
 	organizationId := t.OrganizationId
 	var err error
-	dbWorkflow, err := t.WorkflowStore.GetById(ctx, t.Integration.WorkflowUuid)
-	if err != nil {
-		return err
+
+	var executionOrder [][]string
+	if t.Integration.WorkflowUuid == "" {
+		dbWorkflow, err := t.WorkflowStore.GetById(ctx, t.Integration.WorkflowUuid)
+		if err != nil {
+			return err
+		}
+		executionOrder = dbWorkflow.ExecutionOrder
 	}
 
 	// persist to dynamodb
@@ -66,7 +71,7 @@ func (t *ComputeTrigger) Run(ctx context.Context) error {
 		PackageIds:            t.Integration.PackageIDs,
 		Workflow:              t.Integration.Workflow,
 		WorkflowUuid:          t.Integration.WorkflowUuid,
-		ExecutionOrder:        dbWorkflow.ExecutionOrder,
+		ExecutionOrder:        executionOrder,
 		InvocationParams:      t.Integration.InvocationParams,
 		Params:                t.Integration.Params,
 		OrganizationId:        organizationId,
