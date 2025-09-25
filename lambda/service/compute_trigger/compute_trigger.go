@@ -50,6 +50,12 @@ func (t *ComputeTrigger) Run(ctx context.Context) error {
 	now := time.Now().UTC()
 
 	organizationId := t.OrganizationId
+	var err error
+	dbWorkflow, err := t.WorkflowStore.GetById(ctx, t.Integration.WorkflowUuid)
+	if err != nil {
+		return err
+	}
+
 	// persist to dynamodb
 	store_integration := store_dynamodb.WorkflowInstance{
 		Uuid:                  integrationId,
@@ -60,6 +66,7 @@ func (t *ComputeTrigger) Run(ctx context.Context) error {
 		PackageIds:            t.Integration.PackageIDs,
 		Workflow:              t.Integration.Workflow,
 		WorkflowUuid:          t.Integration.WorkflowUuid,
+		ExecutionOrder:        dbWorkflow.ExecutionOrder,
 		InvocationParams:      t.Integration.InvocationParams,
 		Params:                t.Integration.Params,
 		OrganizationId:        organizationId,
@@ -67,7 +74,7 @@ func (t *ComputeTrigger) Run(ctx context.Context) error {
 	}
 
 	var workflow []models.WorkflowProcessor
-	var err error
+
 	if t.Integration.WorkflowUuid == "" {
 		workflow, err = mappers.ExtractWorkflow(t.Integration.Workflow)
 		if err != nil {

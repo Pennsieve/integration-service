@@ -25,6 +25,7 @@ func DynamoDBIntegrationToJsonIntegration(dynamoIntegrations []store_dynamodb.Wo
 			PackageIDs:       a.PackageIds,
 			Workflow:         a.Workflow,
 			WorkflowUuid:     a.WorkflowUuid,
+			ExecutionOrder:   a.ExecutionOrder,
 			InvocationParams: a.InvocationParams,
 			Params:           a.Params,
 			Status:           a.Status,

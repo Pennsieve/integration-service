@@ -11,6 +11,7 @@ type WorkflowInstance struct {
 	PackageIDs       []string                    `json:"packageIds"`
 	Workflow         interface{}                 `json:"workflow,omitempty"`
 	WorkflowUuid     string                      `json:"workflowUuid,omitempty"`
+	ExecutionOrder   [][]string                  `json:"executionOrder"`
 	InvocationParams map[string][]ProcessorParam `json:"invocationParams,omitempty"`
 	Params           interface{}                 `json:"params,omitempty"` // deprecated
 	Status           string                      `json:"status"`
