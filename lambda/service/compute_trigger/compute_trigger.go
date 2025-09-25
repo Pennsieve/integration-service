@@ -53,7 +53,7 @@ func (t *ComputeTrigger) Run(ctx context.Context) error {
 	var err error
 
 	var executionOrder [][]string
-	if t.Integration.WorkflowUuid == "" {
+	if t.Integration.WorkflowUuid != "" {
 		dbWorkflow, err := t.WorkflowStore.GetById(ctx, t.Integration.WorkflowUuid)
 		if err != nil {
 			return err
