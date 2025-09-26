@@ -18,6 +18,8 @@ import (
 
 func PutWorkflowHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	handlerName := "PutWorkflowHandler"
+	uuid := request.PathParameters["id"]
+
 	var workflow models.Workflow
 	if err := json.Unmarshal([]byte(request.Body), &workflow); err != nil {
 		log.Println(err.Error())
@@ -47,7 +49,7 @@ func PutWorkflowHandler(ctx context.Context, request events.APIGatewayV2HTTPRequ
 		IsActive:  workflow.IsActive,
 		UpdatedBy: userNodeId,
 	}
-	err = dynamo_store.Update(ctx, store_workflow, workflow.Uuid)
+	err = dynamo_store.Update(ctx, store_workflow, uuid)
 	if err != nil {
 		log.Println(err.Error())
 		return events.APIGatewayV2HTTPResponse{
@@ -57,7 +59,7 @@ func PutWorkflowHandler(ctx context.Context, request events.APIGatewayV2HTTPRequ
 	}
 
 	m, err := json.Marshal(models.GenericResponse{
-		Message: fmt.Sprintf("workflow %v updated", workflow.Uuid),
+		Message: fmt.Sprintf("workflow %v updated", uuid),
 	})
 	if err != nil {
 		log.Println(err.Error())
