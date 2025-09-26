@@ -100,7 +100,7 @@ func (r *WorkflowDatabaseStore) Update(ctx context.Context, workflow Workflow, w
 			":c": &types.AttributeValueMemberBOOL{Value: workflow.IsActive},
 			":d": &types.AttributeValueMemberS{Value: workflow.UpdatedBy},
 		},
-		UpdateExpression: aws.String("set completedAt = :c , updatedBy = :d"),
+		UpdateExpression: aws.String("set isActive = :c , updatedBy = :d"),
 	})
 	if err != nil {
 		return fmt.Errorf("error updating workflow: %w", err)
