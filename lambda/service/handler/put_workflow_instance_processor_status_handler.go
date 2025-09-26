@@ -140,7 +140,7 @@ func PutWorkflowInstanceProcessorStatusHandler(ctx context.Context, request even
 		}
 	}
 
-	response := models.IntegrationResponse{
+	response := models.GenericResponse{
 		Message: fmt.Sprintf("worklow instance %s processor %s status updated to %s", workflowInstance.Uuid, processorUuid, requestBody.Status),
 	}
 

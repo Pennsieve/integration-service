@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -12,13 +13,24 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/pennsieve/integration-service/service/models"
 	"github.com/pennsieve/integration-service/service/store_dynamodb"
+	"github.com/pennsieve/pennsieve-go-core/pkg/authorizer"
 )
 
-func GetWorkflowHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	handlerName := "GetWorkflowHandler"
-	uuid := request.PathParameters["id"]
+func PutWorkflowHandler(ctx context.Context, request events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	handlerName := "PutWorkflowHandler"
+	var workflow models.Workflow
+	if err := json.Unmarshal([]byte(request.Body), &workflow); err != nil {
+		log.Println(err.Error())
+		return events.APIGatewayV2HTTPResponse{
+			StatusCode: 500,
+			Body:       handlerName,
+		}, ErrUnmarshaling
+	}
 
-	cfg, err := config.LoadDefaultConfig(ctx)
+	claims := authorizer.ParseClaims(request.RequestContext.Authorizer.Lambda)
+	userNodeId := claims.UserClaim.NodeId
+
+	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
 		log.Println(err.Error())
 		return events.APIGatewayV2HTTPResponse{
@@ -30,27 +42,22 @@ func GetWorkflowHandler(ctx context.Context, request events.APIGatewayV2HTTPRequ
 	tableName := os.Getenv("WORKFLOWS_TABLE")
 
 	dynamo_store := store_dynamodb.NewWorkflowDatabaseStore(dynamoDBClient, tableName)
-	workflow, err := dynamo_store.GetById(ctx, uuid)
+
+	store_workflow := store_dynamodb.Workflow{
+		IsActive:  workflow.IsActive,
+		UpdatedBy: userNodeId,
+	}
+	err = dynamo_store.Update(ctx, store_workflow, workflow.Uuid)
 	if err != nil {
 		log.Println(err.Error())
 		return events.APIGatewayV2HTTPResponse{
-			StatusCode: http.StatusNotFound,
-			Body:       handlerError(handlerName, ErrNoRecordsFound),
+			StatusCode: http.StatusInternalServerError,
+			Body:       handlerError(handlerName, ErrDynamoDB),
 		}, nil
 	}
 
-	m, err := json.Marshal(models.Workflow{
-		Uuid:           workflow.Uuid,
-		Name:           workflow.Name,
-		Description:    workflow.Description,
-		Processors:     workflow.Processors,
-		OrganizationId: workflow.OrganizationId,
-		Dag:            workflow.Dag,
-		ExecutionOrder: workflow.ExecutionOrder,
-		CreatedAt:      workflow.CreatedAt,
-		CreatedBy:      workflow.CreatedBy,
-		IsActive:       workflow.IsActive,
-		UpdatedBy:      workflow.UpdatedBy,
+	m, err := json.Marshal(models.GenericResponse{
+		Message: fmt.Sprintf("workflow %v updated", workflow.Uuid),
 	})
 	if err != nil {
 		log.Println(err.Error())

@@ -112,6 +112,10 @@ func (r *MockWorkflowDynamoDBStore) Get(context.Context, string) ([]store_dynamo
 	return []store_dynamodb.Workflow{}, nil
 }
 
+func (r *MockWorkflowDynamoDBStore) Update(context.Context, store_dynamodb.Workflow, string) error {
+	return nil
+}
+
 func NewWorkflowDynamoDBStore() store_dynamodb.WorkflowDBStore {
 	return &MockWorkflowDynamoDBStore{}
 }

@@ -53,7 +53,7 @@ func PutWorkflowInstancesHandler(ctx context.Context, request events.APIGatewayV
 		}, nil
 	}
 
-	m, err := json.Marshal(models.IntegrationResponse{
+	m, err := json.Marshal(models.GenericResponse{
 		Message: fmt.Sprintf("Integration %v updated", integration.Uuid),
 	})
 	if err != nil {

@@ -83,7 +83,7 @@ func PostWorkflowInstancesHandler(ctx context.Context, request events.APIGateway
 		}, nil
 	}
 
-	m, err := json.Marshal(models.IntegrationResponse{
+	m, err := json.Marshal(models.GenericResponse{
 		Message: "Workflow successfully initiated",
 	})
 	if err != nil {

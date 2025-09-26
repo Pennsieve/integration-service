@@ -82,7 +82,7 @@ type ComputeNode struct {
 	ComputeNodeGatewayUrl string `json:"computeNodeGatewayUrl,omitempty"`
 }
 
-type IntegrationResponse struct {
+type GenericResponse struct {
 	Message string `json:"message"`
 }
 
@@ -96,6 +96,8 @@ type Workflow struct {
 	ExecutionOrder [][]string          `json:"executionOrder"`
 	CreatedAt      string              `json:"createdAt"`
 	CreatedBy      string              `json:"createdBy"`
+	IsActive       bool                `json:"isActive"`
+	UpdatedBy      string              `json:"updatedBy"`
 }
 
 type Processor struct {
