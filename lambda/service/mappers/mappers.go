@@ -75,6 +75,8 @@ func DynamoDBWorkflowToJsonWorkflow(dynamoWorkflows []store_dynamodb.Workflow) [
 			ExecutionOrder: a.ExecutionOrder,
 			CreatedAt:      a.CreatedAt,
 			CreatedBy:      a.CreatedBy,
+			IsActive:       a.IsActive,
+			UpdatedBy:      a.UpdatedBy,
 		})
 	}
 

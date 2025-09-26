@@ -26,7 +26,7 @@ var ErrSortingDAG = errors.New("error sorting DAG")
 
 func handlerError(handlerName string, errorMessage error) string {
 	log.Printf("%s: %s", handlerName, errorMessage.Error())
-	m, err := json.Marshal(models.IntegrationResponse{
+	m, err := json.Marshal(models.GenericResponse{
 		Message: errorMessage.Error(),
 	})
 	if err != nil {
@@ -44,7 +44,7 @@ func APIErrorResponse(handler string, code int, message string, err error) event
 		log.Printf("%s: %s", handler, message)
 	}
 
-	response := models.IntegrationResponse{
+	response := models.GenericResponse{
 		Message: message,
 	}
 

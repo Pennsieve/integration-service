@@ -8,6 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
 	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/expression"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
 	"github.com/aws/aws-sdk-go/aws"
 )
 
@@ -15,6 +16,7 @@ type WorkflowDBStore interface {
 	Insert(context.Context, Workflow) error
 	Get(context.Context, string) ([]Workflow, error)
 	GetById(context.Context, string) (Workflow, error)
+	Update(context.Context, Workflow, string) error
 }
 
 type WorkflowDatabaseStore struct {
@@ -83,4 +85,26 @@ func (r *WorkflowDatabaseStore) GetById(ctx context.Context, workflowId string) 
 	}
 
 	return workflow, err
+}
+
+func (r *WorkflowDatabaseStore) Update(ctx context.Context, workflow Workflow, workflowUuid string) error {
+	key, err := attributevalue.MarshalMap(WorkflowInstanceKey{Uuid: workflowUuid})
+	if err != nil {
+		return fmt.Errorf("error marshaling key for update: %w", err)
+	}
+
+	_, err = r.DB.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName: aws.String(r.TableName),
+		Key:       key,
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":c": &types.AttributeValueMemberBOOL{Value: workflow.IsActive},
+			":d": &types.AttributeValueMemberS{Value: workflow.UpdatedBy},
+		},
+		UpdateExpression: aws.String("set isActive = :c , updatedBy = :d"),
+	})
+	if err != nil {
+		return fmt.Errorf("error updating workflow: %w", err)
+	}
+
+	return nil
 }

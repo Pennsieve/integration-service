@@ -145,6 +145,97 @@ func TestInsertGetByIdWorkflows(t *testing.T) {
 
 }
 
+func TestInsertGetUpdateWorkflow(t *testing.T) {
+	tableName := "workflows"
+	dynamoDBClient := getClient()
+
+	// create table
+	_, err := CreateWorkflowsTable(dynamoDBClient, tableName)
+	if err != nil {
+		t.Fatalf("err creating table")
+	}
+	dynamo_store := NewWorkflowDatabaseStore(dynamoDBClient, tableName)
+	id := uuid.New()
+	workflowUuid := id.String()
+	processors := []models.Processor{
+		{
+			SourceUrl: "appUrl1",
+			DependsOn: []models.ProcessorDependency{},
+		},
+		{
+			SourceUrl: "appUrl2",
+			DependsOn: []models.ProcessorDependency{
+				{SourceUrl: "appUrl1"},
+			},
+		},
+		{
+			SourceUrl: "appUrl3",
+			DependsOn: []models.ProcessorDependency{
+				{SourceUrl: "appUrl2"},
+			},
+		},
+	}
+	organizationId := "someOrganizationId"
+	graph := dag.NewDAG(processors)
+	graphData := graph.GetData()
+	order, err := dag.TopologicalSortLevels(graphData)
+	if err != nil {
+		t.Errorf("error inserting item into table")
+	}
+
+	workflow := Workflow{
+		Uuid:           workflowUuid,
+		Name:           "cytof-pipeline",
+		Description:    "End-to-end CyTOF pipeline",
+		Processors:     processors,
+		Dag:            graphData,
+		ExecutionOrder: order,
+		OrganizationId: organizationId,
+		CreatedAt:      time.Now().UTC().String(),
+		CreatedBy:      "someUser",
+		IsActive:       true,
+	}
+	err = dynamo_store.Insert(context.Background(), workflow)
+	if err != nil {
+		t.Errorf("error inserting item into table")
+	}
+
+	workflows, err := dynamo_store.Get(context.Background(), organizationId)
+	if err != nil {
+		t.Errorf("error getting items in table")
+	}
+
+	assert.Equal(t, 1, len(workflows))
+	assert.Equal(t, "cytof-pipeline", workflows[0].Name)
+	assert.Equal(t, true, workflows[0].IsActive)
+	assert.Equal(t, "someUser", workflows[0].CreatedBy)
+	assert.Equal(t, "", workflow.UpdatedBy)
+
+	updateWorkflow := Workflow{
+		IsActive:  false,
+		UpdatedBy: "anotherUser",
+	}
+	err = dynamo_store.Update(context.Background(), updateWorkflow, workflow.Uuid)
+	if err != nil {
+		t.Errorf("error inserting item into table")
+	}
+
+	workflow, err = dynamo_store.GetById(context.Background(), workflow.Uuid)
+	if err != nil {
+		t.Errorf("error getting item in table")
+	}
+	assert.Equal(t, "cytof-pipeline", workflow.Name)
+	assert.Equal(t, false, workflow.IsActive)
+	assert.Equal(t, "anotherUser", workflow.UpdatedBy)
+
+	// delete table
+	err = DeleteTable(dynamoDBClient, tableName)
+	if err != nil {
+		t.Fatalf("err creating table")
+	}
+
+}
+
 func CreateWorkflowsTable(dynamoDBClient *dynamodb.Client, tableName string) (*types.TableDescription, error) {
 	var tableDesc *types.TableDescription
 	table, err := dynamoDBClient.CreateTable(context.TODO(), &dynamodb.CreateTableInput{

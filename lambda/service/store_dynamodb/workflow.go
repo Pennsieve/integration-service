@@ -16,6 +16,8 @@ type Workflow struct {
 	ExecutionOrder [][]string          `dynamodbav:"executionOrder"`
 	CreatedAt      string              `dynamodbav:"createdAt"`
 	CreatedBy      string              `dynamodbav:"createdBy"`
+	IsActive       bool                `dynamodbav:"isActive"`
+	UpdatedBy      string              `dynamodbav:"updatedBy,omitempty"`
 }
 
 type WorkflowKey struct {
