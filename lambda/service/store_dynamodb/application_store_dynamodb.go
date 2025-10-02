@@ -11,7 +11,7 @@ import (
 )
 
 type ApplicationDBStore interface {
-	GetBySourceUrl(ctx context.Context, sourceUrl string) ([]Application, error)
+	GetBySourceUrl(ctx context.Context, sourceUrl string, workspaceId string) ([]Application, error)
 }
 
 type ApplicationDatabaseStore struct {
@@ -23,10 +23,13 @@ func NewApplicationDatabaseStore(db *dynamodb.Client, tableName string) Applicat
 	return &ApplicationDatabaseStore{db, tableName}
 }
 
-func (r *ApplicationDatabaseStore) GetBySourceUrl(ctx context.Context, sourceUrl string) ([]Application, error) {
+func (r *ApplicationDatabaseStore) GetBySourceUrl(ctx context.Context, sourceUrl string, organizationId string) ([]Application, error) {
 	applications := []Application{}
 
-	c := expression.Name("sourceUrl").Equal((expression.Value(sourceUrl)))
+	var c expression.ConditionBuilder
+	c = expression.Name("organizationId").Equal((expression.Value(organizationId)))
+	c = c.And(expression.Name("sourceUrl").Equal((expression.Value(sourceUrl))))
+
 	expr, err := expression.NewBuilder().WithFilter(c).Build()
 	if err != nil {
 		return applications, fmt.Errorf("error building expression: %w", err)

@@ -122,7 +122,7 @@ func NewWorkflowDynamoDBStore() store_dynamodb.WorkflowDBStore {
 
 type MockApplicationDynamoDBStore struct{}
 
-func (r *MockApplicationDynamoDBStore) GetBySourceUrl(ctx context.Context, sourceUrl string) ([]store_dynamodb.Application, error) {
+func (r *MockApplicationDynamoDBStore) GetBySourceUrl(ctx context.Context, sourceUrl string, workspaceId string) ([]store_dynamodb.Application, error) {
 
 	return []store_dynamodb.Application{
 		{Uuid: "app-uuid-1", SourceUrl: "git://github.url1.com"},

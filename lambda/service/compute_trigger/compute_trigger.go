@@ -89,7 +89,8 @@ func (t *ComputeTrigger) Run(ctx context.Context) error {
 		workflow, err = mappers.BuildWorkflow(ctx,
 			t.Integration.WorkflowUuid,
 			t.WorkflowStore,
-			t.ApplicationStore)
+			t.ApplicationStore,
+			t.OrganizationId)
 		if err != nil {
 			return err
 		}

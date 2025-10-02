@@ -83,7 +83,8 @@ func PutWorkflowInstanceProcessorStatusHandler(ctx context.Context, request even
 		workflow, err = mappers.BuildWorkflow(ctx,
 			workflowInstance.WorkflowUuid,
 			workflowStore,
-			applicationsStore)
+			applicationsStore,
+			workflowInstance.OrganizationId)
 		if err != nil {
 			return APIErrorResponse(
 				handlerName,
