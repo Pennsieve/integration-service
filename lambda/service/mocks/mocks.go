@@ -129,6 +129,10 @@ func (r *MockApplicationDynamoDBStore) GetBySourceUrl(ctx context.Context, sourc
 	}, nil
 }
 
+func (r *MockApplicationDynamoDBStore) Insert(ctx context.Context, application store_dynamodb.Application) error {
+	return nil
+}
+
 func NewApplicationDynamoDBStore() store_dynamodb.ApplicationDBStore {
 	return &MockApplicationDynamoDBStore{}
 }

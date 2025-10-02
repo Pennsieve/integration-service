@@ -12,6 +12,7 @@ import (
 
 type ApplicationDBStore interface {
 	GetBySourceUrl(ctx context.Context, sourceUrl string, workspaceId string) ([]Application, error)
+	Insert(ctx context.Context, application Application) error // convenience method for tests
 }
 
 type ApplicationDatabaseStore struct {
@@ -52,4 +53,22 @@ func (r *ApplicationDatabaseStore) GetBySourceUrl(ctx context.Context, sourceUrl
 	}
 
 	return applications, nil
+}
+
+// convenience method for tests
+func (r *ApplicationDatabaseStore) Insert(ctx context.Context, application Application) error {
+	av, err := attributevalue.MarshalMap(application)
+	if err != nil {
+		return fmt.Errorf("error marshaling application: %w", err)
+	}
+
+	_, err = r.DB.PutItem(ctx, &dynamodb.PutItemInput{
+		Item:      av,
+		TableName: aws.String(r.TableName),
+	})
+	if err != nil {
+		return fmt.Errorf("error inserting application: %w", err)
+	}
+
+	return nil
 }
