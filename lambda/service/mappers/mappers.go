@@ -83,7 +83,7 @@ func DynamoDBWorkflowToJsonWorkflow(dynamoWorkflows []store_dynamodb.Workflow) [
 	return workflows
 }
 
-func BuildWorkflow(ctx context.Context, uuid string, workflowStore store_dynamodb.WorkflowDBStore, applicationStore store_dynamodb.ApplicationDBStore) ([]models.WorkflowProcessor, error) {
+func BuildWorkflow(ctx context.Context, uuid string, workflowStore store_dynamodb.WorkflowDBStore, applicationStore store_dynamodb.ApplicationDBStore, workspaceId string) ([]models.WorkflowProcessor, error) {
 	dbWorkflow, err := workflowStore.GetById(ctx, uuid)
 	if err != nil {
 		return nil, err
@@ -95,7 +95,7 @@ func BuildWorkflow(ctx context.Context, uuid string, workflowStore store_dynamod
 
 	var wf []models.WorkflowProcessor
 	for _, processor := range workflow.ExecutionOrder {
-		applications, err := applicationStore.GetBySourceUrl(ctx, processor[0])
+		applications, err := applicationStore.GetBySourceUrl(ctx, processor[0], workspaceId)
 		if err != nil {
 			return nil, err
 		}

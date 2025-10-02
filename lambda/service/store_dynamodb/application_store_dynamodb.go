@@ -11,7 +11,8 @@ import (
 )
 
 type ApplicationDBStore interface {
-	GetBySourceUrl(ctx context.Context, sourceUrl string) ([]Application, error)
+	GetBySourceUrl(ctx context.Context, sourceUrl string, workspaceId string) ([]Application, error)
+	Insert(ctx context.Context, application Application) error // convenience method for tests
 }
 
 type ApplicationDatabaseStore struct {
@@ -23,10 +24,13 @@ func NewApplicationDatabaseStore(db *dynamodb.Client, tableName string) Applicat
 	return &ApplicationDatabaseStore{db, tableName}
 }
 
-func (r *ApplicationDatabaseStore) GetBySourceUrl(ctx context.Context, sourceUrl string) ([]Application, error) {
+func (r *ApplicationDatabaseStore) GetBySourceUrl(ctx context.Context, sourceUrl string, organizationId string) ([]Application, error) {
 	applications := []Application{}
 
-	c := expression.Name("sourceUrl").Equal((expression.Value(sourceUrl)))
+	var c expression.ConditionBuilder
+	c = expression.Name("organizationId").Equal((expression.Value(organizationId)))
+	c = c.And(expression.Name("sourceUrl").Equal((expression.Value(sourceUrl))))
+
 	expr, err := expression.NewBuilder().WithFilter(c).Build()
 	if err != nil {
 		return applications, fmt.Errorf("error building expression: %w", err)
@@ -49,4 +53,22 @@ func (r *ApplicationDatabaseStore) GetBySourceUrl(ctx context.Context, sourceUrl
 	}
 
 	return applications, nil
+}
+
+// convenience method for tests
+func (r *ApplicationDatabaseStore) Insert(ctx context.Context, application Application) error {
+	av, err := attributevalue.MarshalMap(application)
+	if err != nil {
+		return fmt.Errorf("error marshaling application: %w", err)
+	}
+
+	_, err = r.DB.PutItem(ctx, &dynamodb.PutItemInput{
+		Item:      av,
+		TableName: aws.String(r.TableName),
+	})
+	if err != nil {
+		return fmt.Errorf("error inserting application: %w", err)
+	}
+
+	return nil
 }
