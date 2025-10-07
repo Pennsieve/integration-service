@@ -64,10 +64,12 @@ func TestInsertGetWorkflows(t *testing.T) {
 		CreatedAt:      time.Now().UTC().String(),
 		CreatedBy:      "someUser",
 	}
-	err = dynamo_store.Insert(context.Background(), workflow)
+	createdWorkflow, err := dynamo_store.Insert(context.Background(), workflow)
 	if err != nil {
 		t.Errorf("error inserting item into table")
 	}
+
+	assert.Equal(t, workflowUuid, createdWorkflow.Uuid)
 
 	workflows, err := dynamo_store.Get(context.Background(), organizationId)
 	if err != nil {
@@ -126,7 +128,7 @@ func TestInsertGetByIdWorkflows(t *testing.T) {
 		CreatedAt:      time.Now().UTC().String(),
 		CreatedBy:      "someUser",
 	}
-	err = dynamo_store.Insert(context.Background(), workflow)
+	_, err = dynamo_store.Insert(context.Background(), workflow)
 	if err != nil {
 		t.Errorf("error inserting item into table")
 	}
@@ -195,7 +197,7 @@ func TestInsertGetUpdateWorkflow(t *testing.T) {
 		CreatedBy:      "someUser",
 		IsActive:       true,
 	}
-	err = dynamo_store.Insert(context.Background(), workflow)
+	_, err = dynamo_store.Insert(context.Background(), workflow)
 	if err != nil {
 		t.Errorf("error inserting item into table")
 	}
