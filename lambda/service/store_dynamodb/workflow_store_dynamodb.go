@@ -13,7 +13,7 @@ import (
 )
 
 type WorkflowDBStore interface {
-	Insert(context.Context, Workflow) error
+	Insert(context.Context, Workflow) (Workflow, error)
 	Get(context.Context, string) ([]Workflow, error)
 	GetById(context.Context, string) (Workflow, error)
 	Update(context.Context, Workflow, string) error
@@ -28,18 +28,26 @@ func NewWorkflowDatabaseStore(db *dynamodb.Client, tableName string) WorkflowDBS
 	return &WorkflowDatabaseStore{db, tableName}
 }
 
-func (r *WorkflowDatabaseStore) Insert(ctx context.Context, workflow Workflow) error {
+func (r *WorkflowDatabaseStore) Insert(ctx context.Context, workflow Workflow) (Workflow, error) {
 	item, err := attributevalue.MarshalMap(workflow)
 	if err != nil {
-		return err
+		return Workflow{}, err
 	}
 	_, err = r.DB.PutItem(context.TODO(), &dynamodb.PutItemInput{
 		TableName: aws.String(r.TableName), Item: item,
 	})
 	if err != nil {
 		log.Printf("couldn't add workflow to table. Here's why: %v\n", err)
+		return Workflow{}, err
 	}
-	return err
+
+	workflow, err = r.GetById(ctx, workflow.Uuid)
+	if err != nil {
+		log.Printf("couldn't retrieve workflow after insert. Here's why: %v\n", err)
+		return Workflow{}, err
+	}
+
+	return workflow, err
 }
 
 func (r *WorkflowDatabaseStore) Get(ctx context.Context, organizationId string) ([]Workflow, error) {

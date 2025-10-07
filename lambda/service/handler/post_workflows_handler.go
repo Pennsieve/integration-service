@@ -71,7 +71,7 @@ func PostWorkflowsHandler(ctx context.Context, request events.APIGatewayV2HTTPRe
 		CreatedBy:      userNodeId,
 		IsActive:       true,
 	}
-	err = dynamo_store.Insert(context.Background(), store_workflow)
+	createdWorkflow, err := dynamo_store.Insert(context.Background(), store_workflow)
 	if err != nil {
 		log.Println(err.Error())
 		return events.APIGatewayV2HTTPResponse{
@@ -80,8 +80,18 @@ func PostWorkflowsHandler(ctx context.Context, request events.APIGatewayV2HTTPRe
 		}, nil
 	}
 
-	m, err := json.Marshal(models.GenericResponse{
-		Message: "Workflow created",
+	m, err := json.Marshal(models.Workflow{
+		Uuid:           createdWorkflow.Uuid,
+		Name:           createdWorkflow.Name,
+		Description:    createdWorkflow.Description,
+		Processors:     createdWorkflow.Processors,
+		OrganizationId: createdWorkflow.OrganizationId,
+		Dag:            createdWorkflow.Dag,
+		ExecutionOrder: createdWorkflow.ExecutionOrder,
+		CreatedAt:      createdWorkflow.CreatedAt,
+		CreatedBy:      createdWorkflow.CreatedBy,
+		IsActive:       createdWorkflow.IsActive,
+		UpdatedBy:      createdWorkflow.UpdatedBy,
 	})
 	if err != nil {
 		log.Println(err.Error())

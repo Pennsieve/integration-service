@@ -93,8 +93,13 @@ func NewMockDynamoDBWorkflowInstanceStatusStore() store_dynamodb.WorkflowInstanc
 
 type MockWorkflowDynamoDBStore struct{}
 
-func (r *MockWorkflowDynamoDBStore) Insert(context.Context, store_dynamodb.Workflow) error {
-	return nil
+func (r *MockWorkflowDynamoDBStore) Insert(context.Context, store_dynamodb.Workflow) (store_dynamodb.Workflow, error) {
+	return store_dynamodb.Workflow{
+		Uuid: "testUuid",
+		ExecutionOrder: [][]string{
+			{"git://github.url1.com"},
+		},
+	}, nil
 }
 
 func (r *MockWorkflowDynamoDBStore) GetById(context.Context, string) (store_dynamodb.Workflow, error) {
