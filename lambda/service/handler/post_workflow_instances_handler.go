@@ -31,6 +31,10 @@ func PostWorkflowInstancesHandler(ctx context.Context, request events.APIGateway
 	claims := authorizer.ParseClaims(request.RequestContext.Authorizer.Lambda)
 	organizationId := claims.OrgClaim.NodeId
 
+	// Extract tokens from headers
+	authorizationHeader := request.Headers["authorization"]
+	refreshToken := request.Headers["x-refresh-token"]
+
 	cfg, err := config.LoadDefaultConfig(context.Background())
 	if err != nil {
 		log.Println(err.Error())
@@ -66,7 +70,9 @@ func PostWorkflowInstancesHandler(ctx context.Context, request events.APIGateway
 		workflowInstance.ComputeNode.ComputeNodeGatewayUrl,
 		os.Getenv("REGION"),
 		cfg,
-		computeNode.AccountId)
+		computeNode.AccountId,
+		authorizationHeader,
+		refreshToken)
 	computeTrigger := compute_trigger.NewComputeTrigger(httpClient,
 		workflowInstance,
 		workflowInstanceStore,

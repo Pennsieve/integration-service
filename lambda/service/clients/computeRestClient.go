@@ -25,13 +25,15 @@ type ComputeRestClient struct {
 	Client     *http.Client
 	ComputeURL string
 
-	Region    string
-	Config    aws.Config
-	AccountId string
+	Region              string
+	Config              aws.Config
+	AccountId           string
+	AuthorizationHeader string
+	RefreshToken        string
 }
 
-func NewComputeRestClient(client *http.Client, url string, region string, cfg aws.Config, accountId string) Client {
-	return &ComputeRestClient{client, url, region, cfg, accountId}
+func NewComputeRestClient(client *http.Client, url string, region string, cfg aws.Config, accountId string, authorizationHeader string, refreshToken string) Client {
+	return &ComputeRestClient{client, url, region, cfg, accountId, authorizationHeader, refreshToken}
 }
 
 func (c *ComputeRestClient) Execute(ctx context.Context, b bytes.Buffer) ([]byte, error) {
@@ -44,6 +46,20 @@ func (c *ComputeRestClient) Execute(ctx context.Context, b bytes.Buffer) ([]byte
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+
+	// Add tokens to headers if provided
+	if c.AuthorizationHeader != "" {
+		req.Header.Set("Authorization", c.AuthorizationHeader)
+		log.Println("Authorization header added to compute node request")
+	} else {
+		log.Println("Warning: Authorization header not provided")
+	}
+	if c.RefreshToken != "" {
+		req.Header.Set("X-Refresh-Token", c.RefreshToken)
+		log.Println("X-Refresh-Token header added to compute node request")
+	} else {
+		log.Println("Warning: X-Refresh-Token not provided")
+	}
 
 	retriever := credentials_retriever.NewAWSCredentialsRetriever(c.AccountId, c.Config)
 	creds, err := retriever.Run(ctx)
@@ -196,6 +212,20 @@ func (c *ComputeRestClient) ExecuteLegacy(ctx context.Context, b bytes.Buffer) (
 	if err != nil {
 		log.Println(err.Error())
 		return nil, err
+	}
+
+	// Add tokens to headers if provided
+	if c.AuthorizationHeader != "" {
+		req.Header.Set("Authorization", c.AuthorizationHeader)
+		log.Println("Authorization header added to compute node request")
+	} else {
+		log.Println("Warning: Authorization header not provided")
+	}
+	if c.RefreshToken != "" {
+		req.Header.Set("X-Refresh-Token", c.RefreshToken)
+		log.Println("X-Refresh-Token header added to compute node request")
+	} else {
+		log.Println("Warning: X-Refresh-Token not provided")
 	}
 
 	triggerContext, cancel := context.WithTimeout(ctx, requestDuration)
