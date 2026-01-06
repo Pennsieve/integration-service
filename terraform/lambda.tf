@@ -55,7 +55,7 @@ resource "aws_lambda_function" "integration_service_lambda" {
       WORKFLOW_INSTANCE_PROCESSOR_STATUS_TABLE = aws_dynamodb_table.workflow_instance_processor_status_table.name,
       COMPUTE_NODES_TABLE = data.terraform_remote_state.compute_node_service.outputs.compute_nodes_table_name,
       APPLICATIONS_TABLE = data.terraform_remote_state.app_deploy_service.outputs.applications_table_name,
-      COMPUTE_GATEWAY_AUTHENTICATION_TYPE = "LEGACY",
+      COMPUTE_GATEWAY_AUTHENTICATION_TYPE = "IAM",
     }
   }
 }
