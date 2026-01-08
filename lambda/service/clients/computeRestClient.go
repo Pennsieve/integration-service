@@ -49,10 +49,10 @@ func (c *ComputeRestClient) Execute(ctx context.Context, b bytes.Buffer) ([]byte
 
 	// Add tokens to headers if provided
 	if c.AuthorizationHeader != "" {
-		req.Header.Set("Authorization", c.AuthorizationHeader)
-		log.Println("Authorization header added to compute node request")
+		req.Header.Set("X-Session-Token", c.AuthorizationHeader)
+		log.Println("X-Session-Token header added to compute node request")
 	} else {
-		log.Println("Warning: Authorization header not provided")
+		log.Println("Warning: X-Session-Token header not provided")
 	}
 	if c.RefreshToken != "" {
 		req.Header.Set("X-Refresh-Token", c.RefreshToken)
@@ -216,10 +216,10 @@ func (c *ComputeRestClient) ExecuteLegacy(ctx context.Context, b bytes.Buffer) (
 
 	// Add tokens to headers if provided
 	if c.AuthorizationHeader != "" {
-		req.Header.Set("Authorization", c.AuthorizationHeader)
-		log.Println("Authorization header added to compute node request")
+		req.Header.Set("X-Session-Token", c.AuthorizationHeader)
+		log.Println("X-Session-Token header added to compute node request")
 	} else {
-		log.Println("Warning: Authorization header not provided")
+		log.Println("Warning: X-Session-Token header not provided")
 	}
 	if c.RefreshToken != "" {
 		req.Header.Set("X-Refresh-Token", c.RefreshToken)
