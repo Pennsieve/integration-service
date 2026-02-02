@@ -13,8 +13,3 @@ output "integration_events_sns_topic_name" {
 output "integration_events_kms_key_arn" {
   value = aws_kms_key.event_integration_sqs_kms_key.arn
 }
-
-## Service Lambda arn
-output "service_lambda_arn" {
-  value = aws_lambda_function.integration_service_lambda.arn
-}

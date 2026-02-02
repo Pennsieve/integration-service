@@ -12,33 +12,8 @@ PACKAGE_NAME  ?= "${SERVICE_NAME}-${IMAGE_TAG}.zip"
 help:
 	@echo "Make Help for $(SERVICE_NAME)"
 	@echo ""
-	@echo "make test			- run dockerized tests locally"
-	@echo "make test-ci			- run dockerized tests for Jenkins"
 	@echo "make package			- create venv and package lambda function"
 	@echo "make publish			- package and publish lambda function"
-
-# Run dockerized tests (can be used locally)
-test:
-	mkdir -p test-dynamodb-data
-	chmod -R 777 test-dynamodb-data
-	docker-compose -f docker-compose.test.yml down --remove-orphans
-	mkdir -p data conf
-	chmod -R 777 data conf
-	docker-compose -f docker-compose.test.yml up --build --exit-code-from local_tests local_tests
-	make clean
-
-# Run dockerized tests (used on Jenkins)
-test-ci:
-	mkdir -p test-dynamodb-data
-	chmod -R 777 test-dynamodb-data
-	docker-compose -f docker-compose.test.yml down --remove-orphans
-	mkdir -p data plugins conf logs
-	chmod -R 777 conf
-	@IMAGE_TAG=$(IMAGE_TAG) docker-compose -f docker-compose.test.yml up --build --exit-code-from=ci_tests ci_tests
-
-# Spin down active docker containers.
-docker-clean:
-	docker-compose -f docker-compose.test.yml down
 
 # Build lambda and create ZIP file
 package:
@@ -51,15 +26,6 @@ package:
 		mkdir bin; \
 		cd event_lambda/; \
 			zip -r $(WORKING_DIR)/lambda/bin/$(PACKAGE_NAME) .
-	@echo ""
-	@echo "***********************"
-	@echo "*   Building integration Service lambda   *"
-	@echo "***********************"
-	@echo ""
-	cd $(WORKING_DIR)/lambda/service; \
-  		env GOOS=linux GOARCH=arm64 go build -tags lambda.norpc -o $(WORKING_DIR)/lambda/bin/service/bootstrap; \
-		cd $(WORKING_DIR)/lambda/bin/service/ ; \
-			zip -r $(WORKING_DIR)/lambda/bin/service/$(SERVICE_PACKAGE_NAME) .
 
 # Copy Service lambda to S3 location
 publish:
@@ -71,10 +37,3 @@ publish:
 	@echo ""
 	aws s3 cp $(WORKING_DIR)/lambda/bin/$(PACKAGE_NAME) s3://$(LAMBDA_BUCKET)/$(SERVICE_NAME)/event_handler/
 	rm -rf $(WORKING_DIR)/lambda/bin/$(PACKAGE_NAME)
-	@echo ""
-	@echo "*************************"
-	@echo "*   Publishing Service lambda   *"
-	@echo "*************************"
-	@echo ""
-	aws s3 cp $(WORKING_DIR)/lambda/bin/service/$(SERVICE_PACKAGE_NAME) s3://$(LAMBDA_BUCKET)/$(SERVICE_NAME)/service/
-	rm -rf $(WORKING_DIR)/lambda/bin/service/$(SERVICE_PACKAGE_NAME)
