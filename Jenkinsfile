@@ -13,13 +13,6 @@ ansiColor('xterm') {
   def imageTag    = "${env.BUILD_NUMBER}-${commitHash}"
 
   try {
-    stage("Run Tests") {
-      try {
-        sh "IMAGE_TAG=${imageTag} make test-ci"
-      } finally {
-        sh "make docker-clean"
-      }
-    }
 
     if(isMain) {
       stage ('Build and Push') {

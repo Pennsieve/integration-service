@@ -24,38 +24,3 @@ resource "aws_lambda_function" "event_integration_consumer_lambda" {
     }
   }
 }
-
-## Lambda Function for Integration Service.
-resource "aws_lambda_function" "integration_service_lambda" {
-  description      = "Lambda Function which provides the interface for integration applications"
-  function_name    = "${var.environment_name}-${var.service_name}-lambda-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
-  handler          = "bootstrap"
-  runtime          = "provided.al2"
-  architectures    = ["arm64"]
-  role             = aws_iam_role.integration_service_lambda_role.arn
-  timeout          = 300
-  memory_size      = 128
-  s3_bucket         = var.lambda_bucket
-  s3_key            = "${var.service_name}/service/${var.service_name}-${var.image_tag}.zip"
-
-  vpc_config {
-    subnet_ids         = tolist(data.terraform_remote_state.vpc.outputs.private_subnet_ids)
-    security_group_ids = [data.terraform_remote_state.platform_infrastructure.outputs.integration_service_security_group_id]
-  }
-
-  environment {
-    variables = {
-      ENV = var.environment_name
-      PENNSIEVE_DOMAIN = data.terraform_remote_state.account.outputs.domain_name,
-      RDS_PROXY_ENDPOINT = data.terraform_remote_state.pennsieve_postgres.outputs.rds_proxy_endpoint,
-      REGION = var.aws_region,
-      LOG_LEVEL = "info",
-      INTEGRATIONS_TABLE = aws_dynamodb_table.integrations_table.name,
-      WORKFLOWS_TABLE = aws_dynamodb_table.workflows_table.name,
-      WORKFLOW_INSTANCE_PROCESSOR_STATUS_TABLE = aws_dynamodb_table.workflow_instance_processor_status_table.name,
-      COMPUTE_NODES_TABLE = data.terraform_remote_state.compute_node_service.outputs.compute_nodes_table_name,
-      APPLICATIONS_TABLE = data.terraform_remote_state.app_deploy_service.outputs.applications_table_name,
-      COMPUTE_GATEWAY_AUTHENTICATION_TYPE = "IAM",
-    }
-  }
-}
