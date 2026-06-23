@@ -1,6 +1,14 @@
 package main
 
 import (
+
+	_ "github.com/lib/pq"
+
+	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/ssm"
+	"net/http"
+
 	"bytes"
 	"context"
 	"database/sql"
@@ -10,13 +18,6 @@ import (
 	"os"
 	"sync"
 	"time"
-
-	_ "github.com/lib/pq"
-
-	"github.com/aws/aws-lambda-go/lambda"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/ssm"
-	"net/http"
 )
 
 var (
@@ -28,7 +29,7 @@ var (
 )
 
 type WebhookCache struct {
-	LastUpdated time.Time
+	Updated     time.Time
 	Webhooks    []WebhookRecord
 }
 
@@ -53,38 +54,38 @@ func getSSMParam(name string, decrypt bool) string {
 		WithDecryption: &decrypt,
 	}
 
-	out, err := ssmClient.GetParameter(context.TODO(), input)
-	if err != nil {
-		log.Fatalf("Error fetching parameter %s: %v", name, err)
+	output, paramerr := ssmClient.GetParameter(context.TODO(), input)
+	if paramerr != nil {
+		log.Fatalf("Error fetching parameter %s: %v", name, paramerr)
 	}
-	return *out.Parameter.Value
+	return *output.Parameter.Value
 }
 
 func connectDB() (*sql.DB, error) {
 	dbname := getSSMParam(fmt.Sprintf("/%s/integration-service/integrations-postgres-db", env), false)
-	dbuser := getSSMParam(fmt.Sprintf("/%s/integration-service/integrations-postgres-user", env), false)
-	dbpass := getSSMParam(fmt.Sprintf("/%s/integration-service/integrations-postgres-password", env), true)
-	dbhost := getSSMParam(fmt.Sprintf("/%s/integration-service/integrations-postgres-host", env), false)
+	dbusername := getSSMParam(fmt.Sprintf("/%s/integration-service/integrations-postgres-user", env), false)
+	dbpassword := getSSMParam(fmt.Sprintf("/%s/integration-service/integrations-postgres-password", env), true)
+	dbhostname := getSSMParam(fmt.Sprintf("/%s/integration-service/integrations-postgres-host", env), false)
 
-	connStr := fmt.Sprintf("host=%s user=%s password=%s dbname=%s sslmode=disable",
-		dbhost, dbuser, dbpass, dbname)
+	connectionStr := fmt.Sprintf("host=%s user=%s password=%s dbname=%s sslmode=disable",
+		dbhostname, dbusername, dbpassword, dbname)
 
-	db, err := sql.Open("postgres", connStr)
-	if err != nil {
-		return nil, err
+	db, sqlerr := sql.Open("postgres", connectionStr)
+	if sqlerr != nil {
+		return nil, sqlerr
 	}
 
 	return db, nil
 }
 
 func query(db *sql.DB, command string) ([]WebhookRecord, error) {
-	rows, err := db.Query(command)
-	if err != nil {
-		return nil, err
+	rows, dberr := db.Query(command)
+	if dberr != nil {
+		return nil, dberr
 	}
 	defer rows.Close()
 
-	var results []WebhookRecord
+	var res []WebhookRecord
 
 	for rows.Next() {
 		var r WebhookRecord
@@ -92,19 +93,19 @@ func query(db *sql.DB, command string) ([]WebhookRecord, error) {
 		if err != nil {
 			return nil, err
 		}
-		results = append(results, r)
+		res = append(res, r)
 	}
 
-	return results, nil
+	return res, nil
 }
 
 func refreshWebhookCache(orgID string) {
 	cacheMutex.Lock()
 	defer cacheMutex.Unlock()
 
-	db, err := connectDB()
-	if err != nil {
-		log.Println("Connection error:", err)
+	db, sqlerr := connectDB()
+	if sqlerr != nil {
+		log.Println("Connection error:", sqlerr)
 		return
 	}
 	defer db.Close()
@@ -117,14 +118,14 @@ func refreshWebhookCache(orgID string) {
 		INNER JOIN "%s".webhook_event_types as wet ON wes.webhook_event_type_id=wet.id
 	`, orgID, orgID, orgID, orgID)
 
-	results, err := query(db, command)
-	if err != nil {
-		log.Println("Query error:", err)
+	results, dberr := query(db, command)
+	if dberr != nil {
+		log.Println("Query error:", dberr)
 		return
 	}
 
 	webhookCache[orgID] = WebhookCache{
-		LastUpdated: time.Now(),
+		Updated: time.Now(),
 		Webhooks:    results,
 	}
 
@@ -132,10 +133,10 @@ func refreshWebhookCache(orgID string) {
 }
 
 type EventMessage struct {
-	OrganizationID string                 `json:"organizationId"`
-	DatasetID      int                    `json:"datasetId"`
-	EventCategory  string                 `json:"eventCategory"`
-	EventType      string                 `json:"eventType"`
+	OrgID          string                 `json:"organizationId"`
+	DataID         int                    `json:"datasetId"`
+	Category       string                 `json:"eventCategory"`
+	Type           string                 `json:"eventType"`
 	Raw            map[string]interface{} `json:"-"`
 }
 
@@ -155,9 +156,9 @@ func mapEvents(events map[string]interface{}) (map[string][]EventMessage, bool) 
 		var msg EventMessage
 		json.Unmarshal([]byte(bodyJSON["Message"]), &msg)
 
-		mapped[msg.OrganizationID] = append(mapped[msg.OrganizationID], msg)
+		mapped[msg.OrgID] = append(mapped[msg.OrgID], msg)
 
-		if msg.EventType == "CREATE_DATASET" {
+		if msg.Type == "CREATE_DATASET" {
 			forceRefresh = true
 		}
 	}
@@ -179,7 +180,7 @@ func mapWebhookMessages(mapped map[string][]EventMessage, forceRefresh bool) map
 		cacheEntry, exists := webhookCache[orgID]
 		cacheMutex.Unlock()
 
-		if forceRefresh || !exists || time.Since(cacheEntry.LastUpdated) > 10*time.Minute {
+		if forceRefresh || !exists || time.Since(cacheEntry.Updated) > 10*time.Minute {
 			refreshWebhookCache(orgID)
 		}
 
@@ -188,13 +189,13 @@ func mapWebhookMessages(mapped map[string][]EventMessage, forceRefresh bool) map
 		cacheMutex.Unlock()
 
 		for _, evt := range events {
-			key := fmt.Sprintf("%d:%s", evt.DatasetID, evt.EventCategory)
+			key := fmt.Sprintf("%d:%s", evt.DataID, evt.Category)
 
 			entry := result[key]
 			entry.Messages = append(entry.Messages, evt)
 
 			for _, w := range webhooks {
-				if w.DatasetID == evt.DatasetID && w.EventName == evt.EventCategory {
+				if w.DatasetID == evt.DataID && w.EventName == evt.Category {
 					entry.URLs = append(entry.URLs, w.APIURL)
 				}
 			}
@@ -208,10 +209,10 @@ func mapWebhookMessages(mapped map[string][]EventMessage, forceRefresh bool) map
 
 func webhookBodyParser(url string, msg EventMessage) []byte {
 	if len(url) > 30 && url[:30] == "https://hooks.slack.com/" {
-		wrapped := map[string]string{
+		wrap := map[string]string{
 			"text": string(mustJSON(msg)),
 		}
-		return mustJSON(wrapped)
+		return mustJSON(wrap)
 	}
 	return mustJSON(msg)
 }
@@ -228,15 +229,15 @@ func broadcastMessages(messages map[string]WebhookMessage) {
 
 				body := webhookBodyParser(url, msg)
 
-				req, _ := http.NewRequest("POST", url, bytes.NewBuffer(body))
-				req.Header.Set("Content-Type", "application/json")
+				request, _ := http.NewRequest("POST", url, bytes.NewBuffer(body))
+				request.Header.Set("Content-Type", "application/json")
 
-				resp, err := httpClient.Do(req)
-				if err != nil {
-					log.Println("HTTP error:", err)
+				response, httpErr := httpClient.Do(request)
+				if httpErr != nil {
+					log.Println("HTTP error:", httpErr)
 					continue
 				}
-				resp.Body.Close()
+				response.Body.Close()
 			}
 		}
 	}
