@@ -12,20 +12,22 @@ PACKAGE_NAME  ?= "${SERVICE_NAME}-${IMAGE_TAG}.zip"
 help:
 	@echo "Make Help for $(SERVICE_NAME)"
 	@echo ""
-	@echo "make package			- create venv and package lambda function"
-	@echo "make publish			- package and publish lambda function"
+	@echo "make package			- build Go lambda and create ZIP file"
+	@echo "make publish			- package and publish Go lambda function"
 
-# Build lambda and create ZIP file
+# Build lambda and create ZIP file (Go)
 package:
 	@echo ""
 	@echo "***********************"
-	@echo "*   Packaging Python lambda   *"
+	@echo "*   Packaging Go Event lambda   *"
 	@echo "***********************"
 	@echo ""
-	cd $(WORKING_DIR)/lambda/ ; \
-		mkdir bin; \
-		cd event_lambda/; \
-			zip -r $(WORKING_DIR)/lambda/bin/$(PACKAGE_NAME) .
+	@mkdir -p $(WORKING_DIR)/lambda/bin
+	@echo "Building linux/amd64 Go binary..."
+	@env GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags '-s -w' -o $(WORKING_DIR)/lambda/bin/bootstrap ./cmd/event
+	@echo "Creating ZIP package $(PACKAGE_NAME)..."
+	@cd $(WORKING_DIR)/lambda/bin && zip -j $(WORKING_DIR)/lambda/bin/$(PACKAGE_NAME) bootstrap
+	@rm -f $(WORKING_DIR)/lambda/bin/bootstrap
 
 # Copy Service lambda to S3 location
 publish:

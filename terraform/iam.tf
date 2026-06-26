@@ -15,6 +15,15 @@ resource "aws_iam_role" "event_integration_consumer_lambda_role" {
       },
       "Effect": "Allow",
       "Sid": ""
+    },
+    {
+      "Action": "rds-db:connect",
+      "Principal": {
+        "Service": "events.amazonaws.com"
+      },
+      "Effect": "Allow",
+      "Sid": "CollectionsServiceAPIRDSPermissions",
+      "Resource": local.rds_db_connect_arn
     }
   ]
 }

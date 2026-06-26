@@ -21,6 +21,8 @@ variable "lambda_bucket" {
 
 variable "image_tag" {}
 
+variable "postgres_user" {}
+
 locals {
   
   common_tags = {
@@ -28,4 +30,5 @@ locals {
     aws_region       = data.aws_region.current_region.name
     environment_name = var.environment_name
   }
+  rds_db_connect_arn = "${replace(replace(data.terraform_remote_state.pennsieve_postgres.outputs.rds_proxy_endpoint_arn, ":rds:", ":rds-db:"), ":db-proxy:", ":dbuser:")}/${var.postgres_user}"
 }
