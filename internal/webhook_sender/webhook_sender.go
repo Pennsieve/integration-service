@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"net"
 	"net/http"
 	"time"
 
@@ -13,8 +14,17 @@ import (
 	"github.com/Pennsieve/integration-service/internal/utils"
 )
 
+// The Python original used urllib3.Timeout(connect=0.25): a 250ms budget to
+// establish the connection, then unbounded time to read the response. A bare
+// http.Client{Timeout: ...} is a *total* deadline (connect+send+read), which
+// would fail healthy-but-slow webhooks. To preserve the connect-only semantics
+// we set the timeout on the dialer instead.
 var (
-	httpClient = &http.Client{Timeout: 300 * time.Millisecond}
+	httpClient = &http.Client{
+		Transport: &http.Transport{
+			DialContext: (&net.Dialer{Timeout: 250 * time.Millisecond}).DialContext,
+		},
+	}
 )
 
 const (
@@ -42,8 +52,13 @@ func sendWebhookWithRetry(ctx context.Context, url string, body []byte) error {
 			return nil
 		}
 
-		if err == nil && resp != nil && resp.StatusCode >= 300 {
-			log.Printf("Failed to send request to %s (attempt %d): %v", url, attempt, lastErr)
+		// Record why this attempt failed. Either the transport errored (err
+		// != nil) or we got a non-2xx response. Set lastErr exactly once here;
+		// do NOT reassign it below or a non-2xx status would be clobbered back
+		// to a nil transport error.
+		if err != nil {
+			lastErr = err
+		} else if resp != nil {
 			lastErr = fmt.Errorf("non-2xx status %d", resp.StatusCode)
 		}
 
@@ -54,11 +69,10 @@ func sendWebhookWithRetry(ctx context.Context, url string, body []byte) error {
 		}
 		//TODO: Parallelism to be added as a followup.
 
-		lastErr = err
 		if attempt < maxRetries {
 			jitter := time.Duration(rand.Int63n(1000)) * time.Millisecond
 			backoffDuration := (retryBackoff * time.Duration(attempt)) + jitter
-			log.Printf("Attempt %d failed for %s (status: %v): %v. Retrying in %v", attempt, url, resp, err, backoffDuration)
+			log.Printf("Attempt %d failed for %s: %v. Retrying in %v", attempt, url, lastErr, backoffDuration)
 			time.Sleep(backoffDuration)
 		}
 	}
