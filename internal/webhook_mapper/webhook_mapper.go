@@ -4,16 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"sync"
 	"time"
 
 	"github.com/Pennsieve/integration-service/internal/cache"
 	"github.com/Pennsieve/integration-service/internal/models"
-)
-
-var (
-	webhookCache = make(map[string]models.WebhookCache)
-	cacheMutex   sync.RWMutex
 )
 
 const (
@@ -24,15 +18,11 @@ func MapWebhookMessages(ctx context.Context, mapped map[string][]models.EventMes
 	result := make(map[string]models.WebhookMessage)
 
 	for orgID, events := range mapped {
-		cacheMutex.RLock()
-		cacheEntry, exists := webhookCache[orgID]
-		cacheMutex.RUnlock()
+		cacheEntry, exists := cache.Get(orgID)
 
 		if forceRefresh || !exists || time.Since(cacheEntry.Updated) > cacheExpiration {
 			cache.RefreshWebhookCache(ctx, orgID)
-			cacheMutex.RLock()
-			cacheEntry, exists = webhookCache[orgID]
-			cacheMutex.RUnlock()
+			cacheEntry, exists = cache.Get(orgID)
 		}
 
 		if !exists || len(cacheEntry.Webhooks) == 0 {

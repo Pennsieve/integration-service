@@ -10,6 +10,12 @@ import (
 
 	"github.com/Pennsieve/integration-service/internal/aws"
 	"github.com/Pennsieve/integration-service/internal/models"
+
+	// Registers the "postgres" driver with database/sql via its init().
+	// database/sql is only an abstraction layer; without a concrete driver
+	// imported for its side-effect, sql.Open("postgres", ...) fails at runtime
+	// with: sql: unknown driver "postgres" (forgotten import?).
+	_ "github.com/lib/pq"
 )
 
 var (
