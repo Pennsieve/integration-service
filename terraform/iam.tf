@@ -15,15 +15,6 @@ resource "aws_iam_role" "event_integration_consumer_lambda_role" {
       },
       "Effect": "Allow",
       "Sid": ""
-    },
-    {
-      "Action": "rds-db:connect",
-      "Principal": {
-        "Service": "events.amazonaws.com"
-      },
-      "Effect": "Allow",
-      "Sid": "CollectionsServiceAPIRDSPermissions",
-      "Resource": local.rds_db_connect_arn
     }
   ]
 }
@@ -105,6 +96,17 @@ data "aws_iam_policy_document" "event_integration_consumer_lambda_iam_policy_doc
       aws_kms_key.event_integration_sqs_kms_key.arn,
       aws_kms_alias.event-integration_sqs_kms_key_alias.arn
     ]
+  }
+
+  statement {
+    sid    = "EventIntegrationConsumerRDSPermissions"
+    effect = "Allow"
+
+    actions = [
+      "rds-db:connect"
+    ]
+
+    resources = [local.rds_db_connect_arn]
   }
 }
 
