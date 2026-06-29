@@ -21,7 +21,11 @@ variable "lambda_bucket" {
 
 variable "image_tag" {}
 
-variable "postgres_user" {}
+variable "postgres_user" {
+  type = string
+  description = "The username for the Postgres database. This is used to connect to the database."
+}
+
 
 locals {
   

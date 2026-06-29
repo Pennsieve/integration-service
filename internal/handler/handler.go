@@ -30,7 +30,7 @@ func Handler(ctx context.Context, events map[string]interface{}) (map[string]int
 	}
 
 	webhookMessages := webhook_mapper.MapWebhookMessages(ctx, mappedEvents, forceRefresh)
-	webhook_sender.BroadcastMessages(webhookMessages)
+	webhook_sender.BroadcastMessages(ctx, webhookMessages)
 
 	return events, nil
 }

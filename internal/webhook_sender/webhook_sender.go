@@ -2,6 +2,7 @@ package webhook_sender
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"log"
 	"math/rand"
@@ -13,7 +14,7 @@ import (
 )
 
 var (
-	httpClient = &http.Client{Timeout: 250 * time.Millisecond}
+	httpClient = &http.Client{Timeout: 300 * time.Millisecond}
 )
 
 const (
@@ -21,11 +22,11 @@ const (
 	retryBackoff = 2 * time.Second
 )
 
-func sendWebhookWithRetry(url string, body []byte) error {
+func sendWebhookWithRetry(ctx context.Context, url string, body []byte) error {
 	var lastErr error
 
 	for attempt := 1; attempt <= maxRetries; attempt++ {
-		req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+		req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(body))
 		if err != nil {
 			log.Printf("Failed to create request for %s (attempt %d): %v", url, attempt, err)
 			lastErr = err
@@ -41,11 +42,17 @@ func sendWebhookWithRetry(url string, body []byte) error {
 			return nil
 		}
 
+		if err == nil && resp != nil && resp.StatusCode >= 300 {
+			log.Printf("Failed to send request to %s (attempt %d): %v", url, attempt, lastErr)
+			lastErr = fmt.Errorf("non-2xx status %d", resp.StatusCode)
+		}
+
 		if resp != nil {
 			if err := resp.Body.Close(); err != nil {
 				log.Printf("Error closing response body: %v", err)
 			}
 		}
+		//TODO: Parallelism to be added as a followup.
 
 		lastErr = err
 		if attempt < maxRetries {
@@ -59,7 +66,7 @@ func sendWebhookWithRetry(url string, body []byte) error {
 	return fmt.Errorf("failed to deliver message to %s after %d attempts: %w", url, maxRetries, lastErr)
 }
 
-func BroadcastMessages(messages map[string]models.WebhookMessage) {
+func BroadcastMessages(ctx context.Context, messages map[string]models.WebhookMessage) {
 	for _, record := range messages {
 		urlSet := make(map[string]bool)
 		for _, url := range record.URLs {
@@ -74,7 +81,7 @@ func BroadcastMessages(messages map[string]models.WebhookMessage) {
 					continue
 				}
 
-				if err := sendWebhookWithRetry(url, body); err != nil {
+				if err := sendWebhookWithRetry(ctx, url, body); err != nil {
 					log.Printf("Failed to send webhook: %v", err)
 					continue
 				}

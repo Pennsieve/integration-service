@@ -16,6 +16,7 @@ func MapEvents(events map[string]interface{}) (map[string][]models.EventMessage,
 		return nil, false, fmt.Errorf("invalid event format: records field missing or wrong type")
 	}
 	for _, r := range records {
+		//TODO: We want per-record skip-and-log.
 		rec, ok := r.(map[string]interface{})
 		if !ok {
 			return nil, false, fmt.Errorf("record not an object")
