@@ -25,10 +25,6 @@ func TestSendWebhookWithRetry_SuccessNoRetry(t *testing.T) {
 	assert.Equal(t, int32(1), atomic.LoadInt32(&calls), "a 2xx should not retry")
 }
 
-// Regression guard: on a non-2xx response (transport err == nil) the returned
-// error must carry the status code, not a nil-wrapped error. A previous
-// version set lastErr to the status error and then immediately overwrote it
-// with the nil transport err, producing "...after 3 attempts: %!w(<nil>)".
 func TestSendWebhookWithRetry_Non2xxReportsStatus(t *testing.T) {
 	var calls int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -45,7 +41,6 @@ func TestSendWebhookWithRetry_Non2xxReportsStatus(t *testing.T) {
 }
 
 func TestSendWebhookWithRetry_TransportErrorReported(t *testing.T) {
-	// Nothing is listening here, so httpClient.Do returns a transport error.
 	err := sendWebhookWithRetry(context.Background(), "http://127.0.0.1:0", []byte(`{}`))
 	require.Error(t, err)
 	assert.True(t, strings.Contains(err.Error(), "after 3 attempts"))

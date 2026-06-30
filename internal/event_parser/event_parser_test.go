@@ -8,9 +8,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// sqsEvent builds the nested SQS->SNS envelope the Lambda actually receives:
-// the outer event has Records[].body (a JSON string), whose "Message" field is
-// itself a JSON string holding the real event payload.
 func sqsEvent(messages ...map[string]interface{}) map[string]interface{} {
 	records := make([]interface{}, 0, len(messages))
 	for _, m := range messages {
@@ -48,9 +45,9 @@ func TestMapEvents_ForceRefreshOnCreateDataset(t *testing.T) {
 
 func TestMapEvents_RejectsMalformedEnvelope(t *testing.T) {
 	cases := map[string]map[string]interface{}{
-		"missing Records":   {"NotRecords": []interface{}{}},
+		"missing Records":    {"NotRecords": []interface{}{}},
 		"records wrong type": {"Records": "nope"},
-		"body not a string": {"Records": []interface{}{map[string]interface{}{"body": 123}}},
+		"body not a string":  {"Records": []interface{}{map[string]interface{}{"body": 123}}},
 	}
 	for name, ev := range cases {
 		t.Run(name, func(t *testing.T) {
