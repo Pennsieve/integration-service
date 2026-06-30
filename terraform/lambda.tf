@@ -3,8 +3,8 @@
 resource "aws_lambda_function" "event_integration_consumer_lambda" {
   description      = "Lambda Function which consumes messages from the SQS queue which contains all events"
   function_name    = "${var.environment_name}-${var.service_name}-event-consumer-lambda-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
-  handler          = "event_lambda.lambda_handler"
-  runtime          = "python3.8"
+  handler          = "bootstrap"
+  runtime          = "provided.al2023"
   role             = aws_iam_role.event_integration_consumer_lambda_role.arn
   timeout          = 60
   memory_size      = 128
