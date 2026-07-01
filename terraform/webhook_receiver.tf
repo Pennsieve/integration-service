@@ -1,5 +1,3 @@
-##
-## Lambda Function that receives webhook POST/PUT/PATCH/DELETE requests for testing.
 resource "aws_lambda_function" "webhook_receiver_lambda" {
   description   = "Webhook receiver Lambda — stores incoming webhook payloads in webhooks.messages for integration testing"
   function_name = "${var.environment_name}-${var.service_name}-webhook-receiver-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
@@ -10,6 +8,11 @@ resource "aws_lambda_function" "webhook_receiver_lambda" {
   memory_size   = 128
   s3_bucket     = var.lambda_bucket
   s3_key        = "${var.service_name}/webhook_handler/${var.service_name}-${var.image_tag}.zip"
+
+  # Caps concurrent invocations so a burst of public, unauthenticated requests
+  # can't exhaust account-wide Lambda concurrency (starving the SQS-buffered
+  # event consumer) or flood RDS with connections.
+  reserved_concurrent_executions = 5
 
   vpc_config {
     subnet_ids         = tolist(data.terraform_remote_state.vpc.outputs.private_subnet_ids)
@@ -22,9 +25,20 @@ resource "aws_lambda_function" "webhook_receiver_lambda" {
       PENNSIEVE_DOMAIN = data.terraform_remote_state.account.outputs.domain_name
     }
   }
+
+  depends_on = [aws_cloudwatch_log_group.webhook_receiver_log_group]
 }
 
-## Lambda Function URL — publicly reachable HTTPS endpoint, no auth for testing purposes.
+resource "aws_cloudwatch_log_group" "webhook_receiver_log_group" {
+  name              = "/aws/lambda/${var.environment_name}-${var.service_name}-webhook-receiver-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
+  retention_in_days = 30
+}
+
+# NOTE: authorization_type = "NONE" is an intentional, temporary decision for
+# testing — this makes the URL a public, unauthenticated write endpoint that
+# lets anyone on the internet POST/PUT/PATCH/DELETE a row into
+# webhooks.messages. This must be locked down (IAM auth, or at minimum a
+# shared secret / WAF rule) before this pattern is used anywhere near prod.
 resource "aws_lambda_function_url" "webhook_receiver_url" {
   function_name      = aws_lambda_function.webhook_receiver_lambda.function_name
   authorization_type = "NONE"
@@ -35,8 +49,6 @@ resource "aws_lambda_function_url" "webhook_receiver_url" {
   }
 }
 
-##
-## IAM Role
 resource "aws_iam_role" "webhook_receiver_lambda_role" {
   name = "${var.environment_name}-${var.service_name}-webhook-receiver-role-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
 

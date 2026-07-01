@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -45,11 +46,22 @@ func WebhookHandler(ctx context.Context, req events.LambdaFunctionURLRequest) (e
 	}
 
 	body := req.Body
+	if req.IsBase64Encoded {
+		decoded, err := base64.StdEncoding.DecodeString(body)
+		if err != nil {
+			return errorResponse(http.StatusBadRequest, "invalid base64 body"), nil
+		}
+		body = string(decoded)
+	}
 	if body == "" {
 		body = "{}"
 	}
 	payload := []byte(body)
-	if !json.Valid(payload) {
+	const maxBodyBytes = 1 << 20
+	if len(payload) > maxBodyBytes {
+		return errorResponse(http.StatusBadRequest, "payload too large"), nil
+	}
+	if payload[0] != '{' {
 		return errorResponse(http.StatusBadRequest, "payload must be valid JSON"), nil
 	}
 

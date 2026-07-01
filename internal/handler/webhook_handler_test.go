@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -31,6 +32,12 @@ func lambdaReq(method, body string) events.LambdaFunctionURLRequest {
 			},
 		},
 	}
+}
+
+func lambdaReqBase64(method, body string) events.LambdaFunctionURLRequest {
+	req := lambdaReq(method, body)
+	req.IsBase64Encoded = true
+	return req
 }
 
 func TestNewUUID(t *testing.T) {
@@ -167,6 +174,50 @@ func TestWebhookHandler_Success(t *testing.T) {
 			require.NoError(t, mock.ExpectationsWereMet())
 		})
 	}
+}
+
+func TestWebhookHandler_Base64EncodedBody(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	db.SetPoolForTest(mockDB)
+	markAWSReady()
+
+	payload := `{"event":"test"}`
+	encoded := base64.StdEncoding.EncodeToString([]byte(payload))
+	now := time.Now()
+
+	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO webhooks.messages")).
+		WithArgs(sqlmock.AnyArg(), []byte(payload)).
+		WillReturnRows(
+			sqlmock.NewRows([]string{"id", "request_id", "payload", "received_at"}).
+				AddRow(1, "test-uuid", []byte(payload), now),
+		)
+
+	resp, err := WebhookHandler(context.Background(), lambdaReqBase64(http.MethodPost, encoded))
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusAccepted, resp.StatusCode)
+
+	var body models.WebhookResponse
+	require.NoError(t, json.Unmarshal([]byte(resp.Body), &body))
+	assert.Equal(t, "accepted", body.Message)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestWebhookHandler_Base64EncodedBody_Invalid(t *testing.T) {
+	mockDB, _, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	db.SetPoolForTest(mockDB)
+	markAWSReady()
+
+	resp, err := WebhookHandler(context.Background(), lambdaReqBase64(http.MethodPost, "not-valid-base64!!"))
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+
+	var body models.WebhookResponse
+	require.NoError(t, json.Unmarshal([]byte(resp.Body), &body))
+	assert.Contains(t, body.Message, "invalid base64")
 }
 
 // TestWebhookHandler_DBInsertFailure verifies a 500 is returned when the DB insert fails.
