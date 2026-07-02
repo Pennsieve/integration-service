@@ -1,6 +1,6 @@
 module github.com/Pennsieve/integration-service
 
-go 1.25.0
+go 1.23.0
 
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
@@ -9,7 +9,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.49.5
 	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/lib/pq v1.10.9
-	github.com/pennsieve/dbmigrate-go v1.2.0
+	github.com/pennsieve/dbmigrate-go v1.1.1
 	github.com/stretchr/testify v1.11.1
 )
 

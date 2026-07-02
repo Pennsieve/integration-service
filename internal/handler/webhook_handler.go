@@ -61,7 +61,7 @@ func WebhookHandler(ctx context.Context, req events.LambdaFunctionURLRequest) (e
 	if len(payload) > maxBodyBytes {
 		return errorResponse(http.StatusBadRequest, "payload too large"), nil
 	}
-	if payload[0] != '{' {
+	if !json.Valid(payload) {
 		return errorResponse(http.StatusBadRequest, "payload must be valid JSON"), nil
 	}
 
