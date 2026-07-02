@@ -69,6 +69,11 @@ func initDB(ctx context.Context) error {
 	return nil
 }
 
+func SetPoolForTest(pool *sql.DB) {
+	dbPool = pool
+	dbOnce.Do(func() {})
+}
+
 func EnsureDB(ctx context.Context) error {
 	dbOnce.Do(func() {
 		dbInitErr = initDB(ctx)
