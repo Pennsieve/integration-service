@@ -19,7 +19,7 @@ ansiColor('xterm') {
     }
 
     stage('package') {
-      sh "make package"
+      sh "IMAGE_TAG=${imageTag} make package"
     }
 
     if(isMain) {
