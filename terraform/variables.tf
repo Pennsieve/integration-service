@@ -6,6 +6,8 @@ variable "environment_name" {}
 
 variable "service_name" {}
 
+variable "api_domain_name" {}
+
 variable "vpc_name" {}
 
 # Postgres
