@@ -23,7 +23,7 @@ help:
 	@echo "make publish-webhook      - publish webhook receiver lambda to S3"
 	@echo "make publish-dbmigrate    - push DB migration image to ECR"
 
-compile:
+compile: tidy
 	go build ./...
 
 vet:

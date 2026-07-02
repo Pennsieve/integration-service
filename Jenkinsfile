@@ -14,6 +14,14 @@ ansiColor('xterm') {
 
   try {
 
+    stage('Compile') {
+      sh "make compile"
+    }
+
+    stage('Test') {
+      sh "go test ./..."
+    }
+
     if(isMain) {
       stage ('Build and Push') {
         sh "IMAGE_TAG=${imageTag} make publish"
