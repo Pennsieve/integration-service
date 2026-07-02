@@ -14,8 +14,8 @@ ansiColor('xterm') {
 
   try {
 
-    stage('Compile') {
-      sh "make compile"
+    stage('package') {
+      sh "make package"
     }
 
     stage('Test') {
