@@ -32,6 +32,9 @@ vet:
 tidy:
 	go mod tidy
 
+test: tidy
+	go test ./...
+
 package: tidy package-event package-webhook package-dbmigrate
 
 # Build event consumer lambda ZIP

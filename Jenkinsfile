@@ -14,12 +14,12 @@ ansiColor('xterm') {
 
   try {
 
-    stage('package') {
-      sh "make package"
+    stage('Test') {
+      sh "make test"
     }
 
-    stage('Test') {
-      sh "go test ./..."
+    stage('package') {
+      sh "make package"
     }
 
     if(isMain) {
