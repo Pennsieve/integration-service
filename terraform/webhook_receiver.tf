@@ -34,21 +34,6 @@ resource "aws_cloudwatch_log_group" "webhook_receiver_log_group" {
   retention_in_days = 30
 }
 
-# NOTE: authorization_type = "NONE" is an intentional, temporary decision for
-# testing — this makes the URL a public, unauthenticated write endpoint that
-# lets anyone on the internet POST/PUT/PATCH/DELETE a row into
-# webhooks.messages. This must be locked down (IAM auth, or at minimum a
-# shared secret / WAF rule) before this pattern is used anywhere near prod.
-resource "aws_lambda_function_url" "webhook_receiver_url" {
-  function_name      = aws_lambda_function.webhook_receiver_lambda.function_name
-  authorization_type = "NONE"
-
-  cors {
-    allow_origins = ["*"]
-    allow_methods = ["POST", "PUT", "PATCH", "DELETE"]
-  }
-}
-
 resource "aws_iam_role" "webhook_receiver_lambda_role" {
   name = "${var.environment_name}-${var.service_name}-webhook-receiver-role-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
 
@@ -122,10 +107,4 @@ data "aws_iam_policy_document" "webhook_receiver_policy_document" {
 resource "aws_iam_role_policy_attachment" "webhook_receiver_policy_attachment" {
   role       = aws_iam_role.webhook_receiver_lambda_role.name
   policy_arn = aws_iam_policy.webhook_receiver_lambda_policy.arn
-}
-
-## Output the Function URL so it can be used as the test webhook target.
-output "webhook_receiver_url" {
-  description = "HTTPS endpoint for the webhook receiver (use as the target URL in integration tests)"
-  value       = aws_lambda_function_url.webhook_receiver_url.function_url
 }
