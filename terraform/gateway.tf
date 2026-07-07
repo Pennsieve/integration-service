@@ -72,9 +72,3 @@ resource "aws_lambda_permission" "webhook_receiver_apigateway_permission" {
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.integration_service_api.execution_arn}/*/*"
 }
-
-## Output the API Gateway endpoint so it can be used as the test webhook target.
-output "webhook_receiver_url" {
-  description = "HTTPS endpoint for the webhook receiver (use as the target URL in integration tests)"
-  value       = "https://${var.api_domain_name}/integration/webhook"
-}

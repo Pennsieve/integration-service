@@ -13,3 +13,8 @@ output "integration_events_sns_topic_name" {
 output "integration_events_kms_key_arn" {
   value = aws_kms_key.event_integration_sqs_kms_key.arn
 }
+
+output "webhook_receiver_url" {
+  description = "HTTPS endpoint for the webhook receiver (use as the target URL in integration tests)"
+  value       = "https://${var.api_domain_name}/integration/webhook"
+}
