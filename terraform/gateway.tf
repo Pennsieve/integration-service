@@ -1,9 +1,9 @@
-# NOTE: authorization_type = "NONE" on the /webhook route is an intentional,
-# temporary decision for testing — this makes the endpoint a public,
-# unauthenticated write endpoint that lets anyone on the internet
-# POST/PUT/PATCH/DELETE a row into webhooks.messages. This must be locked
-# down (IAM auth, or at minimum a shared secret / WAF rule) before this
-# pattern is used anywhere near prod.
+# NOTE: authorization_type = "NONE" on the /webhook route means API Gateway
+# itself performs no auth — the endpoint is reachable by anyone on the
+# internet. Authorization is instead enforced by the Lambda handler, which
+# requires a shared secret (see aws_ssm_parameter.webhook_shared_secret) in
+# the X-Pennsieve-Webhook-Secret header, and also applies a payload size cap
+# and a per-sender rate limit before touching the DB.
 resource "aws_apigatewayv2_api" "integration_service_api" {
   name          = "${var.environment_name}-${var.service_name}-api-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
   protocol_type = "HTTP"
