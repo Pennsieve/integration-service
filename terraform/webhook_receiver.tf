@@ -7,7 +7,7 @@ resource "aws_lambda_function" "webhook_receiver_lambda" {
   timeout       = 30
   memory_size   = 128
   s3_bucket     = var.lambda_bucket
-  s3_key        = "${var.service_name}/webhook_handler/${var.service_name}-${var.image_tag}.zip"
+  s3_key        = "${var.service_name}/webhook_handler/${var.service_name}-webhook-${var.image_tag}.zip"
 
   # Caps concurrent invocations so a burst of public, unauthenticated requests
   # can't exhaust account-wide Lambda concurrency (starving the SQS-buffered
