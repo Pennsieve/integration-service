@@ -1,4 +1,4 @@
-FROM pennsieve/go-cloudwrap:1.23-alpine
+FROM pennsieve/go-cloudwrap:1.25-alpine
 
 WORKDIR /app
 
