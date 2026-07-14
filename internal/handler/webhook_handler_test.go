@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,16 +20,23 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const testSharedSecret = "test-shared-secret"
+
 func markAWSReady() {
 	aws.AwsOnce.Do(func() {})
+	setSharedSecretForTest(testSharedSecret)
 }
 
 func lambdaReq(method, body string) events.LambdaFunctionURLRequest {
 	return events.LambdaFunctionURLRequest{
 		Body: body,
+		Headers: map[string]string{
+			sharedSecretHeaderName: testSharedSecret,
+		},
 		RequestContext: events.LambdaFunctionURLRequestContext{
 			HTTP: events.LambdaFunctionURLRequestContextHTTPDescription{
-				Method: method,
+				Method:   method,
+				SourceIP: "203.0.113.10",
 			},
 		},
 	}
@@ -38,6 +46,14 @@ func lambdaReqBase64(method, body string) events.LambdaFunctionURLRequest {
 	req := lambdaReq(method, body)
 	req.IsBase64Encoded = true
 	return req
+}
+
+// expectRateLimitQuery sets up the sqlmock expectation for the
+// webhooks.sender_rate_limits upsert that every request past the shared
+// secret and size checks must go through.
+func expectRateLimitQuery(mock sqlmock.Sqlmock, count int) {
+	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO webhooks.sender_rate_limits")).
+		WillReturnRows(sqlmock.NewRows([]string{"request_count"}).AddRow(count))
 }
 
 func TestNewUUID(t *testing.T) {
@@ -98,11 +114,12 @@ func TestWebhookHandler_MethodNotAllowed(t *testing.T) {
 }
 
 func TestWebhookHandler_InvalidJSON(t *testing.T) {
-	mockDB, _, err := sqlmock.New()
+	mockDB, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	defer mockDB.Close()
 	db.SetPoolForTest(mockDB)
 	markAWSReady()
+	expectRateLimitQuery(mock, 1)
 
 	resp, err := WebhookHandler(context.Background(), lambdaReq(http.MethodPost, "not-json"))
 	require.NoError(t, err)
@@ -121,6 +138,7 @@ func TestWebhookHandler_EmptyBody(t *testing.T) {
 	markAWSReady()
 
 	now := time.Now()
+	expectRateLimitQuery(mock, 1)
 	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO webhooks.messages")).
 		WithArgs(sqlmock.AnyArg(), []byte("{}")).
 		WillReturnRows(
@@ -153,6 +171,7 @@ func TestWebhookHandler_Success(t *testing.T) {
 			now := time.Now()
 			reqID := fmt.Sprintf("uuid-%s", method)
 
+			expectRateLimitQuery(mock, 1)
 			mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO webhooks.messages")).
 				WithArgs(sqlmock.AnyArg(), []byte(payload)).
 				WillReturnRows(
@@ -187,6 +206,7 @@ func TestWebhookHandler_Base64EncodedBody(t *testing.T) {
 	encoded := base64.StdEncoding.EncodeToString([]byte(payload))
 	now := time.Now()
 
+	expectRateLimitQuery(mock, 1)
 	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO webhooks.messages")).
 		WithArgs(sqlmock.AnyArg(), []byte(payload)).
 		WillReturnRows(
@@ -205,11 +225,12 @@ func TestWebhookHandler_Base64EncodedBody(t *testing.T) {
 }
 
 func TestWebhookHandler_Base64EncodedBody_Invalid(t *testing.T) {
-	mockDB, _, err := sqlmock.New()
+	mockDB, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	defer mockDB.Close()
 	db.SetPoolForTest(mockDB)
 	markAWSReady()
+	expectRateLimitQuery(mock, 1)
 
 	resp, err := WebhookHandler(context.Background(), lambdaReqBase64(http.MethodPost, "not-valid-base64!!"))
 	require.NoError(t, err)
@@ -228,6 +249,7 @@ func TestWebhookHandler_DBInsertFailure(t *testing.T) {
 	db.SetPoolForTest(mockDB)
 	markAWSReady()
 
+	expectRateLimitQuery(mock, 1)
 	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO webhooks.messages")).
 		WillReturnError(fmt.Errorf("connection reset"))
 
@@ -239,5 +261,108 @@ func TestWebhookHandler_DBInsertFailure(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(resp.Body), &body))
 	assert.Contains(t, body.Message, "store webhook message")
 
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestWebhookHandler_MissingSharedSecret(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	db.SetPoolForTest(mockDB)
+	markAWSReady()
+
+	req := lambdaReq(http.MethodPost, `{"k":"v"}`)
+	delete(req.Headers, sharedSecretHeaderName)
+
+	resp, err := WebhookHandler(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+
+	var body models.WebhookResponse
+	require.NoError(t, json.Unmarshal([]byte(resp.Body), &body))
+	assert.Contains(t, body.Message, "shared secret")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestWebhookHandler_InvalidSharedSecret(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	db.SetPoolForTest(mockDB)
+	markAWSReady()
+
+	req := lambdaReq(http.MethodPost, `{"k":"v"}`)
+	req.Headers[sharedSecretHeaderName] = "wrong-secret"
+
+	resp, err := WebhookHandler(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+
+	var body models.WebhookResponse
+	require.NoError(t, json.Unmarshal([]byte(resp.Body), &body))
+	assert.Contains(t, body.Message, "shared secret")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestWebhookHandler_SharedSecretHeaderIsCaseInsensitive(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	db.SetPoolForTest(mockDB)
+	markAWSReady()
+	expectRateLimitQuery(mock, 1)
+
+	payload := `{"event":"test"}`
+	now := time.Now()
+	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO webhooks.messages")).
+		WithArgs(sqlmock.AnyArg(), []byte(payload)).
+		WillReturnRows(
+			sqlmock.NewRows([]string{"id", "request_id", "payload", "received_at"}).
+				AddRow(1, "test-uuid", []byte(payload), now),
+		)
+
+	req := lambdaReq(http.MethodPost, payload)
+	delete(req.Headers, sharedSecretHeaderName)
+	req.Headers[strings.ToLower(sharedSecretHeaderName)] = testSharedSecret
+
+	resp, err := WebhookHandler(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusAccepted, resp.StatusCode)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestWebhookHandler_PayloadTooLarge(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	db.SetPoolForTest(mockDB)
+	markAWSReady()
+
+	oversized := strings.Repeat("a", maxPayloadBytes+1)
+	resp, err := WebhookHandler(context.Background(), lambdaReq(http.MethodPost, oversized))
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.StatusCode)
+
+	var body models.WebhookResponse
+	require.NoError(t, json.Unmarshal([]byte(resp.Body), &body))
+	assert.Contains(t, body.Message, "too large")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestWebhookHandler_RateLimitExceeded(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	db.SetPoolForTest(mockDB)
+	markAWSReady()
+	expectRateLimitQuery(mock, maxRequestsPerSender+1)
+
+	resp, err := WebhookHandler(context.Background(), lambdaReq(http.MethodPost, `{"k":"v"}`))
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusTooManyRequests, resp.StatusCode)
+
+	var body models.WebhookResponse
+	require.NoError(t, json.Unmarshal([]byte(resp.Body), &body))
+	assert.Contains(t, body.Message, "rate limit")
 	require.NoError(t, mock.ExpectationsWereMet())
 }

@@ -1,0 +1,157 @@
+#file: noinspection MaybeTerraformTemplateInspection
+# NOTE: this spec is not yet wired into Terraform (the API Gateway in
+# gateway.tf is defined via individual aws_apigatewayv2_* resources, not an
+# imported OpenAPI body) and there is no .github/workflows/rdme-openapi.yml
+# in this repo yet. It exists so that if/when integration-service adopts the
+# org-standard OpenAPI-driven gateway + ReadMe publishing pattern used by
+# workflow-service, packages-service, etc., /webhook is already marked
+# x-internal: true and gets stripped before anything is published to
+# https://docs.pennsieve.io.
+openapi: 3.0.1
+info:
+  version: "3.0"
+  title: Integration Service
+  description: |
+    The Integration Service webhook receiver
+  termsOfService: https://docs.pennsieve.io/page/pennsieve-terms-of-use
+  contact:
+    name: Pennsieve Support
+    email: support@pennsieve.net
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+servers:
+  - url: https://api2.pennsieve.io/integration
+    description: Production server
+  - url: https://api2.pennsieve.net/integration
+    description: Development server
+externalDocs:
+  description: Find more info here
+  url: https://docs.pennsieve.io
+tags:
+  - name: Webhooks
+    description: Internal webhook ingestion for integration testing
+
+components:
+  securitySchemes:
+    shared_secret_auth:
+      type: apiKey
+      name: X-Pennsieve-Webhook-Secret
+      in: header
+  responses:
+    Unauthorized:
+      description: Missing or invalid shared secret
+    TooManyRequests:
+      description: Sender rate limit exceeded
+    Error:
+      description: Unexpected error
+
+paths:
+  /webhook:
+    post:
+      summary: Receive a webhook payload
+      description: |
+        Stores an incoming webhook payload for integration testing. Internal
+        only — never publish this endpoint to the public API docs.
+      operationId: receiveWebhook
+      x-internal: true
+      security:
+        - shared_secret_auth: [ ]
+      tags:
+        - Webhooks
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '202':
+          description: Payload accepted and stored
+        '400':
+          description: Malformed body
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          description: Payload too large
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '5XX':
+          $ref: '#/components/responses/Error'
+    put:
+      summary: Receive a webhook payload
+      operationId: receiveWebhookPut
+      x-internal: true
+      security:
+        - shared_secret_auth: [ ]
+      tags:
+        - Webhooks
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '202':
+          description: Payload accepted and stored
+        '400':
+          description: Malformed body
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          description: Payload too large
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '5XX':
+          $ref: '#/components/responses/Error'
+    patch:
+      summary: Receive a webhook payload
+      operationId: receiveWebhookPatch
+      x-internal: true
+      security:
+        - shared_secret_auth: [ ]
+      tags:
+        - Webhooks
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '202':
+          description: Payload accepted and stored
+        '400':
+          description: Malformed body
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          description: Payload too large
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '5XX':
+          $ref: '#/components/responses/Error'
+    delete:
+      summary: Receive a webhook payload
+      operationId: receiveWebhookDelete
+      x-internal: true
+      security:
+        - shared_secret_auth: [ ]
+      tags:
+        - Webhooks
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        '202':
+          description: Payload accepted and stored
+        '400':
+          description: Malformed body
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          description: Payload too large
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '5XX':
+          $ref: '#/components/responses/Error'
