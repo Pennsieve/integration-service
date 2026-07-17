@@ -142,6 +142,30 @@ Run against ephemeral, real dependencies rather than mocks:
 
 **Finding:** `Jenkinsfile` only runs `make publish` (build + package + deploy) on `main` — there is no `go test ./...`, `go vet`, or lint stage anywhere in CI. Recommend adding a test/vet/lint stage that gates the build step before any deploy job runs, plus `go test -race ./...` given the cache package's shared mutable state.
 
+### 5.9 End-to-end tests (dev environment, full changelog-to-webhook pipeline)
+
+Validates the entire pipeline against real deployed infrastructure — SNS → SQS → event consumer → Integration Service → outbound webhook delivery — rather than the mocked/synthetic full-pipeline test in 5.2. Per the architecture diagram, three producers (Pennsieve API, Upload Service, Packages Service) publish changelog events to a shared SNS topic, which fans out to two SQS subscriptions: one consumed by Jobs Service (persists org/dataset context to Postgres), the other consumed by Integration Service (looks up registered webhooks for the dataset and dispatches an outbound `POST` with the shared secret in the request headers).
+
+**Known gap to resolve before this suite is trustworthy (FIXME):** Integration Service does not currently send the shared secret in outbound webhook request headers. Confirm this is fixed first, and add a regression test asserting the header is present on every outbound call — otherwise the "verify events trigger webhook" step below can't validate receiver-side secret checking.
+
+**Setup (one-time per test run):**
+1. Create a webhook registration via the Create/Manage Webhook Integrations API (the 5–6 `/webhooks` endpoints) pointing at a test receiver (e.g., an `httptest`/RequestBin-style capture endpoint) with a known secret.
+2. Set the SSM parameter holding that webhook secret value.
+3. Create a test dataset and enable the webhook integration on it (dataset-scoped subscription).
+
+**Execution:**
+4. Upload one or more files to the dataset to generate real changelog events from Upload Service.
+5. Verify events trigger the webhook end-to-end: confirm the outbound `POST` (with headers, including the shared secret once the FIXME above lands) arrives at the test receiver with the expected body; cross-check via CloudWatch logs (event Lambda invocation, cache lookup, sender attempt/success) and a direct query against Postgres confirming the corresponding row was recorded.
+
+**Additional scenarios layered on the base run:**
+- Repeat steps 4–5 for events originating from each of the three producers (Pennsieve API, Upload Service, Packages Service) to confirm all SNS publishers are wired correctly, not just Upload Service.
+- Multiple webhooks registered on the same dataset: confirm all registered URLs receive the event (fan-out), and that deregistering one stops delivery to it without affecting the others.
+- Webhook disabled on the dataset: confirm no outbound call is made (absence confirmed via CloudWatch and the test receiver).
+- Secret rotation: rotate the SSM parameter value and confirm subsequent deliveries use the new secret while the stale secret is rejected downstream.
+- Baseline latency: measure elapsed time from file upload to webhook receipt to establish an E2E latency SLO.
+
+Closes risk #7 in Section 8 (no automated end-to-end test today). Target state: turn this manual dev-environment procedure into a scripted, repeatable smoke test runnable post-deploy, not just a one-off manual checklist.
+
 ## 6. Test Environments
 
 | Environment | Purpose | Tooling |
