@@ -148,14 +148,16 @@ Validates the entire pipeline against real deployed infrastructure — SNS → S
 
 **Known gap to resolve before this suite is trustworthy (FIXME):** Integration Service does not currently send the shared secret in outbound webhook request headers. Confirm this is fixed first, and add a regression test asserting the header is present on every outbound call — otherwise the "verify events trigger webhook" step below can't validate receiver-side secret checking.
 
-**Setup (one-time per test run):**
-1. Create a webhook registration via the Create/Manage Webhook Integrations API (the 5–6 `/webhooks` endpoints) pointing at a test receiver (e.g., an `httptest`/RequestBin-style capture endpoint) with a known secret.
-2. Set the SSM parameter holding that webhook secret value.
-3. Create a test dataset and enable the webhook integration on it (dataset-scoped subscription).
+**Setup (one-time per test run):**   
+1. Create a webhook registration via the Create/Manage Webhook Integrations API (the 5–6 `/webhooks` endpoints) pointing at a test receiver (e.g., an `httptest`/RequestBin-style capture endpoint) with a known secret. Specify the target events of interest:
+   - Category: `FILES` (internal category: `PACKAGES`)
+   - Types: C`REATE_PACKAGE`, `RENAME_PACKAGE`, `MOVE_PACKAGE`, `DELETE_PACKAGE`, `RESTORE_PACKAGE`
+3. Set the SSM parameter holding that webhook secret value.
+4. Create a test dataset and enable the webhook integration on it (dataset-scoped subscription).
 
-**Execution:**
-4. Upload one or more files to the dataset to generate real changelog events from Upload Service.
-5. Verify events trigger the webhook end-to-end: confirm the outbound `POST` (with headers, including the shared secret once the FIXME above lands) arrives at the test receiver with the expected body; cross-check via CloudWatch logs (event Lambda invocation, cache lookup, sender attempt/success) and a direct query against Postgres confirming the corresponding row was recorded.
+**Execution:**   
+1. Upload one or more files to the dataset to generate real changelog events from Upload Service.
+2. Verify events trigger the webhook end-to-end: confirm the outbound `POST` (with headers, including the shared secret once the FIXME above lands) arrives at the test receiver with the expected body; cross-check via CloudWatch logs (event Lambda invocation, cache lookup, sender attempt/success) and a direct query against Postgres confirming the corresponding row was recorded.
 
 **Additional scenarios layered on the base run:**
 - Repeat steps 4–5 for events originating from each of the three producers (Pennsieve API, Upload Service, Packages Service) to confirm all SNS publishers are wired correctly, not just Upload Service.
@@ -189,3 +191,6 @@ Closes risk #7 in Section 8 (no automated end-to-end test today). Target state: 
 5. DB migrations (`up`/`down`) have never been run in an automated test.
 6. Payload validation stops at byte size; no defense/test against pathological JSON structure within that limit.
 7. No automated end-to-end test connects SNS → SQS → event Lambda → outbound webhook delivery; coverage is unit-level and mocked throughout.
+
+## 9. References
+1. [Pennsieve Webhooks — Feature Guide (API-only Setup & Internal Architecture)](https://github.com/Pennsieve/integration-service/blob/main/doc/webhooks-feature-guide.md) (Source, once merged: [#127](https://github.com/Pennsieve/integration-service/pull/127))
