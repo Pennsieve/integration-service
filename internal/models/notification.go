@@ -28,10 +28,10 @@ type SubscribeRequest struct {
 	Context json.RawMessage `json:"context,omitempty"`
 }
 
-// Notification records that an event occurred on a topic.
+// Notification records that an event occurred for a subscription.
 type Notification struct {
 	NotificationID int64           `json:"notification_id"`
-	TopicID        int64           `json:"topic_id"`
+	SubscriptionID int64           `json:"subscription_id"`
 	SenderID       int64           `json:"sender_id"`
 	Title          string          `json:"title"`
 	Message        string          `json:"message"`

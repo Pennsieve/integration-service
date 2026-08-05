@@ -96,7 +96,7 @@ func handleSubscribe(ctx context.Context, userID int64, req events.APIGatewayV2H
 		}
 	}
 
-	sub, err := db.CreateSubscription(ctx, userID, topicID, body.Context)
+	sub, created, err := db.CreateSubscription(ctx, userID, topicID, body.Context)
 	if err != nil {
 		if errors.Is(err, db.ErrTopicNotFound) {
 			return notifErrorResponse(http.StatusNotFound, "topic not found"), nil
@@ -104,7 +104,11 @@ func handleSubscribe(ctx context.Context, userID int64, req events.APIGatewayV2H
 		log.Printf("ERROR create subscription: %v", err)
 		return notifErrorResponse(http.StatusInternalServerError, "failed to create subscription"), nil
 	}
-	return notifJSONResponse(http.StatusCreated, sub), nil
+	statusCode := http.StatusOK
+	if created {
+		statusCode = http.StatusCreated
+	}
+	return notifJSONResponse(statusCode, sub), nil
 }
 
 func handleUnsubscribe(ctx context.Context, userID int64, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
