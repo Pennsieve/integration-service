@@ -11,7 +11,7 @@ resource "aws_apigatewayv2_api" "integration_service_api" {
 
   cors_configuration {
     allow_origins = ["*"]
-    allow_methods = ["POST", "PUT", "PATCH", "DELETE"]
+    allow_methods = ["GET", "POST", "PUT", "PATCH", "DELETE"]
   }
 }
 
@@ -69,6 +69,82 @@ resource "aws_lambda_permission" "webhook_receiver_apigateway_permission" {
   statement_id  = "AllowExecutionFromAPIGateway"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.webhook_receiver_lambda.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.integration_service_api.execution_arn}/*/*"
+}
+
+##################################################
+# Notifications API — terraform/notification-service.yml
+##################################################
+
+# Validates the caller's bearer token and surfaces its claims (including
+# "user_id", read by handler.NotificationHandler) on
+# req.RequestContext.Authorizer.JWT.Claims. Points at the same JWT
+# issuer/audience used to authorize other Pennsieve services.
+resource "aws_apigatewayv2_authorizer" "pennsieve_jwt_authorizer" {
+  api_id           = aws_apigatewayv2_api.integration_service_api.id
+  authorizer_type  = "JWT"
+  identity_sources = ["$request.header.Authorization"]
+  name             = "${var.environment_name}-${var.service_name}-pennsieve-jwt-authorizer"
+
+  jwt_configuration {
+    audience = var.jwt_authorizer_audience
+    issuer   = var.jwt_authorizer_issuer
+  }
+}
+
+resource "aws_apigatewayv2_integration" "notification_integration" {
+  api_id             = aws_apigatewayv2_api.integration_service_api.id
+  integration_type   = "AWS_PROXY"
+  connection_type    = "INTERNET"
+  integration_method = "POST"
+  integration_uri    = aws_lambda_function.notification_lambda.invoke_arn
+}
+
+resource "aws_apigatewayv2_route" "notification_get_topics_route" {
+  api_id             = aws_apigatewayv2_api.integration_service_api.id
+  route_key          = "GET /notification/topics"
+  target             = "integrations/${aws_apigatewayv2_integration.notification_integration.id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_jwt_authorizer.id
+}
+
+resource "aws_apigatewayv2_route" "notification_get_subscriptions_route" {
+  api_id             = aws_apigatewayv2_api.integration_service_api.id
+  route_key          = "GET /notification/subscriptions"
+  target             = "integrations/${aws_apigatewayv2_integration.notification_integration.id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_jwt_authorizer.id
+}
+
+resource "aws_apigatewayv2_route" "notification_subscribe_route" {
+  api_id             = aws_apigatewayv2_api.integration_service_api.id
+  route_key          = "POST /notification/subscriptions/{topicId}"
+  target             = "integrations/${aws_apigatewayv2_integration.notification_integration.id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_jwt_authorizer.id
+}
+
+resource "aws_apigatewayv2_route" "notification_unsubscribe_route" {
+  api_id             = aws_apigatewayv2_api.integration_service_api.id
+  route_key          = "DELETE /notification/subscriptions/{subscriptionId}"
+  target             = "integrations/${aws_apigatewayv2_integration.notification_integration.id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_jwt_authorizer.id
+}
+
+resource "aws_apigatewayv2_route" "notification_get_topic_notifications_route" {
+  api_id             = aws_apigatewayv2_api.integration_service_api.id
+  route_key          = "GET /notification/{topicId}/notifications"
+  target             = "integrations/${aws_apigatewayv2_integration.notification_integration.id}"
+  authorization_type = "JWT"
+  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_jwt_authorizer.id
+}
+
+resource "aws_lambda_permission" "notification_apigateway_permission" {
+  statement_id  = "AllowExecutionFromAPIGateway"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.notification_lambda.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.integration_service_api.execution_arn}/*/*"
 }

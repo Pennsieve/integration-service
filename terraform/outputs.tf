@@ -18,3 +18,8 @@ output "webhook_receiver_url" {
   description = "HTTPS endpoint for the webhook receiver (use as the target URL in integration tests)"
   value       = "https://${var.api_domain_name}/integration/webhook"
 }
+
+output "notification_api_url" {
+  description = "Base HTTPS URL for the Notifications API described in terraform/notification-service.yml"
+  value       = "https://${var.api_domain_name}/integration/notification"
+}

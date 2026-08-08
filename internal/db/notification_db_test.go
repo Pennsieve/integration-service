@@ -185,11 +185,11 @@ func TestGetTopicNotifications(t *testing.T) {
 	SetPoolForTest(mockDB)
 
 	now := time.Now()
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT n.notification_id, n.subscription_id, n.sender_id, n.title, n.message, n.metadata, n.created_at FROM notifications.notifications n JOIN notifications.subscriptions s ON s.subscription_id = n.subscription_id WHERE s.topic_id = $1")).
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT n.notification_id, n.subscription_id, n.title, n.message, n.metadata, n.created_at FROM notifications.notifications n JOIN notifications.subscriptions s ON s.subscription_id = n.subscription_id WHERE s.topic_id = $1")).
 		WithArgs(int64(7), 50, 0).
-		WillReturnRows(sqlmock.NewRows([]string{"notification_id", "subscription_id", "sender_id", "title", "message", "metadata", "created_at"}).
-			AddRow(int64(1), int64(20), int64(3), "Dataset published", "dataset 12 was published", []byte(`{"datasetId":12}`), now).
-			AddRow(int64(2), int64(21), int64(3), "Dataset deleted", "dataset 5 was deleted", nil, now))
+		WillReturnRows(sqlmock.NewRows([]string{"notification_id", "subscription_id", "title", "message", "metadata", "created_at"}).
+			AddRow(int64(1), int64(20), "Dataset published", "dataset 12 was published", []byte(`{"datasetId":12}`), now).
+			AddRow(int64(2), int64(21), "Dataset deleted", "dataset 5 was deleted", nil, now))
 
 	notifications, err := GetTopicNotifications(context.Background(), 7, 50, 0)
 	require.NoError(t, err)

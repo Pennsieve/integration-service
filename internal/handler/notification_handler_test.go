@@ -365,8 +365,8 @@ func TestNotificationHandler_GetTopicNotifications(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
 	mock.ExpectQuery(regexp.QuoteMeta("FROM notifications.notifications")).
 		WithArgs(int64(7), defaultNotificationsLimit, 0).
-		WillReturnRows(sqlmock.NewRows([]string{"notification_id", "subscription_id", "sender_id", "title", "message", "metadata", "created_at"}).
-			AddRow(int64(1), int64(20), int64(3), "Dataset published", "dataset 12 was published", nil, now))
+		WillReturnRows(sqlmock.NewRows([]string{"notification_id", "subscription_id", "title", "message", "metadata", "created_at"}).
+			AddRow(int64(1), int64(20), "Dataset published", "dataset 12 was published", nil, now))
 
 	req := notifReq(http.MethodGet, "/notification/7/notifications", map[string]string{"topicId": "7"}, "42")
 	resp, err := NotificationHandler(context.Background(), req)

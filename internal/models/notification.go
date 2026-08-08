@@ -32,7 +32,6 @@ type SubscribeRequest struct {
 type Notification struct {
 	NotificationID int64           `json:"notification_id"`
 	SubscriptionID int64           `json:"subscription_id"`
-	SenderID       int64           `json:"sender_id"`
 	Title          string          `json:"title"`
 	Message        string          `json:"message"`
 	Metadata       json.RawMessage `json:"metadata,omitempty"`

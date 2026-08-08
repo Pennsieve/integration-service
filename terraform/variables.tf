@@ -28,6 +28,20 @@ variable "postgres_user" {
   description = "The username for the Postgres database. This is used to connect to the database."
 }
 
+# JWT authorizer for user-facing routes (see the auth assumption documented in
+# terraform/notification-service.yml): the notification/subscription API sits
+# behind the same JWT authorizer used by other Pennsieve services, which
+# places the caller's Pennsieve user id in the "user_id" claim.
+variable "jwt_authorizer_issuer" {
+  type        = string
+  description = "Issuer URL of the shared Pennsieve JWT authorizer used to validate bearer tokens on user-facing routes."
+}
+
+variable "jwt_authorizer_audience" {
+  type        = list(string)
+  description = "Allowed audience(s) for the shared Pennsieve JWT authorizer."
+}
+
 
 locals {
   

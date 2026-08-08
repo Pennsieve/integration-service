@@ -1,16 +1,19 @@
 #file: noinspection MaybeTerraformTemplateInspection
-# NOTE: like terraform/integration-service.yml, this spec is not yet wired
-# into Terraform (the API Gateway in gateway.tf is defined via individual
-# aws_apigatewayv2_* resources, not an imported OpenAPI body) and there is no
+# NOTE: like terraform/integration-service.yml, this spec is documentation
+# rather than a build input — the API Gateway in gateway.tf is wired up via
+# individual aws_apigatewayv2_* resources (see the "Notifications API"
+# section of gateway.tf), not an imported OpenAPI body, and there is no
 # .github/workflows/rdme-openapi.yml in this repo yet. It exists so that
 # if/when integration-service adopts the org-standard OpenAPI-driven gateway
 # + ReadMe publishing pattern, the notification/subscription API is already
 # documented.
 #
 # Auth assumption: unlike /webhook (shared-secret, internal-only), these
-# endpoints are user-facing and assumed to sit behind the same JWT authorizer
-# used by other Pennsieve services, which places the caller's Pennsieve
-# user id in the "user_id" claim consumed by the Lambda handler.
+# endpoints are user-facing and sit behind a JWT authorizer (see
+# aws_apigatewayv2_authorizer.pennsieve_jwt_authorizer in gateway.tf) pointed
+# at the same issuer/audience used to authorize other Pennsieve services,
+# which places the caller's Pennsieve user id in the "user_id" claim consumed
+# by the Lambda handler.
 openapi: 3.0.1
 info:
   version: "1.0"
@@ -143,9 +146,6 @@ components:
         subscription_id:
           type: integer
           format: int64
-        sender_id:
-          type: integer
-          format: int64
         title:
           type: string
         message:
@@ -156,7 +156,7 @@ components:
         created_at:
           type: string
           format: date-time
-      required: [notification_id, subscription_id, sender_id, title, message, created_at]
+      required: [notification_id, subscription_id, title, message, created_at]
 
 paths:
   /notification/topics:

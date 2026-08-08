@@ -133,7 +133,7 @@ func TopicExists(ctx context.Context, topicID int64) (bool, error) {
 // notifications.subscriptions to find rows for that topic.
 func GetTopicNotifications(ctx context.Context, topicID int64, limit, offset int) ([]models.Notification, error) {
 	const q = `
-		SELECT n.notification_id, n.subscription_id, n.sender_id, n.title, n.message, n.metadata, n.created_at
+		SELECT n.notification_id, n.subscription_id, n.title, n.message, n.metadata, n.created_at
 		FROM notifications.notifications n
 		JOIN notifications.subscriptions s ON s.subscription_id = n.subscription_id
 		WHERE s.topic_id = $1
@@ -150,7 +150,7 @@ func GetTopicNotifications(ctx context.Context, topicID int64, limit, offset int
 	for rows.Next() {
 		var n models.Notification
 		var metadata []byte
-		if err := rows.Scan(&n.NotificationID, &n.SubscriptionID, &n.SenderID, &n.Title, &n.Message, &metadata, &n.CreatedAt); err != nil {
+		if err := rows.Scan(&n.NotificationID, &n.SubscriptionID, &n.Title, &n.Message, &metadata, &n.CreatedAt); err != nil {
 			return nil, fmt.Errorf("get topic notifications: %w", err)
 		}
 		n.Metadata = metadata
