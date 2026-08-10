@@ -57,7 +57,7 @@ func NotificationHandler(ctx context.Context, req events.APIGatewayV2HTTPRequest
 	case method == http.MethodDelete && strings.HasPrefix(path, "/notification/subscriptions/"):
 		return handleUnsubscribe(ctx, userID, req)
 	case method == http.MethodGet && strings.HasPrefix(path, "/notification/") && strings.HasSuffix(path, "/notifications"):
-		return handleGetTopicNotifications(ctx, req)
+		return handleGetTopicNotifications(ctx, userID, req)
 	default:
 		return notifErrorResponse(http.StatusNotFound, "not found"), nil
 	}
@@ -128,7 +128,7 @@ func handleUnsubscribe(ctx context.Context, userID int64, req events.APIGatewayV
 	return events.APIGatewayV2HTTPResponse{StatusCode: http.StatusNoContent}, nil
 }
 
-func handleGetTopicNotifications(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+func handleGetTopicNotifications(ctx context.Context, userID int64, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	topicID, err := pathParamInt64(req, "topicId", 1)
 	if err != nil {
 		return notifErrorResponse(http.StatusBadRequest, "invalid topic id"), nil
@@ -145,7 +145,7 @@ func handleGetTopicNotifications(ctx context.Context, req events.APIGatewayV2HTT
 
 	limit, offset := parsePagination(req.QueryStringParameters)
 
-	notifications, err := db.GetTopicNotifications(ctx, topicID, limit, offset)
+	notifications, err := db.GetTopicNotifications(ctx, topicID, userID, limit, offset)
 	if err != nil {
 		log.Printf("ERROR get topic notifications: %v", err)
 		return notifErrorResponse(http.StatusInternalServerError, "failed to fetch notifications"), nil

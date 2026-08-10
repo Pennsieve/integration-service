@@ -12,9 +12,9 @@ CREATE TABLE IF NOT EXISTS notifications.subscriptions (
     subscription_id SERIAL      PRIMARY KEY,
     user_id         INTEGER     NOT NULL REFERENCES pennsieve.users (id) ON DELETE CASCADE,
     topic_id        INTEGER     NOT NULL REFERENCES notifications.topics (topic_id) ON DELETE CASCADE,
-    context         JSONB,
+    context         JSONB       NOT NULL DEFAULT '{}'::jsonb,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (user_id, topic_id)
+    UNIQUE (user_id, topic_id, context)
 );
 
 CREATE INDEX IF NOT EXISTS idx_notifications_subscriptions_user_id  ON notifications.subscriptions (user_id);
@@ -23,7 +23,6 @@ CREATE INDEX IF NOT EXISTS idx_notifications_subscriptions_topic_id ON notificat
 CREATE TABLE IF NOT EXISTS notifications.notifications (
     notification_id SERIAL      PRIMARY KEY,
     subscription_id INTEGER     NOT NULL REFERENCES notifications.subscriptions (subscription_id) ON DELETE CASCADE,
-    sender_id       INTEGER     NOT NULL REFERENCES pennsieve.users (id),
     title           TEXT        NOT NULL,
     message         TEXT        NOT NULL,
     metadata        JSONB,

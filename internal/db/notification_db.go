@@ -70,27 +70,52 @@ func GetUserSubscriptions(ctx context.Context, userID int64) ([]models.Subscript
 	return subs, rows.Err()
 }
 
-// CreateSubscription subscribes userID to topicID. Calling it again for a
-// topic the user is already subscribed to updates the stored context rather
-// than creating a duplicate row, since (user_id, topic_id) is unique. The
-// returned bool reports whether a new row was inserted (true) versus an
-// existing row's context being updated (false), so callers can distinguish
+// CreateSubscription subscribes userID to topicID under the given context.
+// A user can hold multiple subscriptions to the same topic as long as their
+// contexts differ (e.g. following a topic for several datasets); calling it
+// again with a context that already matches an existing row updates that
+// row instead of creating a duplicate, since (user_id, topic_id, context) is
+// unique. The returned bool reports whether a new row was inserted (true)
+// versus an existing row being updated (false), so callers can distinguish
 // 201 Created from 200 OK.
+//
+// It also seeds a default notifications.preferences row for userID
+// (email_enabled = true) if one doesn't already exist, so the delivery path
+// always has a preferences row to read.
+//
 // Returns ErrTopicNotFound if topicID doesn't exist.
 func CreateSubscription(ctx context.Context, userID, topicID int64, subscriptionContext []byte) (models.Subscription, bool, error) {
-	const q = `
+	tx, err := dbPool.BeginTx(ctx, nil)
+	if err != nil {
+		return models.Subscription{}, false, fmt.Errorf("create subscription: %w", err)
+	}
+	defer tx.Rollback()
+
+	const subQ = `
 		INSERT INTO notifications.subscriptions (user_id, topic_id, context)
 		VALUES ($1, $2, $3)
-		ON CONFLICT (user_id, topic_id) DO UPDATE SET context = EXCLUDED.context
+		ON CONFLICT (user_id, topic_id, context) DO UPDATE SET context = EXCLUDED.context
 		RETURNING subscription_id, user_id, topic_id, context, created_at, (xmax = 0) AS inserted`
 
-	row := dbPool.QueryRowContext(ctx, q, userID, topicID, nullableJSON(subscriptionContext))
+	row := tx.QueryRowContext(ctx, subQ, userID, topicID, defaultJSON(subscriptionContext))
 	s, inserted, err := scanSubscriptionWithInserted(row)
 	if err != nil {
 		var pqErr *pq.Error
 		if errors.As(err, &pqErr) && pqErr.Code == pqForeignKeyViolation {
 			return models.Subscription{}, false, ErrTopicNotFound
 		}
+		return models.Subscription{}, false, fmt.Errorf("create subscription: %w", err)
+	}
+
+	const prefQ = `
+		INSERT INTO notifications.preferences (user_id)
+		VALUES ($1)
+		ON CONFLICT (user_id) DO NOTHING`
+	if _, err := tx.ExecContext(ctx, prefQ, userID); err != nil {
+		return models.Subscription{}, false, fmt.Errorf("create subscription: seed preferences: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
 		return models.Subscription{}, false, fmt.Errorf("create subscription: %w", err)
 	}
 	return s, inserted, nil
@@ -127,20 +152,22 @@ func TopicExists(ctx context.Context, topicID int64) (bool, error) {
 	return exists, nil
 }
 
-// GetTopicNotifications returns notifications posted to topicID, newest
-// first, bounded by limit/offset. Notifications are scoped to a subscription
-// rather than a topic directly, so this joins through
-// notifications.subscriptions to find rows for that topic.
-func GetTopicNotifications(ctx context.Context, topicID int64, limit, offset int) ([]models.Notification, error) {
+// GetTopicNotifications returns notifications posted to topicID via userID's
+// own subscription(s) to that topic, newest first, bounded by limit/offset.
+// Notifications are scoped to a subscription rather than a topic directly,
+// so this joins through notifications.subscriptions to find rows for that
+// topic, additionally filtering to the caller's own subscriptions so one
+// user can't read notifications generated for another user's subscription.
+func GetTopicNotifications(ctx context.Context, topicID, userID int64, limit, offset int) ([]models.Notification, error) {
 	const q = `
 		SELECT n.notification_id, n.subscription_id, n.title, n.message, n.metadata, n.created_at
 		FROM notifications.notifications n
 		JOIN notifications.subscriptions s ON s.subscription_id = n.subscription_id
-		WHERE s.topic_id = $1
+		WHERE s.topic_id = $1 AND s.user_id = $2
 		ORDER BY n.created_at DESC
-		LIMIT $2 OFFSET $3`
+		LIMIT $3 OFFSET $4`
 
-	rows, err := dbPool.QueryContext(ctx, q, topicID, limit, offset)
+	rows, err := dbPool.QueryContext(ctx, q, topicID, userID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("get topic notifications: %w", err)
 	}
@@ -191,11 +218,11 @@ func scanSubscriptionWithInserted(row subscriptionScanner) (models.Subscription,
 	return s, inserted, nil
 }
 
-// nullableJSON turns an empty/nil JSON payload into a SQL NULL so the
-// context column stores NULL instead of an empty byte slice.
-func nullableJSON(b []byte) interface{} {
+// defaultJSON turns an empty/nil JSON payload into an empty JSON object so
+// the context column, which is NOT NULL, always gets a valid value.
+func defaultJSON(b []byte) []byte {
 	if len(b) == 0 {
-		return nil
+		return []byte("{}")
 	}
 	return b
 }

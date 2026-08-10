@@ -62,10 +62,15 @@ func TestCreateSubscription_Success(t *testing.T) {
 	SetPoolForTest(mockDB)
 
 	now := time.Now()
+	mock.ExpectBegin()
 	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.subscriptions")).
-		WithArgs(int64(42), int64(7), nil).
+		WithArgs(int64(42), int64(7), []byte("{}")).
 		WillReturnRows(sqlmock.NewRows([]string{"subscription_id", "user_id", "topic_id", "context", "created_at", "inserted"}).
-			AddRow(int64(9), int64(42), int64(7), nil, now, true))
+			AddRow(int64(9), int64(42), int64(7), []byte("{}"), now, true))
+	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO notifications.preferences")).
+		WithArgs(int64(42)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
 
 	sub, created, err := CreateSubscription(context.Background(), 42, 7, nil)
 	require.NoError(t, err)
@@ -83,16 +88,21 @@ func TestCreateSubscription_Upsert_UpdatesExisting(t *testing.T) {
 	SetPoolForTest(mockDB)
 
 	now := time.Now()
+	mock.ExpectBegin()
 	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.subscriptions")).
 		WithArgs(int64(42), int64(7), []byte(`{"filter":"critical"}`)).
 		WillReturnRows(sqlmock.NewRows([]string{"subscription_id", "user_id", "topic_id", "context", "created_at", "inserted"}).
 			AddRow(int64(9), int64(42), int64(7), []byte(`{"filter":"critical"}`), now, false))
+	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO notifications.preferences")).
+		WithArgs(int64(42)).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectCommit()
 
 	sub, created, err := CreateSubscription(context.Background(), 42, 7, []byte(`{"filter":"critical"}`))
 	require.NoError(t, err)
 	assert.Equal(t, int64(9), sub.SubscriptionID)
 	assert.JSONEq(t, `{"filter":"critical"}`, string(sub.Context))
-	assert.False(t, created, "re-subscribing to an existing topic should report an update, not a new row")
+	assert.False(t, created, "re-subscribing with a context that already exists should report an update, not a new row")
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -102,9 +112,11 @@ func TestCreateSubscription_TopicNotFound(t *testing.T) {
 	defer mockDB.Close()
 	SetPoolForTest(mockDB)
 
+	mock.ExpectBegin()
 	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.subscriptions")).
-		WithArgs(int64(42), int64(999), nil).
+		WithArgs(int64(42), int64(999), []byte("{}")).
 		WillReturnError(&pq.Error{Code: pqForeignKeyViolation})
+	mock.ExpectRollback()
 
 	_, _, err = CreateSubscription(context.Background(), 42, 999, nil)
 	require.Error(t, err)
@@ -135,8 +147,10 @@ func TestDeleteSubscription_WrongUser(t *testing.T) {
 	SetPoolForTest(mockDB)
 
 	// subscription 9 belongs to user 42; user 999 attempting to delete it
-	// must not match any row, since the query is scoped by user_id.
-	mock.ExpectExec(regexp.QuoteMeta("DELETE FROM notifications.subscriptions")).
+	// must not match any row, since the query is scoped by user_id. Pin the
+	// full WHERE clause (not just the DELETE prefix) so a regression that
+	// drops the "AND user_id = $2" scope would fail this test.
+	mock.ExpectExec(regexp.QuoteMeta("DELETE FROM notifications.subscriptions WHERE subscription_id = $1 AND user_id = $2")).
 		WithArgs(int64(9), int64(999)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
@@ -185,13 +199,15 @@ func TestGetTopicNotifications(t *testing.T) {
 	SetPoolForTest(mockDB)
 
 	now := time.Now()
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT n.notification_id, n.subscription_id, n.title, n.message, n.metadata, n.created_at FROM notifications.notifications n JOIN notifications.subscriptions s ON s.subscription_id = n.subscription_id WHERE s.topic_id = $1")).
-		WithArgs(int64(7), 50, 0).
+	// Pin the full WHERE clause (not just a prefix) so a regression that
+	// drops the "AND s.user_id = $2" scope would fail this test.
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT n.notification_id, n.subscription_id, n.title, n.message, n.metadata, n.created_at FROM notifications.notifications n JOIN notifications.subscriptions s ON s.subscription_id = n.subscription_id WHERE s.topic_id = $1 AND s.user_id = $2")).
+		WithArgs(int64(7), int64(42), 50, 0).
 		WillReturnRows(sqlmock.NewRows([]string{"notification_id", "subscription_id", "title", "message", "metadata", "created_at"}).
 			AddRow(int64(1), int64(20), "Dataset published", "dataset 12 was published", []byte(`{"datasetId":12}`), now).
 			AddRow(int64(2), int64(21), "Dataset deleted", "dataset 5 was deleted", nil, now))
 
-	notifications, err := GetTopicNotifications(context.Background(), 7, 50, 0)
+	notifications, err := GetTopicNotifications(context.Background(), 7, 42, 50, 0)
 	require.NoError(t, err)
 	require.Len(t, notifications, 2)
 	assert.JSONEq(t, `{"datasetId":12}`, string(notifications[0].Metadata))
