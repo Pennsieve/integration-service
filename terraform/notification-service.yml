@@ -1,0 +1,312 @@
+#file: noinspection MaybeTerraformTemplateInspection
+# NOTE: like terraform/integration-service.yml, this spec is documentation
+# rather than a build input — the API Gateway in gateway.tf is wired up via
+# individual aws_apigatewayv2_* resources (see the "Notifications API"
+# section of gateway.tf), not an imported OpenAPI body, and there is no
+# .github/workflows/rdme-openapi.yml in this repo yet. It exists so that
+# if/when integration-service adopts the org-standard OpenAPI-driven gateway
+# + ReadMe publishing pattern, the notification/subscription API is already
+# documented.
+#
+# Auth assumption: unlike /webhook (shared-secret, internal-only), these
+# endpoints are user-facing and sit behind a JWT authorizer (see
+# aws_apigatewayv2_authorizer.pennsieve_jwt_authorizer in gateway.tf) pointed
+# at the same issuer/audience used to authorize other Pennsieve services,
+# which places the caller's Pennsieve user id in the "user_id" claim consumed
+# by the Lambda handler.
+openapi: 3.0.1
+info:
+  version: "1.0"
+  title: Integration Service - Notifications
+  description: |
+    User subscription and notification retrieval API for the Integration
+    Service's email/notification system.
+  termsOfService: https://docs.pennsieve.io/page/pennsieve-terms-of-use
+  contact:
+    name: Pennsieve Support
+    email: support@pennsieve.net
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+servers:
+  - url: https://api2.pennsieve.io
+    description: Production server
+  - url: https://api2.pennsieve.net
+    description: Development server
+externalDocs:
+  description: Find more info here
+  url: https://docs.pennsieve.io
+tags:
+  - name: Notifications
+    description: Topics, subscriptions, and notifications
+
+components:
+  securitySchemes:
+    bearer_auth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    Unauthorized:
+      description: Missing or invalid bearer token
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Error:
+      description: Unexpected error
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+  parameters:
+    topicId:
+      name: topicId
+      in: path
+      required: true
+      description: Numeric id of the topic
+      schema: { type: integer, format: int64 }
+    subscriptionId:
+      name: subscriptionId
+      in: path
+      required: true
+      description: Numeric id of the subscription
+      schema: { type: integer, format: int64 }
+    limit:
+      name: limit
+      in: query
+      required: false
+      description: Maximum number of notifications to return
+      schema: { type: integer, format: int32, default: 50, minimum: 1, maximum: 200 }
+    offset:
+      name: offset
+      in: query
+      required: false
+      description: Number of notifications to skip, for pagination
+      schema: { type: integer, format: int32, default: 0, minimum: 0 }
+  schemas:
+    Error:
+      type: object
+      properties:
+        code:
+          type: integer
+        message:
+          type: string
+      required: [code, message]
+    Topic:
+      type: object
+      properties:
+        topic_id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        description:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+      required: [topic_id, name, created_at]
+    Subscription:
+      type: object
+      properties:
+        subscription_id:
+          type: integer
+          format: int64
+        user_id:
+          type: integer
+          format: int64
+        topic_id:
+          type: integer
+          format: int64
+        context:
+          type: object
+          description: Free-form JSON context for the subscription (e.g. filters).
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+      required: [subscription_id, user_id, topic_id, created_at]
+    SubscribeRequest:
+      type: object
+      properties:
+        context:
+          type: object
+          description: Optional free-form JSON context for the subscription.
+          nullable: true
+    Notification:
+      type: object
+      properties:
+        notification_id:
+          type: integer
+          format: int64
+        subscription_id:
+          type: integer
+          format: int64
+        title:
+          type: string
+        message:
+          type: string
+        metadata:
+          type: object
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+      required: [notification_id, subscription_id, title, message, created_at]
+
+paths:
+  /notification/topics:
+    get:
+      summary: Get available topics
+      description: Returns every topic a user may subscribe to.
+      operationId: getTopics
+      tags: [Notifications]
+      security:
+        - bearer_auth: [ ]
+      responses:
+        '200':
+          description: List of topics
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Topic' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '5XX':
+          $ref: '#/components/responses/Error'
+
+  /notification/subscriptions:
+    get:
+      summary: Get the caller's subscriptions
+      description: Returns every topic the authenticated user is currently subscribed to.
+      operationId: getUserSubscriptions
+      tags: [Notifications]
+      security:
+        - bearer_auth: [ ]
+      responses:
+        '200':
+          description: List of the caller's subscriptions
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Subscription' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '5XX':
+          $ref: '#/components/responses/Error'
+
+  /notification/subscriptions/{topicId}:
+    post:
+      summary: Subscribe to a topic
+      description: |
+        Subscribes the authenticated user to the given topic. Calling this
+        again for a topic the user is already subscribed to updates the
+        subscription's context rather than creating a duplicate.
+      operationId: subscribeToTopic
+      tags: [Notifications]
+      security:
+        - bearer_auth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/topicId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubscribeRequest' }
+      responses:
+        '201':
+          description: New subscription created
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Subscription' }
+        '200':
+          description: >-
+            Caller was already subscribed to this topic; the subscription's
+            context was updated in place (upsert) rather than creating a
+            duplicate row.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Subscription' }
+        '400':
+          description: Invalid topicId, malformed base64 body, or body is not valid JSON
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Topic does not exist
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '5XX':
+          $ref: '#/components/responses/Error'
+
+  /notification/subscriptions/{subscriptionId}:
+    delete:
+      summary: Unsubscribe from a topic
+      description: |
+        Deletes the caller's subscription by its subscription id. Deleting by
+        subscription id (rather than topic id) is unambiguous and matches the
+        Subscription table's own primary key.
+      operationId: unsubscribeFromTopic
+      tags: [Notifications]
+      security:
+        - bearer_auth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/subscriptionId'
+      responses:
+        '204':
+          description: Subscription deleted
+        '400':
+          description: Invalid subscriptionId
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '5XX':
+          $ref: '#/components/responses/Error'
+
+  /notification/{topicId}/notifications:
+    get:
+      summary: Retrieve notifications for a topic
+      description: Returns notifications posted to the given topic, newest first.
+      operationId: getTopicNotifications
+      tags: [Notifications]
+      security:
+        - bearer_auth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/topicId'
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+      responses:
+        '200':
+          description: List of notifications for the topic
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Notification' }
+        '400':
+          description: Invalid topicId
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Topic does not exist
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '5XX':
+          $ref: '#/components/responses/Error'
