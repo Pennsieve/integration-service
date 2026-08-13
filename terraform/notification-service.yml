@@ -9,11 +9,11 @@
 # documented.
 #
 # Auth assumption: unlike /webhook (shared-secret, internal-only), these
-# endpoints are user-facing and sit behind a JWT authorizer (see
-# aws_apigatewayv2_authorizer.pennsieve_jwt_authorizer in gateway.tf) pointed
-# at the same issuer/audience used to authorize other Pennsieve services,
-# which places the caller's Pennsieve user id in the "user_id" claim consumed
-# by the Lambda handler.
+# endpoints are user-facing and sit behind the shared Pennsieve Lambda REQUEST
+# authorizer (see aws_apigatewayv2_authorizer.pennsieve_lambda_authorizer in
+# gateway.tf), which resolves the caller's bearer token to a Pennsieve user
+# and surfaces it as the "user_claim" context key consumed by the Lambda
+# handler.
 openapi: 3.0.1
 info:
   version: "1.0"

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"regexp"
+	"strconv"
 	"testing"
 	"time"
 
@@ -31,9 +32,17 @@ func notifReq(method, rawPath string, pathParams map[string]string, userID strin
 		},
 	}
 	if userID != "" {
+		id, err := strconv.ParseInt(userID, 10, 64)
+		if err != nil {
+			panic(err)
+		}
 		req.RequestContext.Authorizer = &events.APIGatewayV2HTTPRequestContextAuthorizerDescription{
-			JWT: &events.APIGatewayV2HTTPRequestContextAuthorizerJWTDescription{
-				Claims: map[string]string{"user_id": userID},
+			Lambda: map[string]interface{}{
+				"user_claim": map[string]interface{}{
+					"Id":           float64(id),
+					"NodeId":       "N:user:test",
+					"IsSuperAdmin": false,
+				},
 			},
 		}
 	}
@@ -107,14 +116,17 @@ func TestNotificationHandler_GetSubscriptions_DBError(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 }
 
-func TestNotificationHandler_InvalidUserIDClaim(t *testing.T) {
+func TestNotificationHandler_MissingUserClaim(t *testing.T) {
 	aws.AwsOnce.Do(func() {})
 	mockDB, _, err := sqlmock.New()
 	require.NoError(t, err)
 	defer mockDB.Close()
 	db.SetPoolForTest(mockDB)
 
-	req := notifReq(http.MethodGet, "/notification/topics", nil, "not-a-number")
+	req := notifReq(http.MethodGet, "/notification/topics", nil, "")
+	req.RequestContext.Authorizer = &events.APIGatewayV2HTTPRequestContextAuthorizerDescription{
+		Lambda: map[string]interface{}{},
+	}
 	resp, err := NotificationHandler(context.Background(), req)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
