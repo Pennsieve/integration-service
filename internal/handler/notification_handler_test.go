@@ -7,7 +7,6 @@ import (
 	"errors"
 	"net/http"
 	"regexp"
-	"strconv"
 	"testing"
 	"time"
 
@@ -21,7 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func notifReq(method, rawPath string, pathParams map[string]string, userID string) events.APIGatewayV2HTTPRequest {
+func notifReq(method, rawPath string, pathParams map[string]string, userID *int64) events.APIGatewayV2HTTPRequest {
 	req := events.APIGatewayV2HTTPRequest{
 		RawPath:        rawPath,
 		PathParameters: pathParams,
@@ -31,15 +30,11 @@ func notifReq(method, rawPath string, pathParams map[string]string, userID strin
 			},
 		},
 	}
-	if userID != "" {
-		id, err := strconv.ParseInt(userID, 10, 64)
-		if err != nil {
-			panic(err)
-		}
+	if userID != nil {
 		req.RequestContext.Authorizer = &events.APIGatewayV2HTTPRequestContextAuthorizerDescription{
 			Lambda: map[string]interface{}{
 				"user_claim": map[string]interface{}{
-					"Id":           float64(id),
+					"Id":           float64(*userID),
 					"NodeId":       "N:user:test",
 					"IsSuperAdmin": false,
 				},
@@ -49,6 +44,10 @@ func notifReq(method, rawPath string, pathParams map[string]string, userID strin
 	return req
 }
 
+func authedNotifReq(method, rawPath string, pathParams map[string]string, userID int64) events.APIGatewayV2HTTPRequest {
+	return notifReq(method, rawPath, pathParams, &userID)
+}
+
 func TestNotificationHandler_Unauthorized(t *testing.T) {
 	aws.AwsOnce.Do(func() {})
 	mockDB, _, err := sqlmock.New()
@@ -56,7 +55,7 @@ func TestNotificationHandler_Unauthorized(t *testing.T) {
 	defer mockDB.Close()
 	db.SetPoolForTest(mockDB)
 
-	resp, err := NotificationHandler(context.Background(), notifReq(http.MethodGet, "/notification/topics", nil, ""))
+	resp, err := NotificationHandler(context.Background(), notifReq(http.MethodGet, "/notification/topics", nil, nil))
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 }
@@ -73,7 +72,7 @@ func TestNotificationHandler_GetTopics(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"topic_id", "name", "description", "created_at"}).
 			AddRow(int64(1), "datasets", "dataset events", now))
 
-	resp, err := NotificationHandler(context.Background(), notifReq(http.MethodGet, "/notification/topics", nil, "42"))
+	resp, err := NotificationHandler(context.Background(), authedNotifReq(http.MethodGet, "/notification/topics", nil, 42))
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
@@ -94,7 +93,7 @@ func TestNotificationHandler_GetSubscriptions(t *testing.T) {
 		WithArgs(int64(42)).
 		WillReturnRows(sqlmock.NewRows([]string{"subscription_id", "user_id", "topic_id", "context", "created_at"}))
 
-	resp, err := NotificationHandler(context.Background(), notifReq(http.MethodGet, "/notification/subscriptions", nil, "42"))
+	resp, err := NotificationHandler(context.Background(), authedNotifReq(http.MethodGet, "/notification/subscriptions", nil, 42))
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.JSONEq(t, `[]`, resp.Body)
@@ -111,7 +110,7 @@ func TestNotificationHandler_GetSubscriptions_DBError(t *testing.T) {
 		WithArgs(int64(42)).
 		WillReturnError(errors.New("connection reset"))
 
-	resp, err := NotificationHandler(context.Background(), notifReq(http.MethodGet, "/notification/subscriptions", nil, "42"))
+	resp, err := NotificationHandler(context.Background(), authedNotifReq(http.MethodGet, "/notification/subscriptions", nil, 42))
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 }
@@ -123,7 +122,7 @@ func TestNotificationHandler_MissingUserClaim(t *testing.T) {
 	defer mockDB.Close()
 	db.SetPoolForTest(mockDB)
 
-	req := notifReq(http.MethodGet, "/notification/topics", nil, "")
+	req := notifReq(http.MethodGet, "/notification/topics", nil, nil)
 	req.RequestContext.Authorizer = &events.APIGatewayV2HTTPRequestContextAuthorizerDescription{
 		Lambda: map[string]interface{}{},
 	}
@@ -150,7 +149,7 @@ func TestNotificationHandler_Subscribe(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 
-	req := notifReq(http.MethodPost, "/notification/subscriptions/7", map[string]string{"topicId": "7"}, "42")
+	req := authedNotifReq(http.MethodPost, "/notification/subscriptions/7", map[string]string{"topicId": "7"}, 42)
 	resp, err := NotificationHandler(context.Background(), req)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusCreated, resp.StatusCode)
@@ -178,7 +177,7 @@ func TestNotificationHandler_Subscribe_Upsert(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectCommit()
 
-	req := notifReq(http.MethodPost, "/notification/subscriptions/7", map[string]string{"topicId": "7"}, "42")
+	req := authedNotifReq(http.MethodPost, "/notification/subscriptions/7", map[string]string{"topicId": "7"}, 42)
 	resp, err := NotificationHandler(context.Background(), req)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode, "re-subscribing to an already-subscribed topic should return 200, not 201")
@@ -206,7 +205,7 @@ func TestNotificationHandler_Subscribe_Base64Body(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 
-	req := notifReq(http.MethodPost, "/notification/subscriptions/7", map[string]string{"topicId": "7"}, "42")
+	req := authedNotifReq(http.MethodPost, "/notification/subscriptions/7", map[string]string{"topicId": "7"}, 42)
 	req.Body = base64.StdEncoding.EncodeToString([]byte(`{"context":{"filter":"critical"}}`))
 	req.IsBase64Encoded = true
 	resp, err := NotificationHandler(context.Background(), req)
@@ -225,7 +224,7 @@ func TestNotificationHandler_Subscribe_InvalidBase64(t *testing.T) {
 	defer mockDB.Close()
 	db.SetPoolForTest(mockDB)
 
-	req := notifReq(http.MethodPost, "/notification/subscriptions/7", map[string]string{"topicId": "7"}, "42")
+	req := authedNotifReq(http.MethodPost, "/notification/subscriptions/7", map[string]string{"topicId": "7"}, 42)
 	req.Body = "not-valid-base64!!"
 	req.IsBase64Encoded = true
 	resp, err := NotificationHandler(context.Background(), req)
@@ -240,7 +239,7 @@ func TestNotificationHandler_Subscribe_InvalidJSON(t *testing.T) {
 	defer mockDB.Close()
 	db.SetPoolForTest(mockDB)
 
-	req := notifReq(http.MethodPost, "/notification/subscriptions/7", map[string]string{"topicId": "7"}, "42")
+	req := authedNotifReq(http.MethodPost, "/notification/subscriptions/7", map[string]string{"topicId": "7"}, 42)
 	req.Body = "{not json"
 	resp, err := NotificationHandler(context.Background(), req)
 	require.NoError(t, err)
@@ -254,7 +253,7 @@ func TestNotificationHandler_Subscribe_InvalidTopicID(t *testing.T) {
 	defer mockDB.Close()
 	db.SetPoolForTest(mockDB)
 
-	req := notifReq(http.MethodPost, "/notification/subscriptions/abc", nil, "42")
+	req := authedNotifReq(http.MethodPost, "/notification/subscriptions/abc", nil, 42)
 	resp, err := NotificationHandler(context.Background(), req)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
@@ -273,7 +272,7 @@ func TestNotificationHandler_Subscribe_DBError(t *testing.T) {
 		WillReturnError(errors.New("connection reset"))
 	mock.ExpectRollback()
 
-	req := notifReq(http.MethodPost, "/notification/subscriptions/7", map[string]string{"topicId": "7"}, "42")
+	req := authedNotifReq(http.MethodPost, "/notification/subscriptions/7", map[string]string{"topicId": "7"}, 42)
 	resp, err := NotificationHandler(context.Background(), req)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
@@ -292,7 +291,7 @@ func TestNotificationHandler_Subscribe_TopicNotFound(t *testing.T) {
 		WillReturnError(&pq.Error{Code: "23503"})
 	mock.ExpectRollback()
 
-	req := notifReq(http.MethodPost, "/notification/subscriptions/999", map[string]string{"topicId": "999"}, "42")
+	req := authedNotifReq(http.MethodPost, "/notification/subscriptions/999", map[string]string{"topicId": "999"}, 42)
 	resp, err := NotificationHandler(context.Background(), req)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
@@ -309,7 +308,7 @@ func TestNotificationHandler_Unsubscribe(t *testing.T) {
 		WithArgs(int64(9), int64(42)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
-	req := notifReq(http.MethodDelete, "/notification/subscriptions/9", map[string]string{"subscriptionId": "9"}, "42")
+	req := authedNotifReq(http.MethodDelete, "/notification/subscriptions/9", map[string]string{"subscriptionId": "9"}, 42)
 	resp, err := NotificationHandler(context.Background(), req)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
@@ -326,7 +325,7 @@ func TestNotificationHandler_Unsubscribe_NotFound(t *testing.T) {
 		WithArgs(int64(9), int64(42)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
-	req := notifReq(http.MethodDelete, "/notification/subscriptions/9", map[string]string{"subscriptionId": "9"}, "42")
+	req := authedNotifReq(http.MethodDelete, "/notification/subscriptions/9", map[string]string{"subscriptionId": "9"}, 42)
 	resp, err := NotificationHandler(context.Background(), req)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
@@ -348,7 +347,7 @@ func TestNotificationHandler_Unsubscribe_WrongUser(t *testing.T) {
 		WithArgs(int64(9), int64(999)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 
-	req := notifReq(http.MethodDelete, "/notification/subscriptions/9", map[string]string{"subscriptionId": "9"}, "999")
+	req := authedNotifReq(http.MethodDelete, "/notification/subscriptions/9", map[string]string{"subscriptionId": "9"}, 999)
 	resp, err := NotificationHandler(context.Background(), req)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
@@ -361,7 +360,7 @@ func TestNotificationHandler_Unsubscribe_InvalidSubscriptionID(t *testing.T) {
 	defer mockDB.Close()
 	db.SetPoolForTest(mockDB)
 
-	req := notifReq(http.MethodDelete, "/notification/subscriptions/abc", nil, "42")
+	req := authedNotifReq(http.MethodDelete, "/notification/subscriptions/abc", nil, 42)
 	resp, err := NotificationHandler(context.Background(), req)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
@@ -378,7 +377,7 @@ func TestNotificationHandler_Unsubscribe_DBError(t *testing.T) {
 		WithArgs(int64(9), int64(42)).
 		WillReturnError(errors.New("connection reset"))
 
-	req := notifReq(http.MethodDelete, "/notification/subscriptions/9", map[string]string{"subscriptionId": "9"}, "42")
+	req := authedNotifReq(http.MethodDelete, "/notification/subscriptions/9", map[string]string{"subscriptionId": "9"}, 42)
 	resp, err := NotificationHandler(context.Background(), req)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
@@ -400,7 +399,7 @@ func TestNotificationHandler_GetTopicNotifications(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"notification_id", "subscription_id", "title", "message", "metadata", "created_at"}).
 			AddRow(int64(1), int64(20), "Dataset published", "dataset 12 was published", nil, now))
 
-	req := notifReq(http.MethodGet, "/notification/7/notifications", map[string]string{"topicId": "7"}, "42")
+	req := authedNotifReq(http.MethodGet, "/notification/7/notifications", map[string]string{"topicId": "7"}, 42)
 	resp, err := NotificationHandler(context.Background(), req)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
@@ -422,7 +421,7 @@ func TestNotificationHandler_GetTopicNotifications_TopicNotFound(t *testing.T) {
 		WithArgs(int64(999)).
 		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
 
-	req := notifReq(http.MethodGet, "/notification/999/notifications", map[string]string{"topicId": "999"}, "42")
+	req := authedNotifReq(http.MethodGet, "/notification/999/notifications", map[string]string{"topicId": "999"}, 42)
 	resp, err := NotificationHandler(context.Background(), req)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
@@ -462,7 +461,7 @@ func TestNotificationHandler_NotFoundRoute(t *testing.T) {
 	defer mockDB.Close()
 	db.SetPoolForTest(mockDB)
 
-	req := notifReq(http.MethodGet, "/notification/unknown", nil, "42")
+	req := authedNotifReq(http.MethodGet, "/notification/unknown", nil, 42)
 	resp, err := NotificationHandler(context.Background(), req)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
