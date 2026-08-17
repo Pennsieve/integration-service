@@ -20,8 +20,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func notifReq(method, rawPath string, pathParams map[string]string, userID *int64) events.APIGatewayV2HTTPRequest {
-	req := events.APIGatewayV2HTTPRequest{
+func unauthedNotifReq(method, rawPath string, pathParams map[string]string) events.APIGatewayV2HTTPRequest {
+	return events.APIGatewayV2HTTPRequest{
 		RawPath:        rawPath,
 		PathParameters: pathParams,
 		RequestContext: events.APIGatewayV2HTTPRequestContext{
@@ -30,22 +30,28 @@ func notifReq(method, rawPath string, pathParams map[string]string, userID *int6
 			},
 		},
 	}
-	if userID != nil {
-		req.RequestContext.Authorizer = &events.APIGatewayV2HTTPRequestContextAuthorizerDescription{
-			Lambda: map[string]interface{}{
-				"user_claim": map[string]interface{}{
-					"Id":           float64(*userID),
-					"NodeId":       "N:user:test",
-					"IsSuperAdmin": false,
-				},
-			},
-		}
-	}
-	return req
+
 }
 
 func authedNotifReq(method, rawPath string, pathParams map[string]string, userID int64) events.APIGatewayV2HTTPRequest {
-	return notifReq(method, rawPath, pathParams, &userID)
+	return events.APIGatewayV2HTTPRequest{
+		RawPath:        rawPath,
+		PathParameters: pathParams,
+		RequestContext: events.APIGatewayV2HTTPRequestContext{
+			HTTP: events.APIGatewayV2HTTPRequestContextHTTPDescription{
+				Method: method,
+			},
+			Authorizer: &events.APIGatewayV2HTTPRequestContextAuthorizerDescription{
+				Lambda: map[string]interface{}{
+					"user_claim": map[string]interface{}{
+						"Id":           float64(userID),
+						"NodeId":       "N:user:test",
+						"IsSuperAdmin": false,
+					},
+				},
+			},
+		},
+	}
 }
 
 func TestNotificationHandler_Unauthorized(t *testing.T) {
@@ -55,7 +61,7 @@ func TestNotificationHandler_Unauthorized(t *testing.T) {
 	defer mockDB.Close()
 	db.SetPoolForTest(mockDB)
 
-	resp, err := NotificationHandler(context.Background(), notifReq(http.MethodGet, "/notification/topics", nil, nil))
+	resp, err := NotificationHandler(context.Background(), unauthedNotifReq(http.MethodGet, "/notification/topics", nil))
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 }
@@ -122,7 +128,7 @@ func TestNotificationHandler_MissingUserClaim(t *testing.T) {
 	defer mockDB.Close()
 	db.SetPoolForTest(mockDB)
 
-	req := notifReq(http.MethodGet, "/notification/topics", nil, nil)
+	req := unauthedNotifReq(http.MethodGet, "/notification/topics", nil)
 	req.RequestContext.Authorizer = &events.APIGatewayV2HTTPRequestContextAuthorizerDescription{
 		Lambda: map[string]interface{}{},
 	}
