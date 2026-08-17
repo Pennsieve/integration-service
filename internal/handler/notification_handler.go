@@ -15,6 +15,7 @@ import (
 	"github.com/Pennsieve/integration-service/internal/db"
 	"github.com/Pennsieve/integration-service/internal/models"
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/pennsieve/pennsieve-go-core/pkg/authorizer"
 )
 
 const (
@@ -26,9 +27,10 @@ const (
 // retrieval API described in terraform/notification-service.yml.
 //
 // NOTE: unlike WebhookHandler (shared-secret, internal-only), these routes
-// are user-facing. The caller's Pennsieve user id is assumed to arrive via a
-// JWT authorizer attached to the API Gateway route, surfaced here as the
-// "user_id" claim on req.RequestContext.Authorizer.JWT.Claims.
+// are user-facing. The caller's Pennsieve user id arrives via the shared
+// Pennsieve Lambda REQUEST authorizer attached to the API Gateway route,
+// surfaced here as the "user_claim" context key on
+// req.RequestContext.Authorizer.Lambda.
 func NotificationHandler(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	aws.AwsOnce.Do(func() {
 		aws.InitAWS(ctx)
@@ -153,18 +155,18 @@ func handleGetTopicNotifications(ctx context.Context, userID int64, req events.A
 	return notifJSONResponse(http.StatusOK, nonNilNotifications(notifications)), nil
 }
 
-// authenticatedUserID extracts the caller's user id from the "user_id" JWT
-// claim attached by the API Gateway authorizer.
+// authenticatedUserID extracts the caller's user id from the "user_claim"
+// context key attached by the shared Pennsieve Lambda authorizer.
 func authenticatedUserID(req events.APIGatewayV2HTTPRequest) (int64, error) {
-	authorizer := req.RequestContext.Authorizer
-	if authorizer == nil || authorizer.JWT == nil {
-		return 0, fmt.Errorf("no JWT authorizer context")
+	auth := req.RequestContext.Authorizer
+	if auth == nil || auth.Lambda == nil {
+		return 0, fmt.Errorf("no lambda authorizer context")
 	}
-	claim, ok := authorizer.JWT.Claims["user_id"]
-	if !ok {
-		return 0, fmt.Errorf("missing user_id claim")
+	claims := authorizer.ParseClaims(auth.Lambda)
+	if claims == nil || claims.UserClaim == nil {
+		return 0, fmt.Errorf("missing user_claim")
 	}
-	return strconv.ParseInt(claim, 10, 64)
+	return claims.UserClaim.Id, nil
 }
 
 // pathParamInt64 reads a path parameter by key, falling back to the

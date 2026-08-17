@@ -77,20 +77,22 @@ resource "aws_lambda_permission" "webhook_receiver_apigateway_permission" {
 # Notifications API — terraform/notification-service.yml
 ##################################################
 
-# Validates the caller's bearer token and surfaces its claims (including
-# "user_id", read by handler.NotificationHandler) on
-# req.RequestContext.Authorizer.JWT.Claims. Points at the same JWT
-# issuer/audience used to authorize other Pennsieve services.
-resource "aws_apigatewayv2_authorizer" "pennsieve_jwt_authorizer" {
-  api_id           = aws_apigatewayv2_api.integration_service_api.id
-  authorizer_type  = "JWT"
-  identity_sources = ["$request.header.Authorization"]
-  name             = "${var.environment_name}-${var.service_name}-pennsieve-jwt-authorizer"
-
-  jwt_configuration {
-    audience = var.jwt_authorizer_audience
-    issuer   = var.jwt_authorizer_issuer
-  }
+# Delegates to the shared Pennsieve Lambda REQUEST authorizer (see
+# pennsieve-go-api's lambda/authorizer) rather than a native JWT authorizer:
+# the "user_claim" that handler.NotificationHandler reads is minted by that
+# Lambda after resolving the caller's Cognito identity against Postgres, not
+# present in any raw Cognito token claim. Surfaced on
+# req.RequestContext.Authorizer.Lambda["user_claim"].
+resource "aws_apigatewayv2_authorizer" "pennsieve_lambda_authorizer" {
+  api_id                            = aws_apigatewayv2_api.integration_service_api.id
+  name                              = "${var.environment_name}-${var.service_name}-pennsieve-lambda-authorizer"
+  authorizer_type                   = "REQUEST"
+  authorizer_uri                    = data.terraform_remote_state.api_gateway.outputs.authorizer_lambda_invoke_uri
+  authorizer_credentials_arn        = data.terraform_remote_state.api_gateway.outputs.authorizer_invocation_role
+  authorizer_payload_format_version = "2.0"
+  enable_simple_responses           = true
+  authorizer_result_ttl_in_seconds  = 300
+  identity_sources                  = ["$request.header.Authorization"]
 }
 
 resource "aws_apigatewayv2_integration" "notification_integration" {
@@ -105,40 +107,40 @@ resource "aws_apigatewayv2_route" "notification_get_topics_route" {
   api_id             = aws_apigatewayv2_api.integration_service_api.id
   route_key          = "GET /notification/topics"
   target             = "integrations/${aws_apigatewayv2_integration.notification_integration.id}"
-  authorization_type = "JWT"
-  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_jwt_authorizer.id
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_lambda_authorizer.id
 }
 
 resource "aws_apigatewayv2_route" "notification_get_subscriptions_route" {
   api_id             = aws_apigatewayv2_api.integration_service_api.id
   route_key          = "GET /notification/subscriptions"
   target             = "integrations/${aws_apigatewayv2_integration.notification_integration.id}"
-  authorization_type = "JWT"
-  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_jwt_authorizer.id
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_lambda_authorizer.id
 }
 
 resource "aws_apigatewayv2_route" "notification_subscribe_route" {
   api_id             = aws_apigatewayv2_api.integration_service_api.id
   route_key          = "POST /notification/subscriptions/{topicId}"
   target             = "integrations/${aws_apigatewayv2_integration.notification_integration.id}"
-  authorization_type = "JWT"
-  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_jwt_authorizer.id
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_lambda_authorizer.id
 }
 
 resource "aws_apigatewayv2_route" "notification_unsubscribe_route" {
   api_id             = aws_apigatewayv2_api.integration_service_api.id
   route_key          = "DELETE /notification/subscriptions/{subscriptionId}"
   target             = "integrations/${aws_apigatewayv2_integration.notification_integration.id}"
-  authorization_type = "JWT"
-  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_jwt_authorizer.id
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_lambda_authorizer.id
 }
 
 resource "aws_apigatewayv2_route" "notification_get_topic_notifications_route" {
   api_id             = aws_apigatewayv2_api.integration_service_api.id
   route_key          = "GET /notification/{topicId}/notifications"
   target             = "integrations/${aws_apigatewayv2_integration.notification_integration.id}"
-  authorization_type = "JWT"
-  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_jwt_authorizer.id
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_lambda_authorizer.id
 }
 
 resource "aws_lambda_permission" "notification_apigateway_permission" {
