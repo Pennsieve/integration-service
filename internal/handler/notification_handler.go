@@ -43,6 +43,7 @@ func NotificationHandler(ctx context.Context, req events.APIGatewayV2HTTPRequest
 
 	userID, err := authenticatedUserID(req)
 	if err != nil {
+		log.Printf("ERROR auth: %v; authorizer=%+v", err, req.RequestContext.Authorizer)
 		return notifErrorResponse(http.StatusUnauthorized, "missing or invalid bearer token"), nil
 	}
 
