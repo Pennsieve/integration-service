@@ -44,11 +44,12 @@ resource "aws_cloudwatch_log_group" "integration_service_api_gateway_log_group" 
 }
 
 resource "aws_apigatewayv2_integration" "webhook_integration" {
-  api_id             = aws_apigatewayv2_api.integration_service_api.id
-  integration_type   = "AWS_PROXY"
-  connection_type    = "INTERNET"
-  integration_method = "POST"
-  integration_uri    = aws_lambda_function.webhook_receiver_lambda.invoke_arn
+  api_id                 = aws_apigatewayv2_api.integration_service_api.id
+  integration_type       = "AWS_PROXY"
+  connection_type        = "INTERNET"
+  integration_method     = "POST"
+  integration_uri        = aws_lambda_function.webhook_receiver_lambda.invoke_arn
+  payload_format_version = "2.0"
 }
 
 resource "aws_apigatewayv2_route" "webhook_route" {
@@ -96,11 +97,12 @@ resource "aws_apigatewayv2_authorizer" "pennsieve_lambda_authorizer" {
 }
 
 resource "aws_apigatewayv2_integration" "notification_integration" {
-  api_id             = aws_apigatewayv2_api.integration_service_api.id
-  integration_type   = "AWS_PROXY"
-  connection_type    = "INTERNET"
-  integration_method = "POST"
-  integration_uri    = aws_lambda_function.notification_lambda.invoke_arn
+  api_id                 = aws_apigatewayv2_api.integration_service_api.id
+  integration_type       = "AWS_PROXY"
+  connection_type        = "INTERNET"
+  integration_method     = "POST"
+  integration_uri        = aws_lambda_function.notification_lambda.invoke_arn
+  payload_format_version = "2.0"
 }
 
 resource "aws_apigatewayv2_route" "notification_get_topics_route" {
