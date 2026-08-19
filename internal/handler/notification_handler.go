@@ -36,14 +36,16 @@ func NotificationHandler(ctx context.Context, req events.APIGatewayV2HTTPRequest
 		aws.InitAWS(ctx)
 	})
 
+	requestID := req.RequestContext.RequestID
+
 	if err := db.EnsureDB(ctx); err != nil {
-		log.Printf("ERROR db init: %v", err)
+		log.Printf("ERROR db init: %v; request_id=%s", err, requestID)
 		return notifErrorResponse(http.StatusInternalServerError, "database unavailable"), nil
 	}
 
 	userID, err := authenticatedUserID(req)
 	if err != nil {
-		log.Printf("ERROR auth: %v; authorizer=%+v", err, req.RequestContext.Authorizer)
+		log.Printf("ERROR auth: %v; authorizer=%+v; request_id=%s", err, req.RequestContext.Authorizer, requestID)
 		return notifErrorResponse(http.StatusUnauthorized, "missing or invalid bearer token"), nil
 	}
 
@@ -52,7 +54,7 @@ func NotificationHandler(ctx context.Context, req events.APIGatewayV2HTTPRequest
 
 	switch {
 	case method == http.MethodGet && path == "/notification/topics":
-		return handleGetTopics(ctx)
+		return handleGetTopics(ctx, requestID)
 	case method == http.MethodGet && path == "/notification/subscriptions":
 		return handleGetSubscriptions(ctx, userID)
 	case method == http.MethodPost && strings.HasPrefix(path, "/notification/subscriptions/"):
@@ -66,10 +68,10 @@ func NotificationHandler(ctx context.Context, req events.APIGatewayV2HTTPRequest
 	}
 }
 
-func handleGetTopics(ctx context.Context) (events.APIGatewayV2HTTPResponse, error) {
+func handleGetTopics(ctx context.Context, requestID string) (events.APIGatewayV2HTTPResponse, error) {
 	topics, err := db.GetTopics(ctx)
 	if err != nil {
-		log.Printf("ERROR get topics: %v", err)
+		log.Printf("ERROR get topics: %v; request_id=%s", err, requestID)
 		return notifErrorResponse(http.StatusInternalServerError, "failed to fetch topics"), nil
 	}
 	return notifJSONResponse(http.StatusOK, nonNilTopics(topics)), nil
