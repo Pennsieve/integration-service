@@ -19,6 +19,13 @@ ansiColor('xterm') {
         sh "IMAGE_TAG=${imageTag} make publish"
       }
 
+      stage('Run Migrations') {
+        build job: "Migrations/dev-migrations/dev-${serviceName}-postgres-migrations",
+        parameters: [
+          string(name: 'IMAGE_TAG', value: imageTag)
+        ]
+      }
+
       stage("Deploy") {
         build job: "service-deploy/pennsieve-non-prod/us-east-1/dev-vpc-use1/dev/${serviceName}",
         parameters: [
