@@ -28,6 +28,16 @@ variable "postgres_user" {
   description = "The username for the Postgres database. This is used to connect to the database."
 }
 
+variable "dbmigrate_service_name" {
+  description = "The cloudwrap service name the dbmigrate container runs as (see Dockerfile.cloudwrap-dbmigrate); determines the SSM parameter path it reads its config from."
+  default     = "integration-service-dbmigrate"
+}
+
+variable "dbmigrate_postgres_user" {
+  type        = string
+  description = "The Postgres user the dbmigrate container connects as to run schema migrations. Must have the grants required to create/alter schemas, since it connects directly to the master instance rather than through the RDS proxy."
+}
+
 locals {
   
   common_tags = {
