@@ -2,12 +2,10 @@ FROM golang:1.25-alpine
 
 WORKDIR /app
 
-RUN apk add --no-cache docker-cli
+ENV CGO_ENABLED=0
 
 COPY go.mod go.sum ./
-RUN go mod download
+RUN ["go", "mod", "download"]
 
 COPY cmd cmd
 COPY internal internal
-
-CMD ["go", "test", "-v", "./..."]

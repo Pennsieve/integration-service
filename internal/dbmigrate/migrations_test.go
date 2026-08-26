@@ -1,67 +1,25 @@
 package dbmigrate_test
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
+	"os"
 	"testing"
-	"time"
 
-	integrationdbmigrate "github.com/Pennsieve/integration-service/internal/dbmigrate"
-	"github.com/golang-migrate/migrate/v4/source"
 	_ "github.com/lib/pq"
-	dbmigrateconfig "github.com/pennsieve/dbmigrate-go/pkg/config"
-	"github.com/pennsieve/dbmigrate-go/pkg/dbmigrate"
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-const (
-	seedImage            = "pennsieve/pennsievedb:V20241120161735-seed"
-	postgresUser         = "postgres"
-	postgresPassword     = "password"
-	postgresDatabase     = "postgres"
-	containerStartupWait = 2 * time.Minute
-)
-
-// TestMigrations starts a throwaway Postgres container from the same seed
-// image used in production (pennsieve.users already present), runs this
-// repo's webhooks and notifications migrations against it via the same
-// MigrationsSource/Config builders cmd/dbmigrate uses, and asserts against
-// the real resulting schema.
+// TestMigrations asserts against the real schema produced by this repo's own
+// dbmigrate image. docker-compose.test.yml runs that image against
+// POSTGRES_HOST (see the dbmigrate service) before the test binary starts,
+// so by the time this test runs both the webhooks and notifications schemas
+// are already migrated.
 func TestMigrations(t *testing.T) {
-	ctx := context.Background()
-
-	container, err := testcontainers.Run(ctx, seedImage,
-		testcontainers.WithExposedPorts("5432/tcp"),
-		testcontainers.WithEnv(map[string]string{
-			"POSTGRES_USER":     postgresUser,
-			"POSTGRES_PASSWORD": postgresPassword,
-			"POSTGRES_DB":       postgresDatabase,
-		}),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
-				WithStartupTimeout(containerStartupWait),
-		),
-	)
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, container.Terminate(ctx))
-	})
-
-	host, err := container.Host(ctx)
-	require.NoError(t, err)
-	port, err := container.MappedPort(ctx, "5432/tcp")
-	require.NoError(t, err)
-
-	runMigrationsUp(t, ctx, host, port.Port(), "webhooks", integrationdbmigrate.WebhooksConfigDefaults(), integrationdbmigrate.WebhooksMigrationsSource)
-	runMigrationsUp(t, ctx, host, port.Port(), "notifications", integrationdbmigrate.NotificationsConfigDefaults(), integrationdbmigrate.NotificationsMigrationsSource)
-
-	db, err := sql.Open("postgres", datasourceName(host, port.Port(), "public"))
+	db, err := sql.Open("postgres", datasourceName())
 	require.NoError(t, err)
 	defer db.Close()
+	require.NoError(t, db.Ping())
 
 	t.Run("webhooks.messages accepts a row", func(t *testing.T) {
 		var id int
@@ -152,41 +110,12 @@ func TestMigrations(t *testing.T) {
 	})
 }
 
-func runMigrationsUp(t *testing.T, ctx context.Context, host, port, schema string, defaults dbmigrateconfig.DefaultSettings, migrationsSource func() (source.Driver, error)) {
-	t.Helper()
-
-	password := postgresPassword
-	migrateConfig := dbmigrateconfig.Config{
-		PostgresDB: dbmigrateconfig.PostgresDBConfig{
-			Host:     host,
-			Port:     mustAtoi(t, port),
-			User:     postgresUser,
-			Password: &password,
-			Database: postgresDatabase,
-			Schema:   defaults[dbmigrateconfig.PostgresSchemaKey],
-		},
-		VerboseLogging: true,
-	}
-
-	src, err := migrationsSource()
-	require.NoError(t, err)
-
-	m, err := dbmigrate.NewLocalMigrator(ctx, migrateConfig, src)
-	require.NoError(t, err)
-	defer m.CloseAndLogError()
-
-	require.NoError(t, m.Up(), "running %s migrations up", schema)
-}
-
-func datasourceName(host, port, searchPath string) string {
-	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable&search_path=%s",
-		postgresUser, postgresPassword, host, port, postgresDatabase, searchPath)
-}
-
-func mustAtoi(t *testing.T, s string) int {
-	t.Helper()
-	var n int
-	_, err := fmt.Sscanf(s, "%d", &n)
-	require.NoError(t, err)
-	return n
+func datasourceName() string {
+	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+		os.Getenv("POSTGRES_USER"),
+		os.Getenv("POSTGRES_PASSWORD"),
+		os.Getenv("POSTGRES_HOST"),
+		os.Getenv("POSTGRES_PORT"),
+		os.Getenv("POSTGRES_DATABASE"),
+	)
 }

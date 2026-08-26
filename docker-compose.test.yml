@@ -1,41 +1,43 @@
 services:
-  pennsievedb-integration:
-    image: pennsieve/pennsievedb-integration:${POSTGRES_TAG:-latest}-seed
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    command: ["go", "test", "-v", "-count=1", "./..."]
+    depends_on:
+      dbmigrate:
+        condition: service_completed_successfully
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: postgres
-    ports:
-      - "5432:5432"
+      - POSTGRES_HOST=pennsievedb
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DATABASE=postgres
+      - CI=${CI}
+
+  # runs this repo's own dbmigrate image (webhooks + notifications migrations)
+  # against pennsievedb, then exits; test waits for it to complete successfully
+  dbmigrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.cloudwrap-dbmigrate
+    entrypoint: ["/app/integration-service-dbmigrate"]
+    environment:
+      - POSTGRES_HOST=pennsievedb
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DATABASE=postgres
+    depends_on:
+      pennsievedb:
+        condition: service_healthy
+
+  pennsievedb:
+    image: pennsieve/pennsievedb:V20241120161735-seed
+    platform: linux/amd64
+    restart: always
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
       timeout: 5s
       retries: 10
-
-  test:
-    build:
-      context: .
-      dockerfile: Dockerfile.test
-    depends_on:
-      pennsievedb-integration:
-        condition: service_healthy
-    environment:
-      POSTGRES_HOST: pennsievedb-integration
-      POSTGRES_PORT: 5432
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-      POSTGRES_DATABASE: postgres
-      # internal/dbmigrate/migrations_test.go starts its own Postgres container
-      # via testcontainers-go, using the docker.sock mounted below. testcontainers'
-      # default host detection prefers the plain "bridge" network's gateway IP,
-      # which this (docker-compose-networked) container can't route to, so point
-      # it at the actual docker host instead. Ryuk is disabled since the test
-      # already terminates its container via t.Cleanup, and the reaper would
-      # otherwise hit the same cross-network reachability problem.
-      TESTCONTAINERS_HOST_OVERRIDE: host.docker.internal
-      TESTCONTAINERS_RYUK_DISABLED: "true"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock

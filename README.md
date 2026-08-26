@@ -28,12 +28,19 @@ the migrator's connection already has `search_path` set to it.
 
 ## Testing
 
+`docker-compose.test.yml` wires up three services: `pennsievedb` (the base seed image), `dbmigrate`
+(this repo's own migration image/binary, run once against `pennsievedb` and then exits), and `test`
+(`go test ./...`), which waits for `dbmigrate` to complete successfully before starting. All three
+run on the same docker network, so `test` reaches the already-migrated database by container name
+(`pennsievedb`) — no pre-baked custom image or extra container-orchestration tooling required.
+
 ```bash
-make build-postgres  # builds a seeded Postgres image with this repo's migrations applied
-make test             # runs go test (including the live-Postgres migration tests) against it
-make docker-clean     # tears down the docker compose resources from either target above
+make test         # local dev loop: starts pennsievedb + runs dbmigrate, then go test on the host
+make test-docker  # full CI path: runs pennsievedb + dbmigrate + test all inside the docker network
+make down         # tears down docker-compose.test.yml resources
 ```
 
-`make build-postgres` only needs to be re-run after migration files change. `internal/dbmigrate/migrations_test.go`
-uses `testcontainers-go` to start its own throwaway Postgres container and doesn't require
-`build-postgres` to have been run first.
+`make test` publishes `pennsievedb`'s port via `docker-compose.local.override.yml` and reads
+connection details from `test.env`, so `go test` runs directly on the host against the container.
+`internal/dbmigrate/migrations_test.go` asserts against the resulting schema (FK/CHECK/UNIQUE
+constraints on both the `webhooks` and `notifications` schemas) once migrations have been applied.

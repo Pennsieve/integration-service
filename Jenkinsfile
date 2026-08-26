@@ -14,12 +14,9 @@ ansiColor('xterm') {
 
   try {
 
-    if(!isMain) {
-      stage('Run Tests') {
-        // this branch's seed Postgres image doesn't exist yet, so build it
-        // before running the webhooks/notifications migration tests against it
-        sh "IMAGE_TAG=${imageTag} ENVIRONMENT=jenkins make build-postgres"
-        sh "make test-ci"
+    stage('Run Tests') {
+      withEnv(['CI=true']) {
+        sh "make test-docker"
       }
     }
 
@@ -49,7 +46,7 @@ ansiColor('xterm') {
     slackSend(color: '#b20000', message: "FAILED: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' (${env.BUILD_URL}) by ${authorName}")
     throw e
   } finally {
-    sh "make docker-clean"
+    sh "make down"
   }
 
   slackSend(color: '#006600', message: "SUCCESSFUL: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' (${env.BUILD_URL}) by ${authorName}")
