@@ -26,5 +26,16 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
       POSTGRES_DATABASE: postgres
+      # internal/dbmigrate/migrations_test.go starts its own Postgres container
+      # via testcontainers-go, using the docker.sock mounted below. testcontainers'
+      # default host detection prefers the plain "bridge" network's gateway IP,
+      # which this (docker-compose-networked) container can't route to, so point
+      # it at the actual docker host instead. Ryuk is disabled since the test
+      # already terminates its container via t.Cleanup, and the reaper would
+      # otherwise hit the same cross-network reachability problem.
+      TESTCONTAINERS_HOST_OVERRIDE: host.docker.internal
+      TESTCONTAINERS_RYUK_DISABLED: "true"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
