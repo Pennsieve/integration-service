@@ -1,4 +1,4 @@
-.PHONY: help clean compile vet tidy package package-event package-webhook package-notification package-dbmigrate publish publish-event publish-webhook publish-notification publish-dbmigrate
+.PHONY: help clean compile vet tidy package package-event package-webhook package-notification package-dbmigrate publish publish-event publish-webhook publish-notification publish-dbmigrate build-postgres test test-ci docker-clean
 
 LAMBDA_BUCKET              ?= "pennsieve-cc-lambda-functions-use1"
 WORKING_DIR                ?= "$(shell pwd)"
@@ -25,6 +25,10 @@ help:
 	@echo "make publish-webhook      - publish webhook receiver lambda to S3"
 	@echo "make publish-notification - publish notification API lambda to S3"
 	@echo "make publish-dbmigrate    - push DB migration image to ECR"
+	@echo "make build-postgres       - build a seeded Postgres image with this repo's migrations applied"
+	@echo "make test                 - run go test locally against the seeded Postgres image"
+	@echo "make test-ci              - run go test in CI (no TTY) against the seeded Postgres image"
+	@echo "make docker-clean         - tear down build-postgres/test docker compose resources"
 
 compile:
 	go build ./...
@@ -126,3 +130,30 @@ publish-dbmigrate:
 
 clean:
 	rm -rf $(WORKING_DIR)/lambda/bin
+
+# Build a seeded Postgres image with this repo's migrations already applied,
+# tagged from the latest migration file's timestamp (see build-postgres.sh).
+build-postgres: package-dbmigrate
+	@echo ""
+	@echo "*********************************************"
+	@echo "*   Building seeded Postgres image          *"
+	@echo "*********************************************"
+	@echo ""
+	./build-postgres.sh
+
+POSTGRES_TAG := $(shell ls -1 internal/dbmigrate/migrations/*/*.up.sql | xargs -n1 basename | sort | tail -1 | cut -d'_' -f1)
+
+# Run go test locally against the seeded Postgres image
+test: docker-clean
+	POSTGRES_TAG=$(POSTGRES_TAG) docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from test
+	$(MAKE) docker-clean
+
+# Run go test in CI against the seeded Postgres image (no interactive TTY)
+test-ci: docker-clean
+	POSTGRES_TAG=$(POSTGRES_TAG) docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from test
+	$(MAKE) docker-clean
+
+# Tear down build-postgres/test docker compose resources
+docker-clean:
+	docker compose -f docker-compose.build-postgres.yml down -v --remove-orphans || true
+	docker compose -f docker-compose.test.yml down -v --remove-orphans || true

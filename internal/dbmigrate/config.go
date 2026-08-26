@@ -9,17 +9,40 @@ import (
 	"github.com/pennsieve/dbmigrate-go/pkg/config"
 )
 
-//go:embed migrations/*.sql
-var migrationsFS embed.FS
+//go:embed migrations/webhooks/*.sql
+var webhooksMigrationsFS embed.FS
 
-func ConfigDefaults() config.DefaultSettings {
+//go:embed migrations/notifications/*.sql
+var notificationsMigrationsFS embed.FS
+
+// WebhooksConfigDefaults returns the config defaults for running migrations
+// against the webhooks schema.
+func WebhooksConfigDefaults() config.DefaultSettings {
 	return config.DefaultSettings{config.PostgresSchemaKey: "webhooks"}
 }
 
-func MigrationsSource() (source.Driver, error) {
-	migrationSource, err := iofs.New(migrationsFS, "migrations")
+// NotificationsConfigDefaults returns the config defaults for running
+// migrations against the notifications schema.
+func NotificationsConfigDefaults() config.DefaultSettings {
+	return config.DefaultSettings{config.PostgresSchemaKey: "notifications"}
+}
+
+// WebhooksMigrationsSource builds the migration source.Driver for the
+// webhooks schema's embedded SQL files.
+func WebhooksMigrationsSource() (source.Driver, error) {
+	migrationSource, err := iofs.New(webhooksMigrationsFS, "migrations/webhooks")
 	if err != nil {
-		return nil, fmt.Errorf("error creating migration source.Driver: %w", err)
+		return nil, fmt.Errorf("error creating webhooks MigrationsSource: %w", err)
+	}
+	return migrationSource, nil
+}
+
+// NotificationsMigrationsSource builds the migration source.Driver for the
+// notifications schema's embedded SQL files.
+func NotificationsMigrationsSource() (source.Driver, error) {
+	migrationSource, err := iofs.New(notificationsMigrationsFS, "migrations/notifications")
+	if err != nil {
+		return nil, fmt.Errorf("error creating notifications MigrationsSource: %w", err)
 	}
 	return migrationSource, nil
 }

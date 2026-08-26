@@ -1,0 +1,30 @@
+services:
+  pennsievedb-integration:
+    image: pennsieve/pennsievedb-integration:${POSTGRES_TAG:-latest}-seed
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    depends_on:
+      pennsievedb-integration:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: pennsievedb-integration
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DATABASE: postgres
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
