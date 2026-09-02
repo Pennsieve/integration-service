@@ -97,3 +97,26 @@ deployable units everywhere else, **Approach A (two code paths)** is the more
 consistent fit and removes an entire class of "wrong parameter" operational
 risk. Approach B saves some boilerplate but reintroduces exactly the coupling
 the rest of the repo has deliberately avoided.
+
+## Actual implementation
+
+Neither pure Approach A nor Approach B was chosen. The implemented solution
+uses **one binary, one shared `runMigrations()` helper, called twice in-process**:
+
+- **One binary**: `cmd/dbmigrate` remains a single binary / Docker image — no
+  `cmd/dbmigrate-webhook` / `cmd/dbmigrate-notification` split, no new
+  Dockerfiles or Makefile target pairs.
+- **SQL files split into subdirectories**: `internal/dbmigrate/migrations/webhooks/`
+  and `internal/dbmigrate/migrations/notifications/`, each with their own
+  `//go:embed` directive in `internal/dbmigrate/config.go`.
+- **Shared `runMigrations()` helper**: a single private function in
+  `cmd/dbmigrate/main.go` accepts a schema name, config defaults, and a
+  migration-source factory; errors are domain-specific and surface cleanly.
+- **Called twice in-process**: `main()` calls `runMigrations()` once for
+  `webhooks` (with `WebhooksConfigDefaults()` / `WebhooksMigrationsSource`)
+  and once for `notifications` (with `NotificationsConfigDefaults()` /
+  `NotificationsMigrationsSource`). A failure in the first call exits before
+  the second runs, so a broken webhooks migration can't silently let the
+  notifications migration proceed.
+- **Jenkins**: a single migration job is still triggered once after `make
+  publish` — no job duplication needed.

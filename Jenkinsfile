@@ -46,7 +46,9 @@ ansiColor('xterm') {
     slackSend(color: '#b20000', message: "FAILED: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' (${env.BUILD_URL}) by ${authorName}")
     throw e
   } finally {
-    sh "make down"
+    stage("Clean Up") {
+        sh "make clean"
+    }
   }
 
   slackSend(color: '#006600', message: "SUCCESSFUL: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' (${env.BUILD_URL}) by ${authorName}")
