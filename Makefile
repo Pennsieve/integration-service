@@ -1,4 +1,4 @@
-.PHONY: help clean compile vet tidy package package-event package-webhook package-notification package-dbmigrate publish publish-event publish-webhook publish-notification publish-dbmigrate down local-services test test-docker
+.PHONY: help clean clean-ci docker-clean docker-image-clean compile vet tidy package package-event package-webhook package-notification package-dbmigrate publish publish-event publish-webhook publish-notification publish-dbmigrate down local-services test test-docker test-ci build-postgres
 
 LAMBDA_BUCKET              ?= "pennsieve-cc-lambda-functions-use1"
 WORKING_DIR                ?= "$(shell pwd)"
@@ -27,7 +27,11 @@ help:
 	@echo "make publish-dbmigrate    - push DB migration image to ECR"
 	@echo "make test                 - run go test locally against a migrated Postgres container"
 	@echo "make test-docker          - run go test inside the docker network (used by Jenkins)"
-	@echo "make down                 - tear down docker-compose.test.yml resources"
+	@echo "make test-ci              - run go test in CI against pre-seeded postgres image"
+	@echo "make build-postgres       - build and push pennsievedb-integration seed image (run after adding migrations)"
+	@echo "make clean                - tear down docker-compose resources and remove build artifacts"
+	@echo "make clean-ci             - clean + remove dbmigrate Docker images"
+	@echo "make down                 - tear down docker-compose.test.yml resources (alias for docker-clean)"
 
 compile:
 	go build ./...
@@ -127,14 +131,22 @@ publish-dbmigrate:
 	@echo ""
 	docker push $(DBMIGRATE_IMAGE_NAME)
 
-clean:
+docker-clean:
+	docker compose -f docker-compose.test.yml -f docker-compose.build-postgres.yml down --remove-orphans -v
+
+docker-image-clean:
+	docker rmi -f $(DBMIGRATE_IMAGE_NAME) $(DBMIGRATE_IMAGE_LATEST)
+
+clean: docker-clean
 	rm -rf $(WORKING_DIR)/lambda/bin
 
-down:
-	docker compose -f docker-compose.test.yml down --remove-orphans -v
+clean-ci: clean docker-image-clean
+
+# Alias kept for local developer convenience
+down: docker-clean
 
 # Start pennsievedb and run this repo's own dbmigrate image against it, then exit
-local-services: down
+local-services: docker-clean
 	docker compose -f docker-compose.test.yml -f docker-compose.local.override.yml up --build -d pennsievedb
 	docker compose -f docker-compose.test.yml -f docker-compose.local.override.yml run --rm dbmigrate
 
@@ -143,5 +155,15 @@ test: local-services
 	set -a; source ./test.env; set +a; go test -v -count=1 ./...
 
 # Run the full test suite inside the docker network (used by Jenkins)
-test-docker: down
+test-docker: docker-clean
 	CI=${CI} docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from test test
+
+# Run tests in CI against the pre-seeded pennsievedb-integration image (no dbmigrate step)
+test-ci: docker-clean
+	@IMAGE_TAG=$(IMAGE_TAG) docker compose -f docker-compose.test.yml up --exit-code-from=ci-tests ci-tests
+
+# Build pennsievedb-integration seed image from this branch's migrations and push to ECR.
+# Run this whenever new migration files are added, then update the image tag in
+# docker-compose.test.yml (pennsievedb-integration service) to match the new seed tag.
+build-postgres: package-dbmigrate
+	./build-postgres.sh

@@ -1,4 +1,5 @@
 services:
+  # Test container for running tests locally (builds dbmigrate from source at test time)
   test:
     build:
       context: .
@@ -15,8 +16,26 @@ services:
       - POSTGRES_DATABASE=postgres
       - CI=${CI}
 
-  # runs this repo's own dbmigrate image (webhooks + notifications migrations)
-  # against pennsievedb, then exits; test waits for it to complete successfully
+  # Test container for Jenkins CI (uses pennsievedb-integration pre-seeded image;
+  # no dbmigrate step needed because migrations are already baked in)
+  ci-tests:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    command: ["go", "test", "-v", "-count=1", "./..."]
+    depends_on:
+      - pennsievedb-integration
+    environment:
+      - POSTGRES_HOST=pennsievedb-integration
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DATABASE=postgres
+      - CI=true
+
+  # Runs this repo's own dbmigrate image (webhooks + notifications migrations)
+  # against pennsievedb, then exits; test waits for it to complete successfully.
+  # Used by the local `test` service only — ci-tests uses the pre-seeded image instead.
   dbmigrate:
     build:
       context: .
@@ -34,6 +53,19 @@ services:
 
   pennsievedb:
     image: pennsieve/pennsievedb:V20241120161735-seed
+    platform: linux/amd64
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Pre-seeded postgres image with integration-service migrations already applied.
+  # Built by `make build-postgres` (via build-postgres.sh) and consumed by ci-tests.
+  # Update this tag whenever new migrations are added and build-postgres has been run.
+  pennsievedb-integration:
+    image: pennsieve/pennsievedb-integration:20260803000000-seed
     platform: linux/amd64
     restart: always
     healthcheck:
