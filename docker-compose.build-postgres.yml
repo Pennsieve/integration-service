@@ -1,0 +1,23 @@
+services:
+  base-pennsievedb:
+    image: pennsieve/pennsievedb:V20241120161735-seed
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      # Warning: Do not change this interval! Anything larger will slow down tests.
+      interval: 1s
+      timeout: 1s
+      retries: 10
+
+  integration-migrations:
+    image: pennsieve/integration-service-dbmigrate:latest
+    environment:
+      POSTGRES_HOST: base-pennsievedb
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DATABASE: postgres
+    # Override Cloudwrap entrypoint to use explicit environment variables
+    entrypoint: ["/app/integration-service-dbmigrate"]
+    depends_on:
+      base-pennsievedb:
+        condition: service_healthy
