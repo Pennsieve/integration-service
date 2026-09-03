@@ -156,7 +156,7 @@ test: local-services
 
 # Run the full test suite inside the docker network (used by Jenkins)
 test-docker: docker-clean
-	CI=${CI} docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from test test
+	docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from test test
 
 # Run tests in CI against the pre-seeded pennsievedb-integration image (no dbmigrate step)
 test-ci: docker-clean

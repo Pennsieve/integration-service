@@ -14,7 +14,6 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=password
       - POSTGRES_DATABASE=postgres
-      - CI=${CI}
 
   # Test container for Jenkins CI (uses pennsievedb-integration pre-seeded image;
   # no dbmigrate step needed because migrations are already baked in)
@@ -31,7 +30,6 @@ services:
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=password
       - POSTGRES_DATABASE=postgres
-      - CI=true
 
   # Runs this repo's own dbmigrate image (webhooks + notifications migrations)
   # against pennsievedb, then exits; test waits for it to complete successfully.

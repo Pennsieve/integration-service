@@ -18,10 +18,10 @@ COMPOSE_SCRIPT=docker-compose.build-postgres.yml
 
 if [[ "$ENVIRONMENT" != "local" ]]; then
     echo "Environment is $ENVIRONMENT. Getting tag from git log and pushing images"
-    TAG="$(git log --name-only --oneline -2 | tail -n +2 | grep -E $MIGRATIONS_FOLDER | xargs basename -a | grep -E '^2.*\.sql$' | awk -F '_' '{print $1}' | sort -u | tail -n 1)"
+    TAG="$(git log --name-only --oneline -2 | tail -n +2 | grep -E $MIGRATIONS_FOLDER | xargs -r basename -a | grep -E '^2.*\.sql$' | awk -F '_' '{print $1}' | sort -u | tail -n 1)"
 else
     echo "Environment is local. Getting tag from local filesystem and not pushing images"
-    TAG="$(find $MIGRATIONS_FOLDER | xargs basename -a | grep -E '^2.*\.sql$' | awk -F '_' '{print $1}' | sort -u | tail -n 1)"
+    TAG="$(find $MIGRATIONS_FOLDER | xargs -r basename -a | grep -E '^2.*\.sql$' | awk -F '_' '{print $1}' | sort -u | tail -n 1)"
 fi
 
 ###################################
