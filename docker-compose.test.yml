@@ -1,0 +1,43 @@
+services:
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    command: ["go", "test", "-v", "-count=1", "./..."]
+    depends_on:
+      dbmigrate:
+        condition: service_completed_successfully
+    environment:
+      - POSTGRES_HOST=pennsievedb
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DATABASE=postgres
+      - CI=${CI}
+
+  # runs this repo's own dbmigrate image (webhooks + notifications migrations)
+  # against pennsievedb, then exits; test waits for it to complete successfully
+  dbmigrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.cloudwrap-dbmigrate
+    entrypoint: ["/app/integration-service-dbmigrate"]
+    environment:
+      - POSTGRES_HOST=pennsievedb
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DATABASE=postgres
+    depends_on:
+      pennsievedb:
+        condition: service_healthy
+
+  pennsievedb:
+    image: pennsieve/pennsievedb:V20241120161735-seed
+    platform: linux/amd64
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10

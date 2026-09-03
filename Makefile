@@ -1,4 +1,4 @@
-.PHONY: help clean compile vet tidy package package-event package-webhook package-notification package-dbmigrate publish publish-event publish-webhook publish-notification publish-dbmigrate
+.PHONY: help clean compile vet tidy package package-event package-webhook package-notification package-dbmigrate publish publish-event publish-webhook publish-notification publish-dbmigrate down local-services test test-docker
 
 LAMBDA_BUCKET              ?= "pennsieve-cc-lambda-functions-use1"
 WORKING_DIR                ?= "$(shell pwd)"
@@ -25,6 +25,9 @@ help:
 	@echo "make publish-webhook      - publish webhook receiver lambda to S3"
 	@echo "make publish-notification - publish notification API lambda to S3"
 	@echo "make publish-dbmigrate    - push DB migration image to ECR"
+	@echo "make test                 - run go test locally against a migrated Postgres container"
+	@echo "make test-docker          - run go test inside the docker network (used by Jenkins)"
+	@echo "make down                 - tear down docker-compose.test.yml resources"
 
 compile:
 	go build ./...
@@ -126,3 +129,19 @@ publish-dbmigrate:
 
 clean:
 	rm -rf $(WORKING_DIR)/lambda/bin
+
+down:
+	docker compose -f docker-compose.test.yml down --remove-orphans -v
+
+# Start pennsievedb and run this repo's own dbmigrate image against it, then exit
+local-services: down
+	docker compose -f docker-compose.test.yml -f docker-compose.local.override.yml up --build -d pennsievedb
+	docker compose -f docker-compose.test.yml -f docker-compose.local.override.yml run --rm dbmigrate
+
+# Run go test locally against a real, migrated Postgres container
+test: local-services
+	set -a; source ./test.env; set +a; go test -v -count=1 ./...
+
+# Run the full test suite inside the docker network (used by Jenkins)
+test-docker: down
+	CI=${CI} docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from test test

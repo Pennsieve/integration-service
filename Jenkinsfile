@@ -14,9 +14,24 @@ ansiColor('xterm') {
 
   try {
 
+    stage('Run Tests') {
+      withEnv(['CI=true']) {
+        sh "make test-docker"
+      }
+    }
+
     if(isMain) {
       stage ('Build and Push') {
         sh "IMAGE_TAG=${imageTag} make publish"
+      }
+
+      stage('Run Migrations') {
+        // single dbmigrate job/image; the binary runs the webhooks and
+        // notifications schema migrations itself, one after the other
+        build job: "Migrations/dev-migrations/dev-${serviceName}-postgres-migrations",
+        parameters: [
+          string(name: 'IMAGE_TAG', value: imageTag)
+        ]
       }
 
       stage("Deploy") {
@@ -30,6 +45,10 @@ ansiColor('xterm') {
   } catch (e) {
     slackSend(color: '#b20000', message: "FAILED: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' (${env.BUILD_URL}) by ${authorName}")
     throw e
+  } finally {
+    stage("Clean Up") {
+        sh "make clean"
+    }
   }
 
   slackSend(color: '#006600', message: "SUCCESSFUL: Job '${env.JOB_NAME} [${env.BUILD_NUMBER}]' (${env.BUILD_URL}) by ${authorName}")
