@@ -9,9 +9,16 @@ resource "aws_apigatewayv2_api" "integration_service_api" {
   protocol_type = "HTTP"
   description   = "API for the Integration Service webhook receiver"
 
+  # Browsers only send Authorization on a cross-origin call if the preflight
+  # names it in Access-Control-Allow-Headers. Leaving allow_headers unset made
+  # every authenticated call from the web app fail preflight.
   cors_configuration {
-    allow_origins = ["*"]
-    allow_methods = ["GET", "POST", "PUT", "PATCH", "DELETE"]
+    allow_origins     = local.cors_allowed_origins
+    allow_methods     = ["OPTIONS", "GET", "POST", "PUT", "PATCH", "DELETE"]
+    allow_headers     = ["*"]
+    allow_credentials = true
+    expose_headers    = ["*"]
+    max_age           = 300
   }
 }
 
