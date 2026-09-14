@@ -1,6 +1,11 @@
 package models
 
-import "time"
+import (
+	"encoding/json"
+	"fmt"
+	"strconv"
+	"time"
+)
 
 type WebhookCache struct {
 	Updated  time.Time
@@ -18,6 +23,39 @@ type EventMessage struct {
 	DataID   int    `json:"datasetId"`
 	Category string `json:"eventCategory"`
 	Type     string `json:"eventType"`
+}
+
+// UnmarshalJSON handles datasetId sent as either a JSON number or a quoted
+// string (e.g. "2252"), which SNS has been observed to emit.
+func (e *EventMessage) UnmarshalJSON(data []byte) error {
+	var raw struct {
+		OrgID    string          `json:"organizationId"`
+		DataID   json.RawMessage `json:"datasetId"`
+		Category string          `json:"eventCategory"`
+		Type     string          `json:"eventType"`
+	}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	e.OrgID = raw.OrgID
+	e.Category = raw.Category
+	e.Type = raw.Type
+
+	var n int
+	if err := json.Unmarshal(raw.DataID, &n); err == nil {
+		e.DataID = n
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(raw.DataID, &s); err != nil {
+		return fmt.Errorf("datasetId: cannot unmarshal %s", raw.DataID)
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return fmt.Errorf("datasetId: cannot convert %q to int: %w", s, err)
+	}
+	e.DataID = n
+	return nil
 }
 
 type WebhookMessage struct {

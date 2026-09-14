@@ -43,6 +43,17 @@ func TestMapEvents_ForceRefreshOnCreateDataset(t *testing.T) {
 	assert.True(t, forceRefresh, "CREATE_DATASET must force a cache refresh")
 }
 
+func TestMapEvents_DatasetIdAsString(t *testing.T) {
+	// SNS has been observed to emit datasetId as a quoted string.
+	events := sqsEvent(
+		map[string]interface{}{"organizationId": "org1", "datasetId": "2252", "eventCategory": "FILES", "eventType": "CREATE_PACKAGE"},
+	)
+
+	mapped, _, err := MapEvents(events)
+	require.NoError(t, err)
+	assert.Equal(t, 2252, mapped["org1"][0].DataID)
+}
+
 func TestMapEvents_RejectsMalformedEnvelope(t *testing.T) {
 	cases := map[string]map[string]interface{}{
 		"missing Records":    {"NotRecords": []interface{}{}},
