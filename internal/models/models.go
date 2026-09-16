@@ -19,20 +19,20 @@ type WebhookRecord struct {
 }
 
 type EventMessage struct {
-	OrgID    string `json:"organizationId"`
-	DataID   int    `json:"datasetId"`
-	Category string `json:"eventCategory"`
-	Type     string `json:"eventType"`
+	OrgID     string `json:"organizationId"`
+	DatasetID int    `json:"datasetId"`
+	Category  string `json:"eventCategory"`
+	Type      string `json:"eventType"`
 }
 
 // UnmarshalJSON handles datasetId sent as either a JSON number or a quoted
 // string (e.g. "2252"), which SNS has been observed to emit.
 func (e *EventMessage) UnmarshalJSON(data []byte) error {
 	var raw struct {
-		OrgID    string          `json:"organizationId"`
-		DataID   json.RawMessage `json:"datasetId"`
-		Category string          `json:"eventCategory"`
-		Type     string          `json:"eventType"`
+		OrgID     string          `json:"organizationId"`
+		DatasetID json.RawMessage `json:"datasetId"`
+		Category  string          `json:"eventCategory"`
+		Type      string          `json:"eventType"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -42,19 +42,19 @@ func (e *EventMessage) UnmarshalJSON(data []byte) error {
 	e.Type = raw.Type
 
 	var n int
-	if err := json.Unmarshal(raw.DataID, &n); err == nil {
-		e.DataID = n
+	if err := json.Unmarshal(raw.DatasetID, &n); err == nil {
+		e.DatasetID = n
 		return nil
 	}
 	var s string
-	if err := json.Unmarshal(raw.DataID, &s); err != nil {
-		return fmt.Errorf("datasetId: cannot unmarshal %s", raw.DataID)
+	if err := json.Unmarshal(raw.DatasetID, &s); err != nil {
+		return fmt.Errorf("datasetId: cannot unmarshal %s", raw.DatasetID)
 	}
 	n, err := strconv.Atoi(s)
 	if err != nil {
 		return fmt.Errorf("datasetId: cannot convert %q to int: %w", s, err)
 	}
-	e.DataID = n
+	e.DatasetID = n
 	return nil
 }
 
