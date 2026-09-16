@@ -30,7 +30,7 @@ func TestMapEvents_GroupsByOrg(t *testing.T) {
 	assert.False(t, forceRefresh)
 	assert.Len(t, mapped["org1"], 2)
 	assert.Len(t, mapped["org2"], 1)
-	assert.Equal(t, 1, mapped["org1"][0].DataID)
+	assert.Equal(t, 1, mapped["org1"][0].DatasetID)
 }
 
 func TestMapEvents_ForceRefreshOnCreateDataset(t *testing.T) {
@@ -51,7 +51,7 @@ func TestMapEvents_DatasetIdAsString(t *testing.T) {
 
 	mapped, _, err := MapEvents(events)
 	require.NoError(t, err)
-	assert.Equal(t, 2252, mapped["org1"][0].DataID)
+	assert.Equal(t, 2252, mapped["org1"][0].DatasetID)
 }
 
 func TestMapEvents_RejectsMalformedEnvelope(t *testing.T) {
