@@ -214,3 +214,117 @@ func TestGetTopicNotifications(t *testing.T) {
 	assert.Nil(t, notifications[1].Metadata)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
+
+func TestGetNotificationsLastSeen(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	SetPoolForTest(mockDB)
+
+	lastSeen := time.Date(2026, 9, 3, 14, 22, 0, 0, time.UTC)
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT notifications_last_seen FROM notifications.preferences")).
+		WithArgs(int64(42)).
+		WillReturnRows(sqlmock.NewRows([]string{"notifications_last_seen"}).AddRow(lastSeen))
+
+	got, err := GetNotificationsLastSeen(context.Background(), 42)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.True(t, got.Equal(lastSeen))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// A user who has never viewed their notifications reads back as nil whether
+// the column is NULL or the preferences row doesn't exist at all.
+func TestGetNotificationsLastSeen_NeverViewed(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		rows *sqlmock.Rows
+	}{
+		{"null column", sqlmock.NewRows([]string{"notifications_last_seen"}).AddRow(nil)},
+		{"no preferences row", sqlmock.NewRows([]string{"notifications_last_seen"})},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			mockDB, mock, err := sqlmock.New()
+			require.NoError(t, err)
+			defer mockDB.Close()
+			SetPoolForTest(mockDB)
+
+			mock.ExpectQuery(regexp.QuoteMeta("SELECT notifications_last_seen FROM notifications.preferences")).
+				WithArgs(int64(42)).
+				WillReturnRows(tt.rows)
+
+			got, err := GetNotificationsLastSeen(context.Background(), 42)
+			require.NoError(t, err)
+			assert.Nil(t, got)
+			require.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+func TestGetNotificationsLastSeen_DBError(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	SetPoolForTest(mockDB)
+
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT notifications_last_seen FROM notifications.preferences")).
+		WithArgs(int64(42)).
+		WillReturnError(errors.New("connection reset"))
+
+	_, err = GetNotificationsLastSeen(context.Background(), 42)
+	require.Error(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSetNotificationsLastSeen(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	SetPoolForTest(mockDB)
+
+	// Deliberately non-UTC: the stored value must be normalized to UTC.
+	lastSeen := time.Date(2026, 9, 3, 10, 22, 0, 0, time.FixedZone("EDT", -4*60*60))
+	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.preferences")).
+		WithArgs(int64(42), lastSeen.UTC()).
+		WillReturnRows(sqlmock.NewRows([]string{"notifications_last_seen"}).AddRow(lastSeen.UTC()))
+
+	stored, err := SetNotificationsLastSeen(context.Background(), 42, lastSeen)
+	require.NoError(t, err)
+	assert.True(t, stored.Equal(lastSeen))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// The preferences FK to pennsieve.users is what rejects an unknown user id,
+// and that must surface as ErrUserNotFound rather than a generic failure.
+func TestSetNotificationsLastSeen_UnknownUser(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	SetPoolForTest(mockDB)
+
+	lastSeen := time.Date(2026, 9, 3, 14, 22, 0, 0, time.UTC)
+	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.preferences")).
+		WithArgs(int64(999), lastSeen).
+		WillReturnError(&pq.Error{Code: pqForeignKeyViolation})
+
+	_, err = SetNotificationsLastSeen(context.Background(), 999, lastSeen)
+	assert.ErrorIs(t, err, ErrUserNotFound)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSetNotificationsLastSeen_DBError(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	SetPoolForTest(mockDB)
+
+	lastSeen := time.Date(2026, 9, 3, 14, 22, 0, 0, time.UTC)
+	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.preferences")).
+		WithArgs(int64(42), lastSeen).
+		WillReturnError(errors.New("connection reset"))
+
+	_, err = SetNotificationsLastSeen(context.Background(), 42, lastSeen)
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, ErrUserNotFound)
+	require.NoError(t, mock.ExpectationsWereMet())
+}

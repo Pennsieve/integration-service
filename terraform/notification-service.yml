@@ -52,6 +52,11 @@ components:
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Caller may not act on another user's record
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
     NotFound:
       description: Resource not found
       content:
@@ -68,6 +73,14 @@ components:
       in: path
       required: true
       description: Numeric id of the topic
+      schema: { type: integer, format: int64 }
+    userId:
+      name: userId
+      in: path
+      required: true
+      description: >-
+        Numeric Pennsieve id of the user. Must be the caller's own id; any
+        other value is rejected with 403.
       schema: { type: integer, format: int64 }
     subscriptionId:
       name: subscriptionId
@@ -137,6 +150,30 @@ components:
           type: object
           description: Optional free-form JSON context for the subscription.
           nullable: true
+    UserNotificationsLastSeen:
+      type: object
+      description: >-
+        When a user last viewed their notifications. This is the write side of
+        the notificationsLastSeen field exposed on the Pennsieve API's
+        GET /user; the value is stored on notifications.preferences.
+      properties:
+        userId:
+          type: integer
+          format: int64
+        notificationsLastSeen:
+          type: string
+          format: date-time
+          nullable: true
+          description: ISO 8601 UTC timestamp, or null if the user has never viewed notifications.
+      required: [userId, notificationsLastSeen]
+    SetNotificationsLastSeenRequest:
+      type: object
+      properties:
+        notificationsLastSeen:
+          type: string
+          format: date-time
+          description: ISO 8601 UTC timestamp of the view. Required and non-null.
+      required: [notificationsLastSeen]
     Notification:
       type: object
       properties:
@@ -273,6 +310,83 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '5XX':
+          $ref: '#/components/responses/Error'
+
+  /notification/user/{userId}:
+    get:
+      summary: Get when the user last viewed their notifications
+      description: >-
+        Returns the caller's notificationsLastSeen timestamp. Provided so the
+        value is readable from this service; user-facing clients normally read
+        the same value from the notificationsLastSeen field on the Pennsieve
+        API's GET /user.
+      operationId: getNotificationsLastSeen
+      tags: [Notifications]
+      security:
+        - bearer_auth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/userId'
+      responses:
+        '200':
+          description: The user's last-seen timestamp, or null if never viewed
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserNotificationsLastSeen' }
+        '400':
+          description: Invalid userId
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '5XX':
+          $ref: '#/components/responses/Error'
+    post:
+      summary: Record that the user viewed their notifications
+      description: |
+        Sets the user's notificationsLastSeen timestamp. A caller may only
+        update their own record: if {userId} is not the authenticated user's
+        id the request is rejected with 403.
+
+        The write is an upsert, so it succeeds for a user who has no
+        notifications.preferences row yet (rows are otherwise seeded on first
+        subscription).
+      operationId: setNotificationsLastSeen
+      tags: [Notifications]
+      security:
+        - bearer_auth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/userId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SetNotificationsLastSeenRequest' }
+      responses:
+        '200':
+          description: Timestamp persisted; returns the updated value
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UserNotificationsLastSeen' }
+        '400':
+          description: >-
+            Invalid userId, malformed base64 body, body is not valid JSON, or
+            notificationsLastSeen is missing, null, or not a timestamp
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: User does not exist
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '5XX':
           $ref: '#/components/responses/Error'
 

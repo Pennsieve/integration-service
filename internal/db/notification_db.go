@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/Pennsieve/integration-service/internal/models"
 	"github.com/lib/pq"
@@ -13,6 +14,10 @@ import (
 // ErrTopicNotFound is returned when an operation references a topic id that
 // does not exist in notifications.topics.
 var ErrTopicNotFound = errors.New("topic not found")
+
+// ErrUserNotFound is returned when an operation references a user id that
+// does not exist in pennsieve.users.
+var ErrUserNotFound = errors.New("user not found")
 
 // pqForeignKeyViolation is the error code Postgres reports when a foreign
 // key constraint blocks an insert/update. See
@@ -225,4 +230,57 @@ func defaultJSON(b []byte) []byte {
 		return []byte("{}")
 	}
 	return b
+}
+
+// GetNotificationsLastSeen returns when userID last viewed their
+// notifications, or nil if they never have — either because no
+// notifications.preferences row exists for them yet (rows are seeded lazily
+// by CreateSubscription) or because the column is still NULL. Both cases are
+// "never viewed" to a caller, so a missing row is not an error.
+func GetNotificationsLastSeen(ctx context.Context, userID int64) (*time.Time, error) {
+	const q = `
+		SELECT notifications_last_seen
+		FROM notifications.preferences
+		WHERE user_id = $1`
+
+	var lastSeen sql.NullTime
+	switch err := dbPool.QueryRowContext(ctx, q, userID).Scan(&lastSeen); {
+	case errors.Is(err, sql.ErrNoRows):
+		return nil, nil
+	case err != nil:
+		return nil, fmt.Errorf("get notifications last seen: %w", err)
+	}
+	if !lastSeen.Valid {
+		return nil, nil
+	}
+	return &lastSeen.Time, nil
+}
+
+// SetNotificationsLastSeen records that userID viewed their notifications at
+// lastSeen, and returns the stored value.
+//
+// The write is an upsert because notifications.preferences rows are seeded
+// lazily by CreateSubscription: a user can open the notifications UI before
+// ever subscribing to a topic, and that read should still be recordable. The
+// inserted row therefore takes the same channel defaults CreateSubscription
+// would have given it.
+//
+// Returns ErrUserNotFound if userID doesn't exist in pennsieve.users, which
+// the preferences FK enforces.
+func SetNotificationsLastSeen(ctx context.Context, userID int64, lastSeen time.Time) (time.Time, error) {
+	const q = `
+		INSERT INTO notifications.preferences (user_id, notifications_last_seen)
+		VALUES ($1, $2)
+		ON CONFLICT (user_id) DO UPDATE SET notifications_last_seen = EXCLUDED.notifications_last_seen
+		RETURNING notifications_last_seen`
+
+	var stored time.Time
+	if err := dbPool.QueryRowContext(ctx, q, userID, lastSeen.UTC()).Scan(&stored); err != nil {
+		var pqErr *pq.Error
+		if errors.As(err, &pqErr) && pqErr.Code == pqForeignKeyViolation {
+			return time.Time{}, ErrUserNotFound
+		}
+		return time.Time{}, fmt.Errorf("set notifications last seen: %w", err)
+	}
+	return stored, nil
 }

@@ -63,7 +63,7 @@ services:
   # Built by `make build-postgres` (via build-postgres.sh) and consumed by ci-tests.
   # Update this tag whenever new migrations are added and build-postgres has been run.
   pennsievedb-integration:
-    image: pennsieve/pennsievedb-integration:20260803000000-seed
+    image: pennsieve/pennsievedb-integration:20260917090937-seed
     platform: linux/amd64
     restart: always
     healthcheck:
