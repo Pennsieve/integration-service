@@ -32,7 +32,7 @@ func MapWebhookMessages(ctx context.Context, mapped map[string][]models.EventMes
 
 		webhookLookup := buildWebhookLookup(cacheEntry.Webhooks)
 		/*
-			EventMessage.Category (json:"eventCategory") is used to build the message bucket key (fmt.Sprintf("%d:%s", evt.DataID, evt.Category)).
+			EventMessage.Category (json:"eventCategory") is used to build the message bucket key (fmt.Sprintf("%d:%s", evt.DatasetID, evt.Category)).
 			WebhookRecord.EventName is used when building the webhook lookup (fmt.Sprintf("%d:%s", w.DatasetID, w.EventName)).
 		*/
 		for _, evt := range events {
@@ -40,7 +40,7 @@ func MapWebhookMessages(ctx context.Context, mapped map[string][]models.EventMes
 			// same vocabulary as the DB's webhook event_name (mapped into
 			// models.WebhookRecord.EventName). If these diverge, lookups will
 			// fail and webhooks won't be sent.
-			key := fmt.Sprintf("%d:%s", evt.DataID, evt.Category)
+			key := fmt.Sprintf("%d:%s", evt.DatasetID, evt.Category)
 
 			entry := result[key]
 			entry.Messages = append(entry.Messages, evt)

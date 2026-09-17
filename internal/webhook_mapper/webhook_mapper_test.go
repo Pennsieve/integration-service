@@ -35,7 +35,7 @@ func TestMapWebhookMessages_MatchesEventsToURLs(t *testing.T) {
 	})
 
 	mapped := map[string][]models.EventMessage{
-		"org1": {{OrgID: "org1", DataID: 1, Category: "FILES", Type: "UPLOAD"}},
+		"org1": {{OrgID: "org1", DatasetID: 1, Category: "FILES", Type: "UPLOAD"}},
 	}
 
 	result := MapWebhookMessages(context.Background(), mapped, false)
@@ -54,7 +54,7 @@ func TestMapWebhookMessages_NoMatchingWebhookYieldsNoURLs(t *testing.T) {
 	})
 
 	mapped := map[string][]models.EventMessage{
-		"org2": {{OrgID: "org2", DataID: 1, Category: "FILES", Type: "UPLOAD"}},
+		"org2": {{OrgID: "org2", DatasetID: 1, Category: "FILES", Type: "UPLOAD"}},
 	}
 
 	result := MapWebhookMessages(context.Background(), mapped, false)

@@ -10,7 +10,7 @@ import (
 )
 
 func TestWebhookBodyParser_DefaultIsRawJSON(t *testing.T) {
-	msg := models.EventMessage{OrgID: "org1", DataID: 7, Category: "FILES", Type: "UPLOAD"}
+	msg := models.EventMessage{OrgID: "org1", DatasetID: 7, Category: "FILES", Type: "UPLOAD"}
 
 	body, err := WebhookBodyParser("https://example.com/hook", msg)
 	require.NoError(t, err)
@@ -21,7 +21,7 @@ func TestWebhookBodyParser_DefaultIsRawJSON(t *testing.T) {
 }
 
 func TestWebhookBodyParser_SlackWrapsInTextField(t *testing.T) {
-	msg := models.EventMessage{OrgID: "org1", DataID: 7, Category: "FILES", Type: "UPLOAD"}
+	msg := models.EventMessage{OrgID: "org1", DatasetID: 7, Category: "FILES", Type: "UPLOAD"}
 
 	body, err := WebhookBodyParser("https://hooks.slack.com/services/T000/B000/xxx", msg)
 	require.NoError(t, err)
