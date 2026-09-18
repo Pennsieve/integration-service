@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	_ "github.com/lib/pq"
 	"github.com/stretchr/testify/require"
@@ -107,6 +108,37 @@ func TestMigrations(t *testing.T) {
 			seededUserID, notificationID+1_000_000,
 		)
 		require.Error(t, err)
+	})
+
+	t.Run("notifications.preferences carries a nullable notifications_last_seen", func(t *testing.T) {
+		// Seeded without the column: a user who has never viewed their
+		// notifications must read back NULL, not a backfilled default.
+		_, err := db.Exec(
+			`INSERT INTO notifications.preferences (user_id) VALUES ($1)
+			 ON CONFLICT (user_id) DO UPDATE SET notifications_last_seen = NULL`,
+			seededUserID,
+		)
+		require.NoError(t, err)
+
+		var lastSeen sql.NullTime
+		err = db.QueryRow(
+			`SELECT notifications_last_seen FROM notifications.preferences WHERE user_id = $1`,
+			seededUserID,
+		).Scan(&lastSeen)
+		require.NoError(t, err)
+		require.False(t, lastSeen.Valid)
+
+		// The upsert SetNotificationsLastSeen performs must store the value.
+		written := time.Date(2026, 9, 3, 14, 22, 0, 0, time.UTC)
+		err = db.QueryRow(
+			`INSERT INTO notifications.preferences (user_id, notifications_last_seen) VALUES ($1, $2)
+			 ON CONFLICT (user_id) DO UPDATE SET notifications_last_seen = EXCLUDED.notifications_last_seen
+			 RETURNING notifications_last_seen`,
+			seededUserID, written,
+		).Scan(&lastSeen)
+		require.NoError(t, err)
+		require.True(t, lastSeen.Valid)
+		require.True(t, written.Equal(lastSeen.Time))
 	})
 }
 
