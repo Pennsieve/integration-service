@@ -152,9 +152,14 @@ resource "aws_apigatewayv2_route" "notification_get_topic_notifications_route" {
   authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_lambda_authorizer.id
 }
 
-# The notificationsLastSeen routes. The handler additionally checks that
+# The notification preferences routes. The handler additionally checks that
 # {userId} is the caller's own id and returns 403 otherwise; the authorizer
 # only establishes who the caller is, not which records they may touch.
+#
+# GET returns the full preferences resource (email/push opt-ins plus
+# notificationsLastSeen); POST fully replaces the email/push opt-ins; PATCH
+# is a partial update of just notificationsLastSeen, split out because it is
+# written far more often (every notifications-UI open) than the other two.
 resource "aws_apigatewayv2_route" "notification_get_user_last_seen_route" {
   api_id             = aws_apigatewayv2_api.integration_service_api.id
   route_key          = "GET /notification/user/{userId}"
@@ -166,6 +171,14 @@ resource "aws_apigatewayv2_route" "notification_get_user_last_seen_route" {
 resource "aws_apigatewayv2_route" "notification_set_user_last_seen_route" {
   api_id             = aws_apigatewayv2_api.integration_service_api.id
   route_key          = "POST /notification/user/{userId}"
+  target             = "integrations/${aws_apigatewayv2_integration.notification_integration.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_lambda_authorizer.id
+}
+
+resource "aws_apigatewayv2_route" "notification_update_user_last_seen_route" {
+  api_id             = aws_apigatewayv2_api.integration_service_api.id
+  route_key          = "PATCH /notification/user/{userId}"
   target             = "integrations/${aws_apigatewayv2_integration.notification_integration.id}"
   authorization_type = "CUSTOM"
   authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_lambda_authorizer.id

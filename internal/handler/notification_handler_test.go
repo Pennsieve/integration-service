@@ -480,7 +480,7 @@ func notifReqWithBody(method, rawPath string, pathParams map[string]string, user
 	return req
 }
 
-func TestNotificationHandler_GetNotificationsLastSeen(t *testing.T) {
+func TestNotificationHandler_GetNotificationPreferences(t *testing.T) {
 	aws.AwsOnce.Do(func() {})
 	mockDB, mock, err := sqlmock.New()
 	require.NoError(t, err)
@@ -488,77 +488,81 @@ func TestNotificationHandler_GetNotificationsLastSeen(t *testing.T) {
 	db.SetPoolForTest(mockDB)
 
 	lastSeen := time.Date(2026, 9, 3, 14, 22, 0, 0, time.UTC)
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT notifications_last_seen FROM notifications.preferences")).
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT email_enabled, push_enabled, notifications_last_seen FROM notifications.preferences")).
 		WithArgs(int64(42)).
-		WillReturnRows(sqlmock.NewRows([]string{"notifications_last_seen"}).AddRow(lastSeen))
+		WillReturnRows(sqlmock.NewRows([]string{"email_enabled", "push_enabled", "notifications_last_seen"}).
+			AddRow(true, false, lastSeen))
 
 	resp, err := NotificationHandler(context.Background(),
 		authedNotifReq(http.MethodGet, "/notification/user/42", map[string]string{"userId": "42"}, 42))
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
-	var got models.UserNotificationsLastSeen
+	var got models.NotificationPreferences
 	require.NoError(t, json.Unmarshal([]byte(resp.Body), &got))
 	assert.Equal(t, int64(42), got.UserID)
+	assert.True(t, got.EmailEnabled)
+	assert.False(t, got.PushEnabled)
 	require.NotNil(t, got.NotificationsLastSeen)
 	assert.True(t, got.NotificationsLastSeen.Equal(lastSeen))
 }
 
 // A user who has never viewed their notifications must serialize the field
 // as an explicit null, not omit it and not report the Go zero time.
-func TestNotificationHandler_GetNotificationsLastSeen_NeverViewed(t *testing.T) {
+func TestNotificationHandler_GetNotificationPreferences_NeverViewed(t *testing.T) {
 	aws.AwsOnce.Do(func() {})
 	mockDB, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	defer mockDB.Close()
 	db.SetPoolForTest(mockDB)
 
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT notifications_last_seen FROM notifications.preferences")).
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT email_enabled, push_enabled, notifications_last_seen FROM notifications.preferences")).
 		WithArgs(int64(42)).
-		WillReturnRows(sqlmock.NewRows([]string{"notifications_last_seen"}))
+		WillReturnRows(sqlmock.NewRows([]string{"email_enabled", "push_enabled", "notifications_last_seen"}).
+			AddRow(true, false, nil))
 
 	resp, err := NotificationHandler(context.Background(),
 		authedNotifReq(http.MethodGet, "/notification/user/42", map[string]string{"userId": "42"}, 42))
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.JSONEq(t, `{"userId":42,"notificationsLastSeen":null}`, resp.Body)
+	assert.JSONEq(t, `{"userId":42,"emailEnabled":true,"pushEnabled":false,"notificationsLastSeen":null}`, resp.Body)
 }
 
-func TestNotificationHandler_SetNotificationsLastSeen(t *testing.T) {
+func TestNotificationHandler_SetNotificationPreferences(t *testing.T) {
 	aws.AwsOnce.Do(func() {})
 	mockDB, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	defer mockDB.Close()
 	db.SetPoolForTest(mockDB)
 
-	lastSeen := time.Date(2026, 9, 3, 14, 22, 0, 0, time.UTC)
 	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.preferences")).
-		WithArgs(int64(42), lastSeen).
-		WillReturnRows(sqlmock.NewRows([]string{"notifications_last_seen"}).AddRow(lastSeen))
+		WithArgs(int64(42), false, true).
+		WillReturnRows(sqlmock.NewRows([]string{"email_enabled", "push_enabled", "notifications_last_seen"}).
+			AddRow(false, true, nil))
 
 	resp, err := NotificationHandler(context.Background(),
 		notifReqWithBody(http.MethodPost, "/notification/user/42", map[string]string{"userId": "42"}, 42,
-			`{"notificationsLastSeen":"2026-09-03T14:22:00.000000Z"}`))
+			`{"emailEnabled":false,"pushEnabled":true}`))
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.JSONEq(t, `{"userId":42,"notificationsLastSeen":"2026-09-03T14:22:00Z"}`, resp.Body)
+	assert.JSONEq(t, `{"userId":42,"emailEnabled":false,"pushEnabled":true,"notificationsLastSeen":null}`, resp.Body)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestNotificationHandler_SetNotificationsLastSeen_Base64Body(t *testing.T) {
+func TestNotificationHandler_SetNotificationPreferences_Base64Body(t *testing.T) {
 	aws.AwsOnce.Do(func() {})
 	mockDB, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	defer mockDB.Close()
 	db.SetPoolForTest(mockDB)
 
-	lastSeen := time.Date(2026, 9, 3, 14, 22, 0, 0, time.UTC)
 	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.preferences")).
-		WithArgs(int64(42), lastSeen).
-		WillReturnRows(sqlmock.NewRows([]string{"notifications_last_seen"}).AddRow(lastSeen))
+		WithArgs(int64(42), true, true).
+		WillReturnRows(sqlmock.NewRows([]string{"email_enabled", "push_enabled", "notifications_last_seen"}).
+			AddRow(true, true, nil))
 
 	req := notifReqWithBody(http.MethodPost, "/notification/user/42", map[string]string{"userId": "42"}, 42,
-		base64.StdEncoding.EncodeToString([]byte(`{"notificationsLastSeen":"2026-09-03T14:22:00Z"}`)))
+		base64.StdEncoding.EncodeToString([]byte(`{"emailEnabled":true,"pushEnabled":true}`)))
 	req.IsBase64Encoded = true
 
 	resp, err := NotificationHandler(context.Background(), req)
@@ -567,10 +571,10 @@ func TestNotificationHandler_SetNotificationsLastSeen_Base64Body(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-// The core auth requirement: one user may not write another's timestamp.
+// The core auth requirement: one user may not write another's preferences.
 // No DB call should be attempted, which mock.ExpectationsWereMet asserts by
 // way of no expectations having been registered.
-func TestNotificationHandler_SetNotificationsLastSeen_OtherUserForbidden(t *testing.T) {
+func TestNotificationHandler_SetNotificationPreferences_OtherUserForbidden(t *testing.T) {
 	aws.AwsOnce.Do(func() {})
 	mockDB, mock, err := sqlmock.New()
 	require.NoError(t, err)
@@ -579,13 +583,13 @@ func TestNotificationHandler_SetNotificationsLastSeen_OtherUserForbidden(t *test
 
 	resp, err := NotificationHandler(context.Background(),
 		notifReqWithBody(http.MethodPost, "/notification/user/99", map[string]string{"userId": "99"}, 42,
-			`{"notificationsLastSeen":"2026-09-03T14:22:00Z"}`))
+			`{"emailEnabled":true,"pushEnabled":true}`))
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestNotificationHandler_GetNotificationsLastSeen_OtherUserForbidden(t *testing.T) {
+func TestNotificationHandler_GetNotificationPreferences_OtherUserForbidden(t *testing.T) {
 	aws.AwsOnce.Do(func() {})
 	mockDB, mock, err := sqlmock.New()
 	require.NoError(t, err)
@@ -599,7 +603,7 @@ func TestNotificationHandler_GetNotificationsLastSeen_OtherUserForbidden(t *test
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestNotificationHandler_SetNotificationsLastSeen_Unauthorized(t *testing.T) {
+func TestNotificationHandler_SetNotificationPreferences_Unauthorized(t *testing.T) {
 	aws.AwsOnce.Do(func() {})
 	mockDB, _, err := sqlmock.New()
 	require.NoError(t, err)
@@ -607,6 +611,167 @@ func TestNotificationHandler_SetNotificationsLastSeen_Unauthorized(t *testing.T)
 	db.SetPoolForTest(mockDB)
 
 	req := unauthedNotifReq(http.MethodPost, "/notification/user/42", map[string]string{"userId": "42"})
+	req.Body = `{"emailEnabled":true,"pushEnabled":true}`
+
+	resp, err := NotificationHandler(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+}
+
+func TestNotificationHandler_SetNotificationPreferences_BadRequest(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		body string
+	}{
+		{"not json", `not json`},
+		{"empty body", ``},
+		{"missing both fields", `{}`},
+		{"missing pushEnabled", `{"emailEnabled":true}`},
+		{"missing emailEnabled", `{"pushEnabled":true}`},
+		{"explicit null", `{"emailEnabled":null,"pushEnabled":true}`},
+		{"wrong type", `{"emailEnabled":"yes","pushEnabled":true}`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			aws.AwsOnce.Do(func() {})
+			mockDB, mock, err := sqlmock.New()
+			require.NoError(t, err)
+			defer mockDB.Close()
+			db.SetPoolForTest(mockDB)
+
+			resp, err := NotificationHandler(context.Background(),
+				notifReqWithBody(http.MethodPost, "/notification/user/42", map[string]string{"userId": "42"}, 42, tt.body))
+			require.NoError(t, err)
+			assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+			require.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+func TestNotificationHandler_SetNotificationPreferences_InvalidUserID(t *testing.T) {
+	aws.AwsOnce.Do(func() {})
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	db.SetPoolForTest(mockDB)
+
+	resp, err := NotificationHandler(context.Background(),
+		notifReqWithBody(http.MethodPost, "/notification/user/abc", map[string]string{"userId": "abc"}, 42,
+			`{"emailEnabled":true,"pushEnabled":true}`))
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// API Gateway doesn't always populate PathParameters; the handler falls back
+// to the raw path segment, and the user routes must too.
+func TestNotificationHandler_SetNotificationPreferences_NoPathParameters(t *testing.T) {
+	aws.AwsOnce.Do(func() {})
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	db.SetPoolForTest(mockDB)
+
+	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.preferences")).
+		WithArgs(int64(42), true, true).
+		WillReturnRows(sqlmock.NewRows([]string{"email_enabled", "push_enabled", "notifications_last_seen"}).
+			AddRow(true, true, nil))
+
+	resp, err := NotificationHandler(context.Background(),
+		notifReqWithBody(http.MethodPost, "/notification/user/42", nil, 42,
+			`{"emailEnabled":true,"pushEnabled":true}`))
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestNotificationHandler_SetNotificationPreferences_UnknownUser(t *testing.T) {
+	aws.AwsOnce.Do(func() {})
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	db.SetPoolForTest(mockDB)
+
+	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.preferences")).
+		WithArgs(int64(42), true, true).
+		WillReturnError(&pq.Error{Code: "23503"})
+
+	resp, err := NotificationHandler(context.Background(),
+		notifReqWithBody(http.MethodPost, "/notification/user/42", map[string]string{"userId": "42"}, 42,
+			`{"emailEnabled":true,"pushEnabled":true}`))
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestNotificationHandler_PatchNotificationsLastSeen(t *testing.T) {
+	aws.AwsOnce.Do(func() {})
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	db.SetPoolForTest(mockDB)
+
+	lastSeen := time.Date(2026, 9, 3, 14, 22, 0, 0, time.UTC)
+	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.preferences")).
+		WithArgs(int64(42), lastSeen).
+		WillReturnRows(sqlmock.NewRows([]string{"notifications_last_seen"}).AddRow(lastSeen))
+
+	resp, err := NotificationHandler(context.Background(),
+		notifReqWithBody(http.MethodPatch, "/notification/user/42", map[string]string{"userId": "42"}, 42,
+			`{"notificationsLastSeen":"2026-09-03T14:22:00.000000Z"}`))
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.JSONEq(t, `{"userId":42,"notificationsLastSeen":"2026-09-03T14:22:00Z"}`, resp.Body)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestNotificationHandler_PatchNotificationsLastSeen_Base64Body(t *testing.T) {
+	aws.AwsOnce.Do(func() {})
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	db.SetPoolForTest(mockDB)
+
+	lastSeen := time.Date(2026, 9, 3, 14, 22, 0, 0, time.UTC)
+	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.preferences")).
+		WithArgs(int64(42), lastSeen).
+		WillReturnRows(sqlmock.NewRows([]string{"notifications_last_seen"}).AddRow(lastSeen))
+
+	req := notifReqWithBody(http.MethodPatch, "/notification/user/42", map[string]string{"userId": "42"}, 42,
+		base64.StdEncoding.EncodeToString([]byte(`{"notificationsLastSeen":"2026-09-03T14:22:00Z"}`)))
+	req.IsBase64Encoded = true
+
+	resp, err := NotificationHandler(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// The core auth requirement: one user may not write another's timestamp.
+// No DB call should be attempted, which mock.ExpectationsWereMet asserts by
+// way of no expectations having been registered.
+func TestNotificationHandler_PatchNotificationsLastSeen_OtherUserForbidden(t *testing.T) {
+	aws.AwsOnce.Do(func() {})
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	db.SetPoolForTest(mockDB)
+
+	resp, err := NotificationHandler(context.Background(),
+		notifReqWithBody(http.MethodPatch, "/notification/user/99", map[string]string{"userId": "99"}, 42,
+			`{"notificationsLastSeen":"2026-09-03T14:22:00Z"}`))
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestNotificationHandler_PatchNotificationsLastSeen_Unauthorized(t *testing.T) {
+	aws.AwsOnce.Do(func() {})
+	mockDB, _, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	db.SetPoolForTest(mockDB)
+
+	req := unauthedNotifReq(http.MethodPatch, "/notification/user/42", map[string]string{"userId": "42"})
 	req.Body = `{"notificationsLastSeen":"2026-09-03T14:22:00Z"}`
 
 	resp, err := NotificationHandler(context.Background(), req)
@@ -614,7 +779,7 @@ func TestNotificationHandler_SetNotificationsLastSeen_Unauthorized(t *testing.T)
 	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 }
 
-func TestNotificationHandler_SetNotificationsLastSeen_BadRequest(t *testing.T) {
+func TestNotificationHandler_PatchNotificationsLastSeen_BadRequest(t *testing.T) {
 	for _, tt := range []struct {
 		name string
 		body string
@@ -634,7 +799,7 @@ func TestNotificationHandler_SetNotificationsLastSeen_BadRequest(t *testing.T) {
 			db.SetPoolForTest(mockDB)
 
 			resp, err := NotificationHandler(context.Background(),
-				notifReqWithBody(http.MethodPost, "/notification/user/42", map[string]string{"userId": "42"}, 42, tt.body))
+				notifReqWithBody(http.MethodPatch, "/notification/user/42", map[string]string{"userId": "42"}, 42, tt.body))
 			require.NoError(t, err)
 			assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 			require.NoError(t, mock.ExpectationsWereMet())
@@ -642,7 +807,7 @@ func TestNotificationHandler_SetNotificationsLastSeen_BadRequest(t *testing.T) {
 	}
 }
 
-func TestNotificationHandler_SetNotificationsLastSeen_InvalidUserID(t *testing.T) {
+func TestNotificationHandler_PatchNotificationsLastSeen_InvalidUserID(t *testing.T) {
 	aws.AwsOnce.Do(func() {})
 	mockDB, mock, err := sqlmock.New()
 	require.NoError(t, err)
@@ -650,7 +815,7 @@ func TestNotificationHandler_SetNotificationsLastSeen_InvalidUserID(t *testing.T
 	db.SetPoolForTest(mockDB)
 
 	resp, err := NotificationHandler(context.Background(),
-		notifReqWithBody(http.MethodPost, "/notification/user/abc", map[string]string{"userId": "abc"}, 42,
+		notifReqWithBody(http.MethodPatch, "/notification/user/abc", map[string]string{"userId": "abc"}, 42,
 			`{"notificationsLastSeen":"2026-09-03T14:22:00Z"}`))
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
@@ -659,7 +824,7 @@ func TestNotificationHandler_SetNotificationsLastSeen_InvalidUserID(t *testing.T
 
 // API Gateway doesn't always populate PathParameters; the handler falls back
 // to the raw path segment, and the user routes must too.
-func TestNotificationHandler_SetNotificationsLastSeen_NoPathParameters(t *testing.T) {
+func TestNotificationHandler_PatchNotificationsLastSeen_NoPathParameters(t *testing.T) {
 	aws.AwsOnce.Do(func() {})
 	mockDB, mock, err := sqlmock.New()
 	require.NoError(t, err)
@@ -672,14 +837,14 @@ func TestNotificationHandler_SetNotificationsLastSeen_NoPathParameters(t *testin
 		WillReturnRows(sqlmock.NewRows([]string{"notifications_last_seen"}).AddRow(lastSeen))
 
 	resp, err := NotificationHandler(context.Background(),
-		notifReqWithBody(http.MethodPost, "/notification/user/42", nil, 42,
+		notifReqWithBody(http.MethodPatch, "/notification/user/42", nil, 42,
 			`{"notificationsLastSeen":"2026-09-03T14:22:00Z"}`))
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestNotificationHandler_SetNotificationsLastSeen_UnknownUser(t *testing.T) {
+func TestNotificationHandler_PatchNotificationsLastSeen_UnknownUser(t *testing.T) {
 	aws.AwsOnce.Do(func() {})
 	mockDB, mock, err := sqlmock.New()
 	require.NoError(t, err)
@@ -692,7 +857,7 @@ func TestNotificationHandler_SetNotificationsLastSeen_UnknownUser(t *testing.T) 
 		WillReturnError(&pq.Error{Code: "23503"})
 
 	resp, err := NotificationHandler(context.Background(),
-		notifReqWithBody(http.MethodPost, "/notification/user/42", map[string]string{"userId": "42"}, 42,
+		notifReqWithBody(http.MethodPatch, "/notification/user/42", map[string]string{"userId": "42"}, 42,
 			`{"notificationsLastSeen":"2026-09-03T14:22:00Z"}`))
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)

@@ -52,9 +52,11 @@ func NotificationHandler(ctx context.Context, req events.APIGatewayV2HTTPRequest
 
 	switch {
 	case method == http.MethodGet && strings.HasPrefix(path, "/notification/user/"):
-		return handleGetNotificationsLastSeen(ctx, userID, req)
+		return handleGetNotificationPreferences(ctx, userID, req)
 	case method == http.MethodPost && strings.HasPrefix(path, "/notification/user/"):
-		return handleSetNotificationsLastSeen(ctx, userID, req)
+		return handleSetNotificationPreferences(ctx, userID, req)
+	case method == http.MethodPatch && strings.HasPrefix(path, "/notification/user/"):
+		return handleUpdateNotificationsLastSeen(ctx, userID, req)
 	case method == http.MethodGet && path == "/notification/topics":
 		return handleGetTopics(ctx)
 	case method == http.MethodGet && path == "/notification/subscriptions":
@@ -160,32 +162,34 @@ func handleGetTopicNotifications(ctx context.Context, userID int64, req events.A
 	return notifJSONResponse(http.StatusOK, nonNilNotifications(notifications)), nil
 }
 
-// handleGetNotificationsLastSeen serves GET /notification/user/{userId},
-// returning when that user last viewed their notifications. It exists so the
-// value written by handleSetNotificationsLastSeen is readable from this
-// service; the user-facing read is the notificationsLastSeen field on the
-// Pennsieve API's GET /user (see docs/notifications-last-seen.md).
-func handleGetNotificationsLastSeen(ctx context.Context, callerID int64, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+// handleGetNotificationPreferences serves GET /notification/user/{userId},
+// returning that user's email/push notification preferences plus when they
+// last viewed their notifications. The notificationsLastSeen field mirrors
+// the one on the Pennsieve API's GET /user (see
+// docs/notifications-last-seen.md); email/push are read directly from
+// notifications.preferences.
+func handleGetNotificationPreferences(ctx context.Context, callerID int64, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	targetID, errResp := authorizedTargetUserID(callerID, req)
 	if errResp != nil {
 		return *errResp, nil
 	}
 
-	lastSeen, err := db.GetNotificationsLastSeen(ctx, targetID)
+	prefs, err := db.GetNotificationPreferences(ctx, targetID)
 	if err != nil {
-		log.Printf("ERROR get notifications last seen: %v", err)
-		return notifErrorResponse(http.StatusInternalServerError, "failed to fetch notificationsLastSeen"), nil
+		log.Printf("ERROR get notification preferences: %v", err)
+		return notifErrorResponse(http.StatusInternalServerError, "failed to fetch notification preferences"), nil
 	}
-	return notifJSONResponse(http.StatusOK, models.UserNotificationsLastSeen{
-		UserID:                targetID,
-		NotificationsLastSeen: lastSeen,
-	}), nil
+	return notifJSONResponse(http.StatusOK, prefs), nil
 }
 
-// handleSetNotificationsLastSeen serves POST /notification/user/{userId},
-// recording that the user viewed their notifications at the supplied
-// timestamp.
-func handleSetNotificationsLastSeen(ctx context.Context, callerID int64, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+// handleSetNotificationPreferences serves POST /notification/user/{userId},
+// fully replacing the user's stored email/push notification preferences.
+// Both fields are required since this is a full replace, not a partial
+// update. It never touches notificationsLastSeen — that field is updated
+// only by PATCH /notification/user/{userId}
+// (handleUpdateNotificationsLastSeen), since it changes far more often (on
+// every notifications-UI open) than a user's channel preferences do.
+func handleSetNotificationPreferences(ctx context.Context, callerID int64, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	targetID, errResp := authorizedTargetUserID(callerID, req)
 	if errResp != nil {
 		return *errResp, nil
@@ -195,7 +199,40 @@ func handleSetNotificationsLastSeen(ctx context.Context, callerID int64, req eve
 	if err != nil {
 		return notifErrorResponse(http.StatusBadRequest, "invalid base64 body"), nil
 	}
-	var body models.SetNotificationsLastSeenRequest
+	var body models.SetNotificationPreferencesRequest
+	if err := json.Unmarshal([]byte(raw), &body); err != nil {
+		return notifErrorResponse(http.StatusBadRequest, "payload must be valid JSON"), nil
+	}
+	if body.EmailEnabled == nil || body.PushEnabled == nil {
+		return notifErrorResponse(http.StatusBadRequest, "emailEnabled and pushEnabled are both required"), nil
+	}
+
+	prefs, err := db.SetNotificationPreferences(ctx, targetID, *body.EmailEnabled, *body.PushEnabled)
+	if err != nil {
+		if errors.Is(err, db.ErrUserNotFound) {
+			return notifErrorResponse(http.StatusNotFound, "user not found"), nil
+		}
+		log.Printf("ERROR set notification preferences: %v", err)
+		return notifErrorResponse(http.StatusInternalServerError, "failed to update notification preferences"), nil
+	}
+	return notifJSONResponse(http.StatusOK, prefs), nil
+}
+
+// handleUpdateNotificationsLastSeen serves PATCH /notification/user/{userId},
+// recording that the user viewed their notifications at the supplied
+// timestamp. It is a partial update of just this one field, kept separate
+// from the full-replace POST preferences route above.
+func handleUpdateNotificationsLastSeen(ctx context.Context, callerID int64, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	targetID, errResp := authorizedTargetUserID(callerID, req)
+	if errResp != nil {
+		return *errResp, nil
+	}
+
+	raw, err := decodedBody(req)
+	if err != nil {
+		return notifErrorResponse(http.StatusBadRequest, "invalid base64 body"), nil
+	}
+	var body models.UpdateNotificationsLastSeenRequest
 	if err := json.Unmarshal([]byte(raw), &body); err != nil {
 		return notifErrorResponse(http.StatusBadRequest, "payload must be valid JSON"), nil
 	}
@@ -208,7 +245,7 @@ func handleSetNotificationsLastSeen(ctx context.Context, callerID int64, req eve
 		if errors.Is(err, db.ErrUserNotFound) {
 			return notifErrorResponse(http.StatusNotFound, "user not found"), nil
 		}
-		log.Printf("ERROR set notifications last seen: %v", err)
+		log.Printf("ERROR update notifications last seen: %v", err)
 		return notifErrorResponse(http.StatusInternalServerError, "failed to update notificationsLastSeen"), nil
 	}
 	return notifJSONResponse(http.StatusOK, models.UserNotificationsLastSeen{
@@ -218,8 +255,8 @@ func handleSetNotificationsLastSeen(ctx context.Context, callerID int64, req eve
 }
 
 // authorizedTargetUserID reads the {userId} path parameter and confirms it
-// names the caller. A user may only read or write their own last-seen
-// timestamp, so any other id is 403 rather than 404: the caller is
+// names the caller. A user may only read or write their own notification
+// preferences, so any other id is 403 rather than 404: the caller is
 // authenticated, just not permitted. Returning 403 for ids that don't exist
 // too keeps the route from confirming which user ids are real.
 func authorizedTargetUserID(callerID int64, req events.APIGatewayV2HTTPRequest) (int64, *events.APIGatewayV2HTTPResponse) {
@@ -229,7 +266,7 @@ func authorizedTargetUserID(callerID int64, req events.APIGatewayV2HTTPRequest) 
 		return 0, &resp
 	}
 	if targetID != callerID {
-		resp := notifErrorResponse(http.StatusForbidden, "cannot access another user's notificationsLastSeen")
+		resp := notifErrorResponse(http.StatusForbidden, "cannot access another user's notification preferences")
 		return 0, &resp
 	}
 	return targetID, nil

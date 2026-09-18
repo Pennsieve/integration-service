@@ -45,31 +45,64 @@ type NotificationErrorResponse struct {
 	Message string `json:"message"`
 }
 
-// UserNotificationsLastSeen is the body returned by
-// GET and POST /notification/user/{userId}: when that user last viewed their
-// notifications.
+// NotificationPreferences is the body returned by
+// GET and POST /notification/user/{userId}: a user's full notification
+// preferences — their email/push channel opt-ins plus when they last viewed
+// their notifications.
 //
 // NotificationsLastSeen is a *time.Time so that "never viewed" marshals to
 // an explicit JSON null rather than Go's zero time
 // (0001-01-01T00:00:00Z), which a client would have to special-case.
 //
 // NOTE: the JSON fields are camelCase, unlike the snake_case used by the
-// rest of this package's models. They match the user object served by the
-// Pennsieve API's GET /user, which is where clients normally read this value
-// from; keeping the two spellings identical means one field name to parse.
+// rest of this package's models. notificationsLastSeen matches the user
+// object served by the Pennsieve API's GET /user, which is where clients
+// normally read that value from; the other fields follow the same
+// convention for consistency.
+type NotificationPreferences struct {
+	UserID                int64      `json:"userId"`
+	EmailEnabled          bool       `json:"emailEnabled"`
+	PushEnabled           bool       `json:"pushEnabled"`
+	NotificationsLastSeen *time.Time `json:"notificationsLastSeen"`
+}
+
+// SetNotificationPreferencesRequest is the JSON body accepted by
+// POST /notification/user/{userId}. POST fully replaces the stored
+// email/push preferences, so both fields are required; it never touches
+// notificationsLastSeen (see UpdateNotificationsLastSeenRequest for that).
+// The user being updated comes from the path, never the body, so this
+// deliberately carries no user id.
+//
+// Fields are pointers so the handler can reject an absent or null value:
+// json.Unmarshal leaves a pointer nil in both cases, so nil after a
+// successful unmarshal means "not supplied".
+type SetNotificationPreferencesRequest struct {
+	EmailEnabled *bool `json:"emailEnabled"`
+	PushEnabled  *bool `json:"pushEnabled"`
+}
+
+// UserNotificationsLastSeen is the body returned by
+// PATCH /notification/user/{userId}: when that user last viewed their
+// notifications. It is split out from NotificationPreferences because PATCH
+// only ever touches this one field, not the full preferences resource.
+//
+// NotificationsLastSeen is a *time.Time so that "never viewed" marshals to
+// an explicit JSON null rather than Go's zero time
+// (0001-01-01T00:00:00Z), which a client would have to special-case.
 type UserNotificationsLastSeen struct {
 	UserID                int64      `json:"userId"`
 	NotificationsLastSeen *time.Time `json:"notificationsLastSeen"`
 }
 
-// SetNotificationsLastSeenRequest is the JSON body accepted by
-// POST /notification/user/{userId}. The user being updated comes from the
-// path, never the body, so this deliberately carries no user id.
+// UpdateNotificationsLastSeenRequest is the JSON body accepted by
+// PATCH /notification/user/{userId}: a partial update that only ever sets
+// notificationsLastSeen. The user being updated comes from the path, never
+// the body, so this deliberately carries no user id.
 //
 // The field is a pointer so the handler can reject an absent or null
 // timestamp: json.Unmarshal leaves it nil in both cases and errors outright
 // on one it cannot parse, so a nil value after a successful unmarshal means
 // "not supplied".
-type SetNotificationsLastSeenRequest struct {
+type UpdateNotificationsLastSeenRequest struct {
 	NotificationsLastSeen *time.Time `json:"notificationsLastSeen"`
 }
