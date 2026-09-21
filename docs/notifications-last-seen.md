@@ -27,7 +27,7 @@ Two consequences worth knowing:
 - A user with no `preferences` row at all also reads as "never viewed".
   Rows are seeded lazily — `CreateSubscription` inserts one on a user's first
   subscription — so a user who opens the notifications UI before subscribing
-  to anything has no row yet. `GetNotificationsLastSeen` treats
+  to anything has no row yet. `GetNotificationPreferences` treats
   `sql.ErrNoRows` as `nil` rather than an error for exactly this reason.
 - The write is therefore an **upsert**, not an update: opening the
   notifications UI has to be recordable whether or not a row exists. The

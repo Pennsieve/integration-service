@@ -195,13 +195,9 @@ func handleSetNotificationPreferences(ctx context.Context, callerID int64, req e
 		return *errResp, nil
 	}
 
-	raw, err := decodedBody(req)
-	if err != nil {
-		return notifErrorResponse(http.StatusBadRequest, "invalid base64 body"), nil
-	}
-	var body models.SetNotificationPreferencesRequest
-	if err := json.Unmarshal([]byte(raw), &body); err != nil {
-		return notifErrorResponse(http.StatusBadRequest, "payload must be valid JSON"), nil
+	body, errResp := decodeJSONBody[models.SetNotificationPreferencesRequest](req)
+	if errResp != nil {
+		return *errResp, nil
 	}
 	if body.EmailEnabled == nil || body.PushEnabled == nil {
 		return notifErrorResponse(http.StatusBadRequest, "emailEnabled and pushEnabled are both required"), nil
@@ -228,13 +224,9 @@ func handleUpdateNotificationsLastSeen(ctx context.Context, callerID int64, req 
 		return *errResp, nil
 	}
 
-	raw, err := decodedBody(req)
-	if err != nil {
-		return notifErrorResponse(http.StatusBadRequest, "invalid base64 body"), nil
-	}
-	var body models.UpdateNotificationsLastSeenRequest
-	if err := json.Unmarshal([]byte(raw), &body); err != nil {
-		return notifErrorResponse(http.StatusBadRequest, "payload must be valid JSON"), nil
+	body, errResp := decodeJSONBody[models.UpdateNotificationsLastSeenRequest](req)
+	if errResp != nil {
+		return *errResp, nil
 	}
 	if body.NotificationsLastSeen == nil {
 		return notifErrorResponse(http.StatusBadRequest, "notificationsLastSeen is required and must be an ISO 8601 timestamp"), nil
@@ -249,8 +241,10 @@ func handleUpdateNotificationsLastSeen(ctx context.Context, callerID int64, req 
 		return notifErrorResponse(http.StatusInternalServerError, "failed to update notificationsLastSeen"), nil
 	}
 	return notifJSONResponse(http.StatusOK, models.UserNotificationsLastSeen{
-		UserID:                targetID,
-		NotificationsLastSeen: &stored,
+		LastSeen: models.LastSeen{
+			UserID:                targetID,
+			NotificationsLastSeen: &stored,
+		},
 	}), nil
 }
 
@@ -310,6 +304,25 @@ func decodedBody(req events.APIGatewayV2HTTPRequest) (string, error) {
 		return "", err
 	}
 	return string(decoded), nil
+}
+
+// decodeJSONBody base64-decodes req.Body and unmarshals it into a T,
+// sharing the "invalid base64 body" / "payload must be valid JSON" error
+// responses across every route with a required JSON body, so the wording
+// can't drift between them the way it would with each handler writing its
+// own copy of this sequence.
+func decodeJSONBody[T any](req events.APIGatewayV2HTTPRequest) (T, *events.APIGatewayV2HTTPResponse) {
+	var body T
+	raw, err := decodedBody(req)
+	if err != nil {
+		resp := notifErrorResponse(http.StatusBadRequest, "invalid base64 body")
+		return body, &resp
+	}
+	if err := json.Unmarshal([]byte(raw), &body); err != nil {
+		resp := notifErrorResponse(http.StatusBadRequest, "payload must be valid JSON")
+		return body, &resp
+	}
+	return body, nil
 }
 
 func parsePagination(params map[string]string) (limit, offset int) {

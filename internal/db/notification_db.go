@@ -232,6 +232,21 @@ func defaultJSON(b []byte) []byte {
 	return b
 }
 
+// defaultEmailEnabled and defaultPushEnabled mirror the email_enabled and
+// push_enabled column defaults in migration
+// 20260917090937_add_notifications_last_seen (DEFAULT true and DEFAULT
+// false respectively). GetNotificationPreferences uses them for a user with
+// no notifications.preferences row yet, since CreateSubscription's
+// lazy-seed insert relies on those column defaults directly rather than on
+// a value passed from Go. If a future migration changes either column
+// default without updating these constants too, a user with no row would
+// read back a stale default here while CreateSubscription would pick up the
+// new one the moment they subscribe.
+const (
+	defaultEmailEnabled = true
+	defaultPushEnabled  = false
+)
+
 // GetNotificationPreferences returns userID's email/push channel opt-ins and
 // when they last viewed their notifications. A user with no
 // notifications.preferences row yet (rows are seeded lazily by
@@ -244,11 +259,12 @@ func GetNotificationPreferences(ctx context.Context, userID int64) (*models.Noti
 		FROM notifications.preferences
 		WHERE user_id = $1`
 
-	prefs := &models.NotificationPreferences{UserID: userID}
+	prefs := &models.NotificationPreferences{LastSeen: models.LastSeen{UserID: userID}}
 	var lastSeen sql.NullTime
 	switch err := dbPool.QueryRowContext(ctx, q, userID).Scan(&prefs.EmailEnabled, &prefs.PushEnabled, &lastSeen); {
 	case errors.Is(err, sql.ErrNoRows):
-		prefs.EmailEnabled = true
+		prefs.EmailEnabled = defaultEmailEnabled
+		prefs.PushEnabled = defaultPushEnabled
 		return prefs, nil
 	case err != nil:
 		return nil, fmt.Errorf("get notification preferences: %w", err)
@@ -277,7 +293,7 @@ func SetNotificationPreferences(ctx context.Context, userID int64, emailEnabled,
 			    push_enabled  = EXCLUDED.push_enabled
 		RETURNING email_enabled, push_enabled, notifications_last_seen`
 
-	prefs := &models.NotificationPreferences{UserID: userID}
+	prefs := &models.NotificationPreferences{LastSeen: models.LastSeen{UserID: userID}}
 	var lastSeen sql.NullTime
 	if err := dbPool.QueryRowContext(ctx, q, userID, emailEnabled, pushEnabled).Scan(&prefs.EmailEnabled, &prefs.PushEnabled, &lastSeen); err != nil {
 		var pqErr *pq.Error

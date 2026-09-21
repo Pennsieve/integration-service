@@ -45,10 +45,12 @@ type NotificationErrorResponse struct {
 	Message string `json:"message"`
 }
 
-// NotificationPreferences is the body returned by
-// GET and POST /notification/user/{userId}: a user's full notification
-// preferences — their email/push channel opt-ins plus when they last viewed
-// their notifications.
+// LastSeen holds a user id and when that user last viewed their
+// notifications. NotificationPreferences and UserNotificationsLastSeen both
+// embed it instead of declaring their own copies of these two fields, so the
+// compiler enforces GET/POST and PATCH continuing to serialize
+// notificationsLastSeen identically, as this package's doc comments claim
+// they do.
 //
 // NotificationsLastSeen is a *time.Time so that "never viewed" marshals to
 // an explicit JSON null rather than Go's zero time
@@ -59,11 +61,19 @@ type NotificationErrorResponse struct {
 // object served by the Pennsieve API's GET /user, which is where clients
 // normally read that value from; the other fields follow the same
 // convention for consistency.
-type NotificationPreferences struct {
+type LastSeen struct {
 	UserID                int64      `json:"userId"`
-	EmailEnabled          bool       `json:"emailEnabled"`
-	PushEnabled           bool       `json:"pushEnabled"`
 	NotificationsLastSeen *time.Time `json:"notificationsLastSeen"`
+}
+
+// NotificationPreferences is the body returned by
+// GET and POST /notification/user/{userId}: a user's full notification
+// preferences — their email/push channel opt-ins plus when they last viewed
+// their notifications.
+type NotificationPreferences struct {
+	LastSeen
+	EmailEnabled bool `json:"emailEnabled"`
+	PushEnabled  bool `json:"pushEnabled"`
 }
 
 // SetNotificationPreferencesRequest is the JSON body accepted by
@@ -85,13 +95,8 @@ type SetNotificationPreferencesRequest struct {
 // PATCH /notification/user/{userId}: when that user last viewed their
 // notifications. It is split out from NotificationPreferences because PATCH
 // only ever touches this one field, not the full preferences resource.
-//
-// NotificationsLastSeen is a *time.Time so that "never viewed" marshals to
-// an explicit JSON null rather than Go's zero time
-// (0001-01-01T00:00:00Z), which a client would have to special-case.
 type UserNotificationsLastSeen struct {
-	UserID                int64      `json:"userId"`
-	NotificationsLastSeen *time.Time `json:"notificationsLastSeen"`
+	LastSeen
 }
 
 // UpdateNotificationsLastSeenRequest is the JSON body accepted by
