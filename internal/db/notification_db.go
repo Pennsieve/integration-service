@@ -232,28 +232,80 @@ func defaultJSON(b []byte) []byte {
 	return b
 }
 
-// GetNotificationsLastSeen returns when userID last viewed their
-// notifications, or nil if they never have — either because no
-// notifications.preferences row exists for them yet (rows are seeded lazily
-// by CreateSubscription) or because the column is still NULL. Both cases are
-// "never viewed" to a caller, so a missing row is not an error.
-func GetNotificationsLastSeen(ctx context.Context, userID int64) (*time.Time, error) {
+// defaultEmailEnabled and defaultPushEnabled mirror the email_enabled and
+// push_enabled column defaults in migration
+// 20260917090937_add_notifications_last_seen (DEFAULT true and DEFAULT
+// false respectively). GetNotificationPreferences uses them for a user with
+// no notifications.preferences row yet, since CreateSubscription's
+// lazy-seed insert relies on those column defaults directly rather than on
+// a value passed from Go. If a future migration changes either column
+// default without updating these constants too, a user with no row would
+// read back a stale default here while CreateSubscription would pick up the
+// new one the moment they subscribe.
+const (
+	defaultEmailEnabled = true
+	defaultPushEnabled  = false
+)
+
+// GetNotificationPreferences returns userID's email/push channel opt-ins and
+// when they last viewed their notifications. A user with no
+// notifications.preferences row yet (rows are seeded lazily by
+// CreateSubscription) reads back the same defaults an inserted row would
+// get: email enabled, push disabled, never seen. A missing row is therefore
+// not an error.
+func GetNotificationPreferences(ctx context.Context, userID int64) (*models.NotificationPreferences, error) {
 	const q = `
-		SELECT notifications_last_seen
+		SELECT email_enabled, push_enabled, notifications_last_seen
 		FROM notifications.preferences
 		WHERE user_id = $1`
 
+	prefs := &models.NotificationPreferences{LastSeen: models.LastSeen{UserID: userID}}
 	var lastSeen sql.NullTime
-	switch err := dbPool.QueryRowContext(ctx, q, userID).Scan(&lastSeen); {
+	switch err := dbPool.QueryRowContext(ctx, q, userID).Scan(&prefs.EmailEnabled, &prefs.PushEnabled, &lastSeen); {
 	case errors.Is(err, sql.ErrNoRows):
-		return nil, nil
+		prefs.EmailEnabled = defaultEmailEnabled
+		prefs.PushEnabled = defaultPushEnabled
+		return prefs, nil
 	case err != nil:
-		return nil, fmt.Errorf("get notifications last seen: %w", err)
+		return nil, fmt.Errorf("get notification preferences: %w", err)
 	}
-	if !lastSeen.Valid {
-		return nil, nil
+	if lastSeen.Valid {
+		prefs.NotificationsLastSeen = &lastSeen.Time
 	}
-	return &lastSeen.Time, nil
+	return prefs, nil
+}
+
+// SetNotificationPreferences upserts userID's email/push channel opt-ins and
+// returns the full stored preferences, including whatever
+// notifications_last_seen already held. The write is an upsert for the same
+// reason SetNotificationsLastSeen's is: a user can change their notification
+// settings before ever subscribing to a topic, i.e. before
+// CreateSubscription has seeded a preferences row.
+//
+// Returns ErrUserNotFound if userID doesn't exist in pennsieve.users, which
+// the preferences FK enforces.
+func SetNotificationPreferences(ctx context.Context, userID int64, emailEnabled, pushEnabled bool) (*models.NotificationPreferences, error) {
+	const q = `
+		INSERT INTO notifications.preferences (user_id, email_enabled, push_enabled)
+		VALUES ($1, $2, $3)
+		ON CONFLICT (user_id) DO UPDATE
+			SET email_enabled = EXCLUDED.email_enabled,
+			    push_enabled  = EXCLUDED.push_enabled
+		RETURNING email_enabled, push_enabled, notifications_last_seen`
+
+	prefs := &models.NotificationPreferences{LastSeen: models.LastSeen{UserID: userID}}
+	var lastSeen sql.NullTime
+	if err := dbPool.QueryRowContext(ctx, q, userID, emailEnabled, pushEnabled).Scan(&prefs.EmailEnabled, &prefs.PushEnabled, &lastSeen); err != nil {
+		var pqErr *pq.Error
+		if errors.As(err, &pqErr) && pqErr.Code == pqForeignKeyViolation {
+			return nil, ErrUserNotFound
+		}
+		return nil, fmt.Errorf("set notification preferences: %w", err)
+	}
+	if lastSeen.Valid {
+		prefs.NotificationsLastSeen = &lastSeen.Time
+	}
+	return prefs, nil
 }
 
 // SetNotificationsLastSeen records that userID viewed their notifications at

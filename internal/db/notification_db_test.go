@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"regexp"
 	"testing"
@@ -215,33 +216,39 @@ func TestGetTopicNotifications(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestGetNotificationsLastSeen(t *testing.T) {
+func TestGetNotificationPreferences(t *testing.T) {
 	mockDB, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	defer mockDB.Close()
 	SetPoolForTest(mockDB)
 
 	lastSeen := time.Date(2026, 9, 3, 14, 22, 0, 0, time.UTC)
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT notifications_last_seen FROM notifications.preferences")).
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT email_enabled, push_enabled, notifications_last_seen FROM notifications.preferences")).
 		WithArgs(int64(42)).
-		WillReturnRows(sqlmock.NewRows([]string{"notifications_last_seen"}).AddRow(lastSeen))
+		WillReturnRows(sqlmock.NewRows([]string{"email_enabled", "push_enabled", "notifications_last_seen"}).
+			AddRow(false, true, lastSeen))
 
-	got, err := GetNotificationsLastSeen(context.Background(), 42)
+	got, err := GetNotificationPreferences(context.Background(), 42)
 	require.NoError(t, err)
 	require.NotNil(t, got)
-	assert.True(t, got.Equal(lastSeen))
+	assert.Equal(t, int64(42), got.UserID)
+	assert.False(t, got.EmailEnabled)
+	assert.True(t, got.PushEnabled)
+	require.NotNil(t, got.NotificationsLastSeen)
+	assert.True(t, got.NotificationsLastSeen.Equal(lastSeen))
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-// A user who has never viewed their notifications reads back as nil whether
-// the column is NULL or the preferences row doesn't exist at all.
-func TestGetNotificationsLastSeen_NeverViewed(t *testing.T) {
+// A user who has never viewed their notifications reads back a nil
+// NotificationsLastSeen whether the column is NULL or the preferences row
+// doesn't exist at all; a missing row also reads back the same defaults an
+// inserted row would get.
+func TestGetNotificationPreferences_NeverViewed(t *testing.T) {
 	for _, tt := range []struct {
 		name string
 		rows *sqlmock.Rows
 	}{
-		{"null column", sqlmock.NewRows([]string{"notifications_last_seen"}).AddRow(nil)},
-		{"no preferences row", sqlmock.NewRows([]string{"notifications_last_seen"})},
+		{"null column", sqlmock.NewRows([]string{"email_enabled", "push_enabled", "notifications_last_seen"}).AddRow(true, false, nil)},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			mockDB, mock, err := sqlmock.New()
@@ -249,30 +256,104 @@ func TestGetNotificationsLastSeen_NeverViewed(t *testing.T) {
 			defer mockDB.Close()
 			SetPoolForTest(mockDB)
 
-			mock.ExpectQuery(regexp.QuoteMeta("SELECT notifications_last_seen FROM notifications.preferences")).
+			mock.ExpectQuery(regexp.QuoteMeta("SELECT email_enabled, push_enabled, notifications_last_seen FROM notifications.preferences")).
 				WithArgs(int64(42)).
 				WillReturnRows(tt.rows)
 
-			got, err := GetNotificationsLastSeen(context.Background(), 42)
+			got, err := GetNotificationPreferences(context.Background(), 42)
 			require.NoError(t, err)
-			assert.Nil(t, got)
+			assert.Nil(t, got.NotificationsLastSeen)
 			require.NoError(t, mock.ExpectationsWereMet())
 		})
 	}
 }
 
-func TestGetNotificationsLastSeen_DBError(t *testing.T) {
+func TestGetNotificationPreferences_NoRow_Defaults(t *testing.T) {
 	mockDB, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	defer mockDB.Close()
 	SetPoolForTest(mockDB)
 
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT notifications_last_seen FROM notifications.preferences")).
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT email_enabled, push_enabled, notifications_last_seen FROM notifications.preferences")).
+		WithArgs(int64(42)).
+		WillReturnError(sql.ErrNoRows)
+
+	got, err := GetNotificationPreferences(context.Background(), 42)
+	require.NoError(t, err)
+	assert.Equal(t, int64(42), got.UserID)
+	assert.True(t, got.EmailEnabled, "a user with no preferences row yet should read back the schema default of email enabled")
+	assert.False(t, got.PushEnabled)
+	assert.Nil(t, got.NotificationsLastSeen)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestGetNotificationPreferences_DBError(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	SetPoolForTest(mockDB)
+
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT email_enabled, push_enabled, notifications_last_seen FROM notifications.preferences")).
 		WithArgs(int64(42)).
 		WillReturnError(errors.New("connection reset"))
 
-	_, err = GetNotificationsLastSeen(context.Background(), 42)
+	_, err = GetNotificationPreferences(context.Background(), 42)
 	require.Error(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSetNotificationPreferences(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	SetPoolForTest(mockDB)
+
+	lastSeen := time.Date(2026, 9, 3, 14, 22, 0, 0, time.UTC)
+	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.preferences")).
+		WithArgs(int64(42), false, true).
+		WillReturnRows(sqlmock.NewRows([]string{"email_enabled", "push_enabled", "notifications_last_seen"}).
+			AddRow(false, true, lastSeen))
+
+	got, err := SetNotificationPreferences(context.Background(), 42, false, true)
+	require.NoError(t, err)
+	assert.Equal(t, int64(42), got.UserID)
+	assert.False(t, got.EmailEnabled)
+	assert.True(t, got.PushEnabled)
+	require.NotNil(t, got.NotificationsLastSeen)
+	assert.True(t, got.NotificationsLastSeen.Equal(lastSeen))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// The preferences FK to pennsieve.users is what rejects an unknown user id,
+// and that must surface as ErrUserNotFound rather than a generic failure.
+func TestSetNotificationPreferences_UnknownUser(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	SetPoolForTest(mockDB)
+
+	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.preferences")).
+		WithArgs(int64(999), true, false).
+		WillReturnError(&pq.Error{Code: pqForeignKeyViolation})
+
+	_, err = SetNotificationPreferences(context.Background(), 999, true, false)
+	assert.ErrorIs(t, err, ErrUserNotFound)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSetNotificationPreferences_DBError(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	SetPoolForTest(mockDB)
+
+	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.preferences")).
+		WithArgs(int64(42), true, false).
+		WillReturnError(errors.New("connection reset"))
+
+	_, err = SetNotificationPreferences(context.Background(), 42, true, false)
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, ErrUserNotFound)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

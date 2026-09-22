@@ -26,6 +26,66 @@ Migration files should not create/drop their own schema (the migrator creates it
 from `POSTGRES_SCHEMA`) and should not schema-qualify table names within their own schema, since
 the migrator's connection already has `search_path` set to it.
 
+## Database
+
+Two Postgres schemas, each migrated independently (see Migrations above): `webhooks` and
+`notifications`.
+
+The `notifications` schema (`internal/dbmigrate/migrations/notifications/`) holds:
+
+| Table | Purpose |
+| --- | --- |
+| `topics` | Event categories a user may subscribe to. |
+| `subscriptions` | A user's subscription to a topic, optionally scoped by a free-form JSON `context` (e.g. a dataset id). Unique on `(user_id, topic_id, context)`. |
+| `notifications` | Individual notification events posted to a subscription. |
+| `user_notifications` | Per-user delivery/read state (`READ`/`UNREAD`) for a notification. |
+| `preferences` | Per-user notification settings: `email_enabled`, `sms_enabled`, `push_enabled` (booleans, all with defaults), and `notifications_last_seen` (nullable timestamp, no default — `NULL` means "never viewed"). Keyed on `user_id`, one row per user. |
+| `messages` | Direct messages between users, optionally tied to a notification. |
+| `notification_audit` | Audit trail of events (e.g. delivery attempts) against a notification. |
+
+`preferences` rows are seeded lazily — `CreateSubscription` inserts one on a user's first
+subscription — so a user who has never subscribed to anything or set their preferences may have
+no row at all. Reads treat a missing row the same as a row with the column defaults (see
+`GetNotificationPreferences` in `internal/db/notification_db.go`); writes upsert so they succeed
+regardless of whether a row exists yet. `sms_enabled` exists in the schema but is not yet exposed
+by the API below.
+
+Every table that references a user (`subscriptions.user_id`, `preferences.user_id`, etc.)
+foreign-keys to `pennsieve.users(id)`, so writes for an unknown user id fail with a foreign-key
+violation, which the Go layer maps to `db.ErrUserNotFound`.
+
+See [docs/notifications-last-seen.md](docs/notifications-last-seen.md) for the design rationale
+behind the nullable, no-default `notifications_last_seen` column specifically.
+
+## API Endpoints
+
+All notification/subscription routes are served by a single Lambda (`internal/handler/notification_handler.go`,
+wired up in `terraform/gateway.tf`) that dispatches on method + path; there's no per-route Lambda
+function. Every route sits behind the shared Pennsieve Lambda REQUEST authorizer, which resolves
+the caller's bearer token to a Pennsieve user id. The full request/response schemas are documented
+in `terraform/notification-service.yml` (an OpenAPI spec kept for documentation, not wired into any
+build).
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/notification/topics` | List every topic a user may subscribe to. |
+| `GET` | `/notification/subscriptions` | List the caller's own subscriptions. |
+| `POST` | `/notification/subscriptions/{topicId}` | Subscribe the caller to a topic (upserts on `(user_id, topic_id, context)`). |
+| `DELETE` | `/notification/subscriptions/{subscriptionId}` | Unsubscribe the caller from one of their own subscriptions. |
+| `GET` | `/notification/{topicId}/notifications` | List notifications posted to a topic via the caller's own subscription(s), paginated. |
+| `GET` | `/notification/user/{userId}` | Get the caller's notification preferences: `emailEnabled`, `pushEnabled`, and `notificationsLastSeen`. |
+| `POST` | `/notification/user/{userId}` | Fully replace the caller's `emailEnabled`/`pushEnabled` preferences. Never touches `notificationsLastSeen`. |
+| `PATCH` | `/notification/user/{userId}` | Partially update just `notificationsLastSeen` (e.g. on opening the notifications UI), leaving `emailEnabled`/`pushEnabled` untouched. |
+
+The `/notification/user/{userId}` routes all require `{userId}` to be the caller's own id —
+any other value is rejected with `403`, even if that id doesn't exist, so the route can't be used
+to probe which user ids are real.
+
+`GET`/`POST`/`PATCH` on `/notification/user/{userId}` are split by how often each piece changes:
+`notificationsLastSeen` is written on every notifications-UI open, while `emailEnabled`/`pushEnabled`
+change rarely from a settings page — bundling both into one endpoint would make every last-seen
+ping also carry (and risk clobbering) the user's channel settings.
+
 ## Testing
 
 `docker-compose.test.yml` wires up three services: `pennsievedb` (the base seed image), `dbmigrate`

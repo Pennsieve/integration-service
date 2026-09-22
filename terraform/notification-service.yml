@@ -150,6 +150,39 @@ components:
           type: object
           description: Optional free-form JSON context for the subscription.
           nullable: true
+    NotificationPreferences:
+      type: object
+      description: >-
+        A user's full notification preferences: their email/push channel
+        opt-ins plus notificationsLastSeen, the read side of the field
+        exposed on the Pennsieve API's GET /user. All stored on
+        notifications.preferences.
+      properties:
+        userId:
+          type: integer
+          format: int64
+        emailEnabled:
+          type: boolean
+        pushEnabled:
+          type: boolean
+        notificationsLastSeen:
+          type: string
+          format: date-time
+          nullable: true
+          description: ISO 8601 UTC timestamp, or null if the user has never viewed notifications.
+      required: [userId, emailEnabled, pushEnabled, notificationsLastSeen]
+    SetNotificationPreferencesRequest:
+      type: object
+      description: >-
+        Fully replaces the user's stored email/push preferences. Both fields
+        are required; this never changes notificationsLastSeen (see
+        UpdateNotificationsLastSeenRequest for that).
+      properties:
+        emailEnabled:
+          type: boolean
+        pushEnabled:
+          type: boolean
+      required: [emailEnabled, pushEnabled]
     UserNotificationsLastSeen:
       type: object
       description: >-
@@ -166,7 +199,7 @@ components:
           nullable: true
           description: ISO 8601 UTC timestamp, or null if the user has never viewed notifications.
       required: [userId, notificationsLastSeen]
-    SetNotificationsLastSeenRequest:
+    UpdateNotificationsLastSeenRequest:
       type: object
       properties:
         notificationsLastSeen:
@@ -315,13 +348,14 @@ paths:
 
   /notification/user/{userId}:
     get:
-      summary: Get when the user last viewed their notifications
+      summary: Get the user's notification preferences
       description: >-
-        Returns the caller's notificationsLastSeen timestamp. Provided so the
-        value is readable from this service; user-facing clients normally read
-        the same value from the notificationsLastSeen field on the Pennsieve
+        Returns the caller's email/push notification opt-ins plus their
+        notificationsLastSeen timestamp. The latter is provided so the value
+        is readable from this service; user-facing clients normally read the
+        same value from the notificationsLastSeen field on the Pennsieve
         API's GET /user.
-      operationId: getNotificationsLastSeen
+      operationId: getNotificationPreferences
       tags: [Notifications]
       security:
         - bearer_auth: [ ]
@@ -329,10 +363,13 @@ paths:
         - $ref: '#/components/parameters/userId'
       responses:
         '200':
-          description: The user's last-seen timestamp, or null if never viewed
+          description: >-
+            The user's notification preferences. A user with no stored
+            preferences yet reads back the same defaults a first write would
+            get (email enabled, push disabled, never seen).
           content:
             application/json:
-              schema: { $ref: '#/components/schemas/UserNotificationsLastSeen' }
+              schema: { $ref: '#/components/schemas/NotificationPreferences' }
         '400':
           description: Invalid userId
           content:
@@ -345,16 +382,18 @@ paths:
         '5XX':
           $ref: '#/components/responses/Error'
     post:
-      summary: Record that the user viewed their notifications
+      summary: Set the user's notification preferences
       description: |
-        Sets the user's notificationsLastSeen timestamp. A caller may only
-        update their own record: if {userId} is not the authenticated user's
-        id the request is rejected with 403.
+        Fully replaces the user's stored email/push notification opt-ins. A
+        caller may only update their own record: if {userId} is not the
+        authenticated user's id the request is rejected with 403. This
+        endpoint never changes notificationsLastSeen — use
+        PATCH /notification/user/{userId} for that.
 
         The write is an upsert, so it succeeds for a user who has no
         notifications.preferences row yet (rows are otherwise seeded on first
         subscription).
-      operationId: setNotificationsLastSeen
+      operationId: setNotificationPreferences
       tags: [Notifications]
       security:
         - bearer_auth: [ ]
@@ -364,7 +403,57 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: '#/components/schemas/SetNotificationsLastSeenRequest' }
+            schema: { $ref: '#/components/schemas/SetNotificationPreferencesRequest' }
+      responses:
+        '200':
+          description: Preferences persisted; returns the updated resource
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationPreferences' }
+        '400':
+          description: >-
+            Invalid userId, malformed base64 body, body is not valid JSON, or
+            emailEnabled/pushEnabled is missing, null, or not a boolean
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: User does not exist
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '5XX':
+          $ref: '#/components/responses/Error'
+    patch:
+      summary: Record that the user viewed their notifications
+      description: |
+        Partially updates just the user's notificationsLastSeen timestamp,
+        leaving their email/push preferences untouched. A caller may only
+        update their own record: if {userId} is not the authenticated user's
+        id the request is rejected with 403.
+
+        Split out from the POST preferences endpoint above because this is
+        written far more often — once per notifications-UI open — than a
+        user's channel preferences change.
+
+        The write is an upsert, so it succeeds for a user who has no
+        notifications.preferences row yet (rows are otherwise seeded on first
+        subscription).
+      operationId: updateNotificationsLastSeen
+      tags: [Notifications]
+      security:
+        - bearer_auth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/userId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateNotificationsLastSeenRequest' }
       responses:
         '200':
           description: Timestamp persisted; returns the updated value

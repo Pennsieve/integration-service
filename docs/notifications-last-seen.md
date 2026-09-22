@@ -27,7 +27,7 @@ Two consequences worth knowing:
 - A user with no `preferences` row at all also reads as "never viewed".
   Rows are seeded lazily — `CreateSubscription` inserts one on a user's first
   subscription — so a user who opens the notifications UI before subscribing
-  to anything has no row yet. `GetNotificationsLastSeen` treats
+  to anything has no row yet. `GetNotificationPreferences` treats
   `sql.ErrNoRows` as `nil` rather than an error for exactly this reason.
 - The write is therefore an **upsert**, not an update: opening the
   notifications UI has to be recordable whether or not a row exists. The
@@ -36,10 +36,17 @@ Two consequences worth knowing:
 
 ## Endpoints (this repo)
 
-Both live on the notification Lambda, behind the shared Pennsieve Lambda
-authorizer, and both enforce that `{userId}` is the caller's own id.
+All three live on the notification Lambda, behind the shared Pennsieve
+Lambda authorizer, and all enforce that `{userId}` is the caller's own id.
+`GET` returns, and `POST` fully replaces, the whole `notifications.preferences`
+resource (`emailEnabled`/`pushEnabled` plus `notificationsLastSeen`); this
+document covers only the `notificationsLastSeen` slice of it, which is
+written separately via `PATCH` because it changes far more often — once per
+notifications-UI open — than a user's channel preferences do. See the
+README's [API Endpoints](../README.md#api-endpoints) section for the
+`emailEnabled`/`pushEnabled` side.
 
-### `POST /notification/user/{userId}`
+### `PATCH /notification/user/{userId}`
 
 ```json
 { "notificationsLastSeen": "2026-09-03T14:22:00.000000Z" }
@@ -61,7 +68,8 @@ Returns `200` with the stored value:
 
 The timestamp is normalized with `.UTC()` before it is stored, so a client
 sending an offset (`2026-09-03T10:22:00-04:00`) and one sending the
-equivalent `Z` time write the same value.
+equivalent `Z` time write the same value. This is a partial update: it never
+touches `email_enabled`/`push_enabled`.
 
 Mismatched-user requests return **`403`, not `404`**, even for user ids that
 don't exist. The caller is authenticated, just not permitted — and answering
@@ -70,13 +78,20 @@ real.
 
 ### `GET /notification/user/{userId}`
 
-Returns the same body. `notificationsLastSeen` is an explicit JSON `null`
-when the user has never viewed notifications — the Go field is a
-`*time.Time` so that "never" can't collapse into the zero time
-(`0001-01-01T00:00:00Z`).
+Returns the full preferences resource, of which `notificationsLastSeen` is
+one field:
+
+```json
+{ "userId": 42, "emailEnabled": true, "pushEnabled": false, "notificationsLastSeen": "2026-09-03T14:22:00Z" }
+```
+
+`notificationsLastSeen` is an explicit JSON `null` when the user has never
+viewed notifications — the Go field is a `*time.Time` so that "never" can't
+collapse into the zero time (`0001-01-01T00:00:00Z`).
 
 This route exists so the stored value is verifiable from this service. It is
-not the endpoint clients should build against; that is `GET /user`.
+not the endpoint clients should build against for `notificationsLastSeen`
+specifically; that is `GET /user`.
 
 <a name="handoff-get-user"></a>
 ## Handoff: adding `notificationsLastSeen` to `GET /user`
