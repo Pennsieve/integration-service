@@ -21,10 +21,10 @@ func TestGetTopics(t *testing.T) {
 	SetPoolForTest(mockDB)
 
 	now := time.Now()
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT topic_id, name, description, created_at FROM notifications.topics")).
-		WillReturnRows(sqlmock.NewRows([]string{"topic_id", "name", "description", "created_at"}).
-			AddRow(int64(1), "datasets", "dataset events", now).
-			AddRow(int64(2), "billing", nil, now))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT topic_id, name, description, created_at, context FROM notifications.topics")).
+		WillReturnRows(sqlmock.NewRows([]string{"topic_id", "name", "description", "created_at", "context"}).
+			AddRow(int64(1), "datasets", "dataset events", now, []byte(`{"type":"object","properties":{"dataset_id":{"type":"integer"}}}`)).
+			AddRow(int64(2), "billing", nil, now, nil))
 
 	topics, err := GetTopics(context.Background())
 	require.NoError(t, err)
@@ -32,6 +32,8 @@ func TestGetTopics(t *testing.T) {
 	assert.Equal(t, "datasets", topics[0].Name)
 	assert.Equal(t, "dataset events", topics[0].Description)
 	assert.Equal(t, "", topics[1].Description)
+	assert.JSONEq(t, `{"type":"object","properties":{"dataset_id":{"type":"integer"}}}`, string(topics[0].Context))
+	assert.Nil(t, topics[1].Context)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 

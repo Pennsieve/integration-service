@@ -7,10 +7,11 @@ import (
 
 // Topic is an event category users may subscribe to.
 type Topic struct {
-	TopicID     int64     `json:"topic_id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
+	TopicID     int64           `json:"topic_id"`
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	CreatedAt   time.Time       `json:"created_at"`
+	Context     json.RawMessage `json:"context,omitempty"`
 }
 
 // Subscription represents a user's interest in a topic.
