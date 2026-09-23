@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -90,22 +91,43 @@ func handleGetSubscriptions(ctx context.Context, userID int64) (events.APIGatewa
 	return notifJSONResponse(http.StatusOK, nonNilSubscriptions(subs)), nil
 }
 
+// handleSubscribe serves POST /notification/subscriptions/{topicId}. The
+// request body is the subscription's context: a free-form JSON object that
+// must satisfy the JSON Schema stored as the topic's context, and whose
+// referenced dataset (if any) must exist. See validateSubscriptionContext.
+// An empty body is treated as {}.
 func handleSubscribe(ctx context.Context, userID int64, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	topicID, err := pathParamInt64(req, "topicId", 2)
 	if err != nil {
+		log.Printf("ERROR subscription validation: invalid topic id: %v", err)
 		return notifErrorResponse(http.StatusBadRequest, "invalid topic id"), nil
 	}
 
-	var body models.SubscribeRequest
-	if raw, err := decodedBody(req); err != nil {
+	raw, err := decodedBody(req)
+	if err != nil {
+		log.Printf("ERROR subscription validation for topic %d: invalid base64 body: %v", topicID, err)
 		return notifErrorResponse(http.StatusBadRequest, "invalid base64 body"), nil
-	} else if raw != "" {
-		if err := json.Unmarshal([]byte(raw), &body); err != nil {
-			return notifErrorResponse(http.StatusBadRequest, "payload must be valid JSON"), nil
-		}
+	}
+	body := []byte(raw)
+	if len(bytes.TrimSpace(body)) == 0 {
+		body = []byte("{}")
 	}
 
-	sub, created, err := db.CreateSubscription(ctx, userID, topicID, body.Context)
+	topic, err := db.GetTopic(ctx, topicID)
+	if err != nil {
+		if errors.Is(err, db.ErrTopicNotFound) {
+			log.Printf("ERROR subscription validation: topic %d not found", topicID)
+			return notifErrorResponse(http.StatusNotFound, "topic not found"), nil
+		}
+		log.Printf("ERROR get topic: %v", err)
+		return notifErrorResponse(http.StatusInternalServerError, "failed to create subscription"), nil
+	}
+
+	if errResp := validateSubscriptionContext(ctx, topic, body); errResp != nil {
+		return *errResp, nil
+	}
+
+	sub, created, err := db.CreateSubscription(ctx, userID, topicID, body)
 	if err != nil {
 		if errors.Is(err, db.ErrTopicNotFound) {
 			return notifErrorResponse(http.StatusNotFound, "topic not found"), nil
