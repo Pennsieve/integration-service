@@ -75,8 +75,8 @@ func TestNotificationHandler_GetTopics(t *testing.T) {
 
 	now := time.Now()
 	mock.ExpectQuery(regexp.QuoteMeta("FROM notifications.topics")).
-		WillReturnRows(sqlmock.NewRows([]string{"topic_id", "name", "description", "created_at"}).
-			AddRow(int64(1), "datasets", "dataset events", now))
+		WillReturnRows(sqlmock.NewRows([]string{"topic_id", "name", "description", "created_at", "context"}).
+			AddRow(int64(1), "datasets", "dataset events", now, []byte(`{"type":"object"}`)))
 
 	resp, err := NotificationHandler(context.Background(), authedNotifReq(http.MethodGet, "/notification/topics", nil, 42))
 	require.NoError(t, err)
@@ -86,6 +86,7 @@ func TestNotificationHandler_GetTopics(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(resp.Body), &topics))
 	require.Len(t, topics, 1)
 	assert.Equal(t, "datasets", topics[0].Name)
+	assert.JSONEq(t, `{"type":"object"}`, string(topics[0].Context))
 }
 
 func TestNotificationHandler_GetSubscriptions(t *testing.T) {

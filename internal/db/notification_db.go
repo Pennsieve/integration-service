@@ -27,7 +27,7 @@ const pqForeignKeyViolation = "23503"
 // GetTopics returns every topic a user may subscribe to.
 func GetTopics(ctx context.Context) ([]models.Topic, error) {
 	const q = `
-		SELECT topic_id, name, description, created_at
+		SELECT topic_id, name, description, created_at, context
 		FROM notifications.topics
 		ORDER BY name`
 
@@ -41,10 +41,12 @@ func GetTopics(ctx context.Context) ([]models.Topic, error) {
 	for rows.Next() {
 		var t models.Topic
 		var description sql.NullString
-		if err := rows.Scan(&t.TopicID, &t.Name, &description, &t.CreatedAt); err != nil {
+		var topicContext []byte
+		if err := rows.Scan(&t.TopicID, &t.Name, &description, &t.CreatedAt, &topicContext); err != nil {
 			return nil, fmt.Errorf("get topics: %w", err)
 		}
 		t.Description = description.String
+		t.Context = topicContext
 		topics = append(topics, t)
 	}
 	return topics, rows.Err()
