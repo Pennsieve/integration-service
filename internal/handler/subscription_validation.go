@@ -29,7 +29,8 @@ var errInvalidTopicSchema = errors.New("invalid topic context schema")
 // validateSubscriptionContext checks a create-subscription request body
 // against the topic being subscribed to, in order:
 //
-//  1. the body is a JSON object,
+//  1. the body is a JSON object (handleSubscribe has already turned an empty
+//     or null body into {}),
 //  2. it satisfies the JSON Schema stored as the topic's context (skipped
 //     for a topic with no context), and
 //  3. any dataset it references (organizationId + datasetId) exists.
@@ -122,6 +123,12 @@ func validationMessage(err error) string {
 // both organizationId and datasetId, names a dataset that actually exists in
 // that organization. A body that references no dataset passes; whether one
 // is required is up to the topic's context schema.
+//
+// The organizationId/datasetId field names are hardcoded rather than driven
+// by the topic, which suits UPDATE_README, the only topic with a context
+// today. A topic that needs a different existence check (another resource
+// type, or these names meaning something else) should get it from its own
+// configuration instead of another special case here.
 func validateDatasetReference(ctx context.Context, fields map[string]any, fail func(int, string, error) *events.APIGatewayV2HTTPResponse) *events.APIGatewayV2HTTPResponse {
 	rawOrgID, hasOrg := fields["organizationId"]
 	rawDatasetID, hasDataset := fields["datasetId"]

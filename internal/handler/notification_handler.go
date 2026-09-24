@@ -95,7 +95,9 @@ func handleGetSubscriptions(ctx context.Context, userID int64) (events.APIGatewa
 // request body is the subscription's context: a free-form JSON object that
 // must satisfy the JSON Schema stored as the topic's context, and whose
 // referenced dataset (if any) must exist. See validateSubscriptionContext.
-// An empty body is treated as {}.
+// An empty or JSON null body is treated as {}, so it reaches the topic's
+// context schema like any other object: a topic with no context accepts it,
+// and one whose context has required properties rejects it.
 func handleSubscribe(ctx context.Context, userID int64, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	topicID, err := pathParamInt64(req, "topicId", 2)
 	if err != nil {
@@ -108,8 +110,8 @@ func handleSubscribe(ctx context.Context, userID int64, req events.APIGatewayV2H
 		log.Printf("ERROR subscription validation for topic %d: invalid base64 body: %v", topicID, err)
 		return notifErrorResponse(http.StatusBadRequest, "invalid base64 body"), nil
 	}
-	body := []byte(raw)
-	if len(bytes.TrimSpace(body)) == 0 {
+	body := bytes.TrimSpace([]byte(raw))
+	if len(body) == 0 || bytes.Equal(body, []byte("null")) {
 		body = []byte("{}")
 	}
 

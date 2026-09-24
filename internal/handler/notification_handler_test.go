@@ -201,6 +201,35 @@ func TestNotificationHandler_Subscribe(t *testing.T) {
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
+// TestNotificationHandler_Subscribe_EmptyOrNullBody checks that a missing,
+// blank, or JSON null body is stored as {} on a topic with no context
+// schema, rather than being rejected as not a JSON object.
+func TestNotificationHandler_Subscribe_EmptyOrNullBody(t *testing.T) {
+	for name, body := range map[string]string{
+		"empty":             ``,
+		"whitespace":        " \n\t",
+		"null":              `null`,
+		"whitespace-padded": " null\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			mock := newSubscribeMock(t)
+			expectGetTopic(mock, 7, nil)
+			expectCreateSubscription(mock, 42, 7, []byte("{}"), true)
+
+			req := authedNotifReq(http.MethodPost, "/notification/subscriptions/7", map[string]string{"topicId": "7"}, 42)
+			req.Body = body
+			resp, err := NotificationHandler(context.Background(), req)
+			require.NoError(t, err)
+			assert.Equal(t, http.StatusCreated, resp.StatusCode, resp.Body)
+
+			var sub models.Subscription
+			require.NoError(t, json.Unmarshal([]byte(resp.Body), &sub))
+			assert.JSONEq(t, `{}`, string(sub.Context))
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
 func TestNotificationHandler_Subscribe_Upsert(t *testing.T) {
 	mock := newSubscribeMock(t)
 	expectGetTopic(mock, 7, nil)
@@ -259,6 +288,8 @@ func TestNotificationHandler_Subscribe_TopicContextMismatch(t *testing.T) {
 		{"missing required property", `{"organizationId": 1}`, "datasetId"},
 		{"wrong property type", `{"organizationId": 1, "datasetId": "five"}`, "datasetId"},
 		{"empty body", ``, "missing properties"},
+		{"null body", `null`, "missing properties"},
+		{"whitespace-padded null body", " null\n", "missing properties"},
 		{"not an object", `[1, 2]`, "JSON object"},
 	}
 	for _, tt := range tests {
@@ -379,6 +410,86 @@ func TestNotificationHandler_Subscribe_TopicNotFound(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 	assert.NoError(t, mock.ExpectationsWereMet(), "no subscription should be stored")
+}
+
+// TestNotificationHandler_Subscribe_TopicDeletedBeforeInsert covers the
+// window between the topic lookup and the insert: the topic exists when
+// looked up but is gone by the time the subscription is inserted, so the
+// insert hits the topic foreign key. That must still be a 404, not a 500.
+func TestNotificationHandler_Subscribe_TopicDeletedBeforeInsert(t *testing.T) {
+	mock := newSubscribeMock(t)
+	expectGetTopic(mock, 7, nil)
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.subscriptions")).
+		WithArgs(int64(42), int64(7), []byte("{}")).
+		WillReturnError(&pq.Error{Code: "23503"})
+	mock.ExpectRollback()
+
+	req := authedNotifReq(http.MethodPost, "/notification/subscriptions/7", map[string]string{"topicId": "7"}, 42)
+	resp, err := NotificationHandler(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	assert.Contains(t, resp.Body, "topic not found")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestNotificationHandler_Subscribe_GetTopicDBError(t *testing.T) {
+	mock := newSubscribeMock(t)
+	mock.ExpectQuery(regexp.QuoteMeta("FROM notifications.topics")).
+		WithArgs(int64(7)).
+		WillReturnError(errors.New("connection reset"))
+
+	req := authedNotifReq(http.MethodPost, "/notification/subscriptions/7", map[string]string{"topicId": "7"}, 42)
+	resp, err := NotificationHandler(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+	assert.NoError(t, mock.ExpectationsWereMet(), "no subscription should be stored")
+}
+
+func TestNotificationHandler_Subscribe_DatasetLookupDBError(t *testing.T) {
+	mock := newSubscribeMock(t)
+	expectGetTopic(mock, 4, []byte(updateReadmeContext))
+	mock.ExpectQuery(regexp.QuoteMeta(`FROM "1".datasets`)).
+		WithArgs(int64(5)).
+		WillReturnError(errors.New("connection reset"))
+
+	req := authedNotifReq(http.MethodPost, "/notification/subscriptions/4", map[string]string{"topicId": "4"}, 42)
+	req.Body = `{"organizationId": 1, "datasetId": 5}`
+	resp, err := NotificationHandler(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+	assert.NoError(t, mock.ExpectationsWereMet(), "no subscription should be stored")
+}
+
+// TestNotificationHandler_Subscribe_InvalidDatasetReference covers dataset
+// references that the topic's schema doesn't rule out (here, a topic with no
+// context) but that can't name a real dataset.
+func TestNotificationHandler_Subscribe_InvalidDatasetReference(t *testing.T) {
+	tests := []struct {
+		name        string
+		body        string
+		wantMessage string
+	}{
+		{"dataset without organization", `{"datasetId": 5}`, "datasetId requires organizationId"},
+		{"zero organization", `{"organizationId": 0, "datasetId": 5}`, "organizationId must be a positive integer"},
+		{"non-numeric organization", `{"organizationId": "1", "datasetId": 5}`, "organizationId must be a positive integer"},
+		{"negative dataset", `{"organizationId": 1, "datasetId": -5}`, "datasetId must be a positive integer"},
+		{"fractional dataset", `{"organizationId": 1, "datasetId": 5.5}`, "datasetId must be a positive integer"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := newSubscribeMock(t)
+			expectGetTopic(mock, 7, nil)
+
+			req := authedNotifReq(http.MethodPost, "/notification/subscriptions/7", map[string]string{"topicId": "7"}, 42)
+			req.Body = tt.body
+			resp, err := NotificationHandler(context.Background(), req)
+			require.NoError(t, err)
+			assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+			assert.Contains(t, resp.Body, tt.wantMessage)
+			assert.NoError(t, mock.ExpectationsWereMet(), "no subscription should be stored")
+		})
+	}
 }
 
 func TestNotificationHandler_Unsubscribe(t *testing.T) {
