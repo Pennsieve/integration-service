@@ -145,11 +145,15 @@ components:
       required: [subscription_id, user_id, topic_id, created_at]
     SubscribeRequest:
       type: object
-      properties:
-        context:
-          type: object
-          description: Optional free-form JSON context for the subscription.
-          nullable: true
+      description: >-
+        Free-form JSON object stored as the subscription's context. It must
+        satisfy the JSON Schema in the topic's context (see GET
+        /notification/topics), and when it carries organizationId and
+        datasetId, that dataset must exist in that organization.
+      additionalProperties: true
+      example:
+        organizationId: 1
+        datasetId: 42
     NotificationPreferences:
       type: object
       description: >-
@@ -275,9 +279,13 @@ paths:
     post:
       summary: Subscribe to a topic
       description: |
-        Subscribes the authenticated user to the given topic. Calling this
-        again for a topic the user is already subscribed to updates the
-        subscription's context rather than creating a duplicate.
+        Subscribes the authenticated user to the given topic. The request
+        body is the subscription's context and is validated before it is
+        stored: it must be a JSON object matching the topic's context JSON
+        Schema, and any dataset it references (organizationId + datasetId)
+        must exist. An empty body is treated as {}. Calling this again with
+        the same context updates that subscription rather than creating a
+        duplicate.
       operationId: subscribeToTopic
       tags: [Notifications]
       security:
@@ -304,7 +312,10 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Subscription' }
         '400':
-          description: Invalid topicId, malformed base64 body, or body is not valid JSON
+          description: >-
+            Invalid topicId, malformed base64 body, body is not a JSON object,
+            body does not match the topic's context schema, or the referenced
+            dataset does not exist
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }

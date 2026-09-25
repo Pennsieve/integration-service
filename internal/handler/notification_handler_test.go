@@ -138,23 +138,57 @@ func TestNotificationHandler_MissingUserClaim(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 }
 
-func TestNotificationHandler_Subscribe(t *testing.T) {
+// updateReadmeContext is the context JSON Schema of the UPDATE_README topic.
+const updateReadmeContext = `{
+	"$schema": "http://json-schema.org",
+	"properties": {
+		"datasetId": {"type": "integer"},
+		"organizationId": {"type": "integer"}
+	},
+	"required": ["organizationId", "datasetId"],
+	"title": "UpdateReadmeTopicConfiguration",
+	"type": "object"
+}`
+
+var topicColumns = []string{"topic_id", "name", "description", "created_at", "context"}
+
+// expectGetTopic registers the topic lookup handleSubscribe performs before
+// validating the body. A nil topicContext is a topic with no context schema.
+func expectGetTopic(mock sqlmock.Sqlmock, topicID int64, topicContext []byte) {
+	mock.ExpectQuery(regexp.QuoteMeta("FROM notifications.topics")).
+		WithArgs(topicID).
+		WillReturnRows(sqlmock.NewRows(topicColumns).
+			AddRow(topicID, "UPDATE_README", "dataset readme updated", time.Now(), topicContext))
+}
+
+// expectCreateSubscription registers CreateSubscription's transaction,
+// storing storedContext.
+func expectCreateSubscription(mock sqlmock.Sqlmock, userID, topicID int64, storedContext []byte, inserted bool) {
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.subscriptions")).
+		WithArgs(userID, topicID, storedContext).
+		WillReturnRows(sqlmock.NewRows([]string{"subscription_id", "user_id", "topic_id", "context", "created_at", "inserted"}).
+			AddRow(int64(9), userID, topicID, storedContext, time.Now(), inserted))
+	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO notifications.preferences")).
+		WithArgs(userID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+}
+
+func newSubscribeMock(t *testing.T) sqlmock.Sqlmock {
+	t.Helper()
 	aws.AwsOnce.Do(func() {})
 	mockDB, mock, err := sqlmock.New()
 	require.NoError(t, err)
-	defer mockDB.Close()
+	t.Cleanup(func() { mockDB.Close() })
 	db.SetPoolForTest(mockDB)
+	return mock
+}
 
-	now := time.Now()
-	mock.ExpectBegin()
-	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.subscriptions")).
-		WithArgs(int64(42), int64(7), []byte("{}")).
-		WillReturnRows(sqlmock.NewRows([]string{"subscription_id", "user_id", "topic_id", "context", "created_at", "inserted"}).
-			AddRow(int64(9), int64(42), int64(7), []byte("{}"), now, true))
-	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO notifications.preferences")).
-		WithArgs(int64(42)).
-		WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectCommit()
+func TestNotificationHandler_Subscribe(t *testing.T) {
+	mock := newSubscribeMock(t)
+	expectGetTopic(mock, 7, nil)
+	expectCreateSubscription(mock, 42, 7, []byte("{}"), true)
 
 	req := authedNotifReq(http.MethodPost, "/notification/subscriptions/7", map[string]string{"topicId": "7"}, 42)
 	resp, err := NotificationHandler(context.Background(), req)
@@ -164,25 +198,42 @@ func TestNotificationHandler_Subscribe(t *testing.T) {
 	var sub models.Subscription
 	require.NoError(t, json.Unmarshal([]byte(resp.Body), &sub))
 	assert.Equal(t, int64(9), sub.SubscriptionID)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestNotificationHandler_Subscribe_EmptyOrNullBody checks that a missing,
+// blank, or JSON null body is stored as {} on a topic with no context
+// schema, rather than being rejected as not a JSON object.
+func TestNotificationHandler_Subscribe_EmptyOrNullBody(t *testing.T) {
+	for name, body := range map[string]string{
+		"empty":             ``,
+		"whitespace":        " \n\t",
+		"null":              `null`,
+		"whitespace-padded": " null\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			mock := newSubscribeMock(t)
+			expectGetTopic(mock, 7, nil)
+			expectCreateSubscription(mock, 42, 7, []byte("{}"), true)
+
+			req := authedNotifReq(http.MethodPost, "/notification/subscriptions/7", map[string]string{"topicId": "7"}, 42)
+			req.Body = body
+			resp, err := NotificationHandler(context.Background(), req)
+			require.NoError(t, err)
+			assert.Equal(t, http.StatusCreated, resp.StatusCode, resp.Body)
+
+			var sub models.Subscription
+			require.NoError(t, json.Unmarshal([]byte(resp.Body), &sub))
+			assert.JSONEq(t, `{}`, string(sub.Context))
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
 }
 
 func TestNotificationHandler_Subscribe_Upsert(t *testing.T) {
-	aws.AwsOnce.Do(func() {})
-	mockDB, mock, err := sqlmock.New()
-	require.NoError(t, err)
-	defer mockDB.Close()
-	db.SetPoolForTest(mockDB)
-
-	now := time.Now()
-	mock.ExpectBegin()
-	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.subscriptions")).
-		WithArgs(int64(42), int64(7), []byte("{}")).
-		WillReturnRows(sqlmock.NewRows([]string{"subscription_id", "user_id", "topic_id", "context", "created_at", "inserted"}).
-			AddRow(int64(9), int64(42), int64(7), []byte("{}"), now, false))
-	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO notifications.preferences")).
-		WithArgs(int64(42)).
-		WillReturnResult(sqlmock.NewResult(0, 0))
-	mock.ExpectCommit()
+	mock := newSubscribeMock(t)
+	expectGetTopic(mock, 7, nil)
+	expectCreateSubscription(mock, 42, 7, []byte("{}"), false)
 
 	req := authedNotifReq(http.MethodPost, "/notification/subscriptions/7", map[string]string{"topicId": "7"}, 42)
 	resp, err := NotificationHandler(context.Background(), req)
@@ -195,25 +246,12 @@ func TestNotificationHandler_Subscribe_Upsert(t *testing.T) {
 }
 
 func TestNotificationHandler_Subscribe_Base64Body(t *testing.T) {
-	aws.AwsOnce.Do(func() {})
-	mockDB, mock, err := sqlmock.New()
-	require.NoError(t, err)
-	defer mockDB.Close()
-	db.SetPoolForTest(mockDB)
-
-	now := time.Now()
-	mock.ExpectBegin()
-	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.subscriptions")).
-		WithArgs(int64(42), int64(7), []byte(`{"filter":"critical"}`)).
-		WillReturnRows(sqlmock.NewRows([]string{"subscription_id", "user_id", "topic_id", "context", "created_at", "inserted"}).
-			AddRow(int64(9), int64(42), int64(7), []byte(`{"filter":"critical"}`), now, true))
-	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO notifications.preferences")).
-		WithArgs(int64(42)).
-		WillReturnResult(sqlmock.NewResult(0, 1))
-	mock.ExpectCommit()
+	mock := newSubscribeMock(t)
+	expectGetTopic(mock, 7, nil)
+	expectCreateSubscription(mock, 42, 7, []byte(`{"filter":"critical"}`), true)
 
 	req := authedNotifReq(http.MethodPost, "/notification/subscriptions/7", map[string]string{"topicId": "7"}, 42)
-	req.Body = base64.StdEncoding.EncodeToString([]byte(`{"context":{"filter":"critical"}}`))
+	req.Body = base64.StdEncoding.EncodeToString([]byte(`{"filter":"critical"}`))
 	req.IsBase64Encoded = true
 	resp, err := NotificationHandler(context.Background(), req)
 	require.NoError(t, err)
@@ -224,12 +262,99 @@ func TestNotificationHandler_Subscribe_Base64Body(t *testing.T) {
 	assert.JSONEq(t, `{"filter":"critical"}`, string(sub.Context))
 }
 
-func TestNotificationHandler_Subscribe_InvalidBase64(t *testing.T) {
-	aws.AwsOnce.Do(func() {})
-	mockDB, _, err := sqlmock.New()
+func TestNotificationHandler_Subscribe_ValidTopicContext(t *testing.T) {
+	mock := newSubscribeMock(t)
+	body := []byte(`{"organizationId": 1, "datasetId": 5}`)
+	expectGetTopic(mock, 4, []byte(updateReadmeContext))
+	mock.ExpectQuery(regexp.QuoteMeta(`FROM "1".datasets`)).
+		WithArgs(int64(5)).
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+	expectCreateSubscription(mock, 42, 4, body, true)
+
+	req := authedNotifReq(http.MethodPost, "/notification/subscriptions/4", map[string]string{"topicId": "4"}, 42)
+	req.Body = string(body)
+	resp, err := NotificationHandler(context.Background(), req)
 	require.NoError(t, err)
-	defer mockDB.Close()
-	db.SetPoolForTest(mockDB)
+	assert.Equal(t, http.StatusCreated, resp.StatusCode, resp.Body)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestNotificationHandler_Subscribe_TopicContextMismatch(t *testing.T) {
+	tests := []struct {
+		name        string
+		body        string
+		wantMessage string
+	}{
+		{"missing required property", `{"organizationId": 1}`, "datasetId"},
+		{"wrong property type", `{"organizationId": 1, "datasetId": "five"}`, "datasetId"},
+		{"empty body", ``, "missing properties"},
+		{"null body", `null`, "missing properties"},
+		{"whitespace-padded null body", " null\n", "missing properties"},
+		{"not an object", `[1, 2]`, "JSON object"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := newSubscribeMock(t)
+			expectGetTopic(mock, 4, []byte(updateReadmeContext))
+
+			req := authedNotifReq(http.MethodPost, "/notification/subscriptions/4", map[string]string{"topicId": "4"}, 42)
+			req.Body = tt.body
+			resp, err := NotificationHandler(context.Background(), req)
+			require.NoError(t, err)
+			assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+
+			var errBody models.NotificationErrorResponse
+			require.NoError(t, json.Unmarshal([]byte(resp.Body), &errBody))
+			assert.Contains(t, errBody.Message, tt.wantMessage)
+			assert.NoError(t, mock.ExpectationsWereMet(), "no subscription should be stored")
+		})
+	}
+}
+
+func TestNotificationHandler_Subscribe_DatasetNotFound(t *testing.T) {
+	mock := newSubscribeMock(t)
+	expectGetTopic(mock, 4, []byte(updateReadmeContext))
+	mock.ExpectQuery(regexp.QuoteMeta(`FROM "1".datasets`)).
+		WithArgs(int64(5)).
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
+
+	req := authedNotifReq(http.MethodPost, "/notification/subscriptions/4", map[string]string{"topicId": "4"}, 42)
+	req.Body = `{"organizationId": 1, "datasetId": 5}`
+	resp, err := NotificationHandler(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	assert.Contains(t, resp.Body, "dataset not found")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestNotificationHandler_Subscribe_OrganizationNotFound(t *testing.T) {
+	mock := newSubscribeMock(t)
+	expectGetTopic(mock, 4, []byte(updateReadmeContext))
+	mock.ExpectQuery(regexp.QuoteMeta(`FROM "999".datasets`)).
+		WithArgs(int64(5)).
+		WillReturnError(&pq.Error{Code: "42P01"})
+
+	req := authedNotifReq(http.MethodPost, "/notification/subscriptions/4", map[string]string{"topicId": "4"}, 42)
+	req.Body = `{"organizationId": 999, "datasetId": 5}`
+	resp, err := NotificationHandler(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	assert.Contains(t, resp.Body, "dataset not found")
+}
+
+func TestNotificationHandler_Subscribe_InvalidTopicSchema(t *testing.T) {
+	mock := newSubscribeMock(t)
+	expectGetTopic(mock, 4, []byte(`{"type": 12}`))
+
+	req := authedNotifReq(http.MethodPost, "/notification/subscriptions/4", map[string]string{"topicId": "4"}, 42)
+	req.Body = `{}`
+	resp, err := NotificationHandler(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+}
+
+func TestNotificationHandler_Subscribe_InvalidBase64(t *testing.T) {
+	newSubscribeMock(t)
 
 	req := authedNotifReq(http.MethodPost, "/notification/subscriptions/7", map[string]string{"topicId": "7"}, 42)
 	req.Body = "not-valid-base64!!"
@@ -240,11 +365,8 @@ func TestNotificationHandler_Subscribe_InvalidBase64(t *testing.T) {
 }
 
 func TestNotificationHandler_Subscribe_InvalidJSON(t *testing.T) {
-	aws.AwsOnce.Do(func() {})
-	mockDB, _, err := sqlmock.New()
-	require.NoError(t, err)
-	defer mockDB.Close()
-	db.SetPoolForTest(mockDB)
+	mock := newSubscribeMock(t)
+	expectGetTopic(mock, 7, nil)
 
 	req := authedNotifReq(http.MethodPost, "/notification/subscriptions/7", map[string]string{"topicId": "7"}, 42)
 	req.Body = "{not json"
@@ -254,11 +376,7 @@ func TestNotificationHandler_Subscribe_InvalidJSON(t *testing.T) {
 }
 
 func TestNotificationHandler_Subscribe_InvalidTopicID(t *testing.T) {
-	aws.AwsOnce.Do(func() {})
-	mockDB, _, err := sqlmock.New()
-	require.NoError(t, err)
-	defer mockDB.Close()
-	db.SetPoolForTest(mockDB)
+	newSubscribeMock(t)
 
 	req := authedNotifReq(http.MethodPost, "/notification/subscriptions/abc", nil, 42)
 	resp, err := NotificationHandler(context.Background(), req)
@@ -267,12 +385,8 @@ func TestNotificationHandler_Subscribe_InvalidTopicID(t *testing.T) {
 }
 
 func TestNotificationHandler_Subscribe_DBError(t *testing.T) {
-	aws.AwsOnce.Do(func() {})
-	mockDB, mock, err := sqlmock.New()
-	require.NoError(t, err)
-	defer mockDB.Close()
-	db.SetPoolForTest(mockDB)
-
+	mock := newSubscribeMock(t)
+	expectGetTopic(mock, 7, nil)
 	mock.ExpectBegin()
 	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.subscriptions")).
 		WithArgs(int64(42), int64(7), []byte("{}")).
@@ -286,22 +400,96 @@ func TestNotificationHandler_Subscribe_DBError(t *testing.T) {
 }
 
 func TestNotificationHandler_Subscribe_TopicNotFound(t *testing.T) {
-	aws.AwsOnce.Do(func() {})
-	mockDB, mock, err := sqlmock.New()
-	require.NoError(t, err)
-	defer mockDB.Close()
-	db.SetPoolForTest(mockDB)
-
-	mock.ExpectBegin()
-	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.subscriptions")).
-		WithArgs(int64(42), int64(999), []byte("{}")).
-		WillReturnError(&pq.Error{Code: "23503"})
-	mock.ExpectRollback()
+	mock := newSubscribeMock(t)
+	mock.ExpectQuery(regexp.QuoteMeta("FROM notifications.topics")).
+		WithArgs(int64(999)).
+		WillReturnRows(sqlmock.NewRows(topicColumns))
 
 	req := authedNotifReq(http.MethodPost, "/notification/subscriptions/999", map[string]string{"topicId": "999"}, 42)
 	resp, err := NotificationHandler(context.Background(), req)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	assert.NoError(t, mock.ExpectationsWereMet(), "no subscription should be stored")
+}
+
+// TestNotificationHandler_Subscribe_TopicDeletedBeforeInsert covers the
+// window between the topic lookup and the insert: the topic exists when
+// looked up but is gone by the time the subscription is inserted, so the
+// insert hits the topic foreign key. That must still be a 404, not a 500.
+func TestNotificationHandler_Subscribe_TopicDeletedBeforeInsert(t *testing.T) {
+	mock := newSubscribeMock(t)
+	expectGetTopic(mock, 7, nil)
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.subscriptions")).
+		WithArgs(int64(42), int64(7), []byte("{}")).
+		WillReturnError(&pq.Error{Code: "23503"})
+	mock.ExpectRollback()
+
+	req := authedNotifReq(http.MethodPost, "/notification/subscriptions/7", map[string]string{"topicId": "7"}, 42)
+	resp, err := NotificationHandler(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	assert.Contains(t, resp.Body, "topic not found")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestNotificationHandler_Subscribe_GetTopicDBError(t *testing.T) {
+	mock := newSubscribeMock(t)
+	mock.ExpectQuery(regexp.QuoteMeta("FROM notifications.topics")).
+		WithArgs(int64(7)).
+		WillReturnError(errors.New("connection reset"))
+
+	req := authedNotifReq(http.MethodPost, "/notification/subscriptions/7", map[string]string{"topicId": "7"}, 42)
+	resp, err := NotificationHandler(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+	assert.NoError(t, mock.ExpectationsWereMet(), "no subscription should be stored")
+}
+
+func TestNotificationHandler_Subscribe_DatasetLookupDBError(t *testing.T) {
+	mock := newSubscribeMock(t)
+	expectGetTopic(mock, 4, []byte(updateReadmeContext))
+	mock.ExpectQuery(regexp.QuoteMeta(`FROM "1".datasets`)).
+		WithArgs(int64(5)).
+		WillReturnError(errors.New("connection reset"))
+
+	req := authedNotifReq(http.MethodPost, "/notification/subscriptions/4", map[string]string{"topicId": "4"}, 42)
+	req.Body = `{"organizationId": 1, "datasetId": 5}`
+	resp, err := NotificationHandler(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+	assert.NoError(t, mock.ExpectationsWereMet(), "no subscription should be stored")
+}
+
+// TestNotificationHandler_Subscribe_InvalidDatasetReference covers dataset
+// references that the topic's schema doesn't rule out (here, a topic with no
+// context) but that can't name a real dataset.
+func TestNotificationHandler_Subscribe_InvalidDatasetReference(t *testing.T) {
+	tests := []struct {
+		name        string
+		body        string
+		wantMessage string
+	}{
+		{"dataset without organization", `{"datasetId": 5}`, "datasetId requires organizationId"},
+		{"zero organization", `{"organizationId": 0, "datasetId": 5}`, "organizationId must be a positive integer"},
+		{"non-numeric organization", `{"organizationId": "1", "datasetId": 5}`, "organizationId must be a positive integer"},
+		{"negative dataset", `{"organizationId": 1, "datasetId": -5}`, "datasetId must be a positive integer"},
+		{"fractional dataset", `{"organizationId": 1, "datasetId": 5.5}`, "datasetId must be a positive integer"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := newSubscribeMock(t)
+			expectGetTopic(mock, 7, nil)
+
+			req := authedNotifReq(http.MethodPost, "/notification/subscriptions/7", map[string]string{"topicId": "7"}, 42)
+			req.Body = tt.body
+			resp, err := NotificationHandler(context.Background(), req)
+			require.NoError(t, err)
+			assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+			assert.Contains(t, resp.Body, tt.wantMessage)
+			assert.NoError(t, mock.ExpectationsWereMet(), "no subscription should be stored")
+		})
+	}
 }
 
 func TestNotificationHandler_Unsubscribe(t *testing.T) {

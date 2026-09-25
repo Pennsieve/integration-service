@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/Pennsieve/integration-service/internal/models"
@@ -155,6 +156,59 @@ func TopicExists(ctx context.Context, topicID int64) (bool, error) {
 	var exists bool
 	if err := dbPool.QueryRowContext(ctx, q, topicID).Scan(&exists); err != nil {
 		return false, fmt.Errorf("topic exists: %w", err)
+	}
+	return exists, nil
+}
+
+// GetTopic returns the topic identified by topicID, including the context
+// JSON Schema that subscriptions to it must satisfy. Returns
+// ErrTopicNotFound if topicID doesn't exist.
+func GetTopic(ctx context.Context, topicID int64) (models.Topic, error) {
+	const q = `
+		SELECT topic_id, name, description, created_at, context
+		FROM notifications.topics
+		WHERE topic_id = $1`
+
+	var t models.Topic
+	var description sql.NullString
+	var topicContext []byte
+	err := dbPool.QueryRowContext(ctx, q, topicID).Scan(&t.TopicID, &t.Name, &description, &t.CreatedAt, &topicContext)
+	if errors.Is(err, sql.ErrNoRows) {
+		return models.Topic{}, ErrTopicNotFound
+	}
+	if err != nil {
+		return models.Topic{}, fmt.Errorf("get topic: %w", err)
+	}
+	t.Description = description.String
+	t.Context = topicContext
+	return t, nil
+}
+
+// pqUndefinedTable is the error code Postgres reports when a query
+// references a table that doesn't exist, including one qualified by a schema
+// that doesn't exist, e.g. an organization schema for an organization id that
+// was never provisioned.
+const pqUndefinedTable = "42P01"
+
+// DatasetExists reports whether datasetID exists, and is not being deleted,
+// in organizationID's schema ("<organizationID>".datasets). An
+// organizationID with no schema reports false rather than an error, since
+// that just means the caller referenced an organization that doesn't exist.
+func DatasetExists(ctx context.Context, organizationID, datasetID int64) (bool, error) {
+	// The organization id is a schema name, which can't be bound as a query
+	// parameter; it is an int64 formatted and quoted here, so it can't carry
+	// SQL of its own.
+	q := fmt.Sprintf(
+		`SELECT EXISTS(SELECT 1 FROM %s.datasets WHERE id = $1 AND state <> 'DELETING')`,
+		pq.QuoteIdentifier(strconv.FormatInt(organizationID, 10)))
+
+	var exists bool
+	if err := dbPool.QueryRowContext(ctx, q, datasetID).Scan(&exists); err != nil {
+		var pqErr *pq.Error
+		if errors.As(err, &pqErr) && pqErr.Code == pqUndefinedTable {
+			return false, nil
+		}
+		return false, fmt.Errorf("dataset exists: %w", err)
 	}
 	return exists, nil
 }

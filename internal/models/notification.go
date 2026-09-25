@@ -23,12 +23,6 @@ type Subscription struct {
 	CreatedAt      time.Time       `json:"created_at"`
 }
 
-// SubscribeRequest is the optional JSON body accepted when creating a
-// subscription.
-type SubscribeRequest struct {
-	Context json.RawMessage `json:"context,omitempty"`
-}
-
 // Notification records that an event occurred for a subscription.
 type Notification struct {
 	NotificationID int64           `json:"notification_id"`

@@ -411,3 +411,73 @@ func TestSetNotificationsLastSeen_DBError(t *testing.T) {
 	assert.NotErrorIs(t, err, ErrUserNotFound)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
+
+func TestGetTopic(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	SetPoolForTest(mockDB)
+
+	mock.ExpectQuery(regexp.QuoteMeta("FROM notifications.topics WHERE topic_id = $1")).
+		WithArgs(int64(4)).
+		WillReturnRows(sqlmock.NewRows([]string{"topic_id", "name", "description", "created_at", "context"}).
+			AddRow(int64(4), "UPDATE_README", nil, time.Now(), []byte(`{"type":"object"}`)))
+
+	topic, err := GetTopic(context.Background(), 4)
+	require.NoError(t, err)
+	assert.Equal(t, "UPDATE_README", topic.Name)
+	assert.JSONEq(t, `{"type":"object"}`, string(topic.Context))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestGetTopic_NotFound(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	SetPoolForTest(mockDB)
+
+	mock.ExpectQuery(regexp.QuoteMeta("FROM notifications.topics WHERE topic_id = $1")).
+		WithArgs(int64(999)).
+		WillReturnError(sql.ErrNoRows)
+
+	_, err = GetTopic(context.Background(), 999)
+	assert.ErrorIs(t, err, ErrTopicNotFound)
+}
+
+func TestDatasetExists(t *testing.T) {
+	tests := []struct {
+		name    string
+		rows    *sqlmock.Rows
+		err     error
+		want    bool
+		wantErr bool
+	}{
+		{name: "exists", rows: sqlmock.NewRows([]string{"exists"}).AddRow(true), want: true},
+		{name: "missing dataset", rows: sqlmock.NewRows([]string{"exists"}).AddRow(false), want: false},
+		{name: "missing organization schema", err: &pq.Error{Code: "42P01"}, want: false},
+		{name: "db error", err: errors.New("connection reset"), wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockDB, mock, err := sqlmock.New()
+			require.NoError(t, err)
+			defer mockDB.Close()
+			SetPoolForTest(mockDB)
+
+			q := mock.ExpectQuery(regexp.QuoteMeta(`FROM "3".datasets WHERE id = $1 AND state <> 'DELETING'`)).WithArgs(int64(5))
+			if tt.err != nil {
+				q.WillReturnError(tt.err)
+			} else {
+				q.WillReturnRows(tt.rows)
+			}
+
+			got, err := DatasetExists(context.Background(), 3, 5)
+			if tt.wantErr {
+				assert.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

@@ -11,6 +11,7 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/pennsieve/dbmigrate-go v1.1.1
 	github.com/pennsieve/pennsieve-go-core v1.15.0
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/stretchr/testify v1.11.1
 )
 
