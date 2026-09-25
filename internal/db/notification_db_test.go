@@ -21,10 +21,10 @@ func TestGetTopics(t *testing.T) {
 	SetPoolForTest(mockDB)
 
 	now := time.Now()
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT topic_id, name, description, created_at, context FROM notifications.topics")).
-		WillReturnRows(sqlmock.NewRows([]string{"topic_id", "name", "description", "created_at", "context"}).
-			AddRow(int64(1), "datasets", "dataset events", now, []byte(`{"type":"object","properties":{"dataset_id":{"type":"integer"}}}`)).
-			AddRow(int64(2), "billing", nil, now, nil))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT topic_id, name, description, enabled, created_at, context FROM notifications.topics")).
+		WillReturnRows(sqlmock.NewRows([]string{"topic_id", "name", "description", "enabled", "created_at", "context"}).
+			AddRow(int64(1), "datasets", "dataset events", true, now, []byte(`{"type":"object","properties":{"dataset_id":{"type":"integer"}}}`)).
+			AddRow(int64(2), "billing", nil, false, now, nil))
 
 	topics, err := GetTopics(context.Background())
 	require.NoError(t, err)
@@ -32,6 +32,8 @@ func TestGetTopics(t *testing.T) {
 	assert.Equal(t, "datasets", topics[0].Name)
 	assert.Equal(t, "dataset events", topics[0].Description)
 	assert.Equal(t, "", topics[1].Description)
+	assert.True(t, topics[0].Enabled)
+	assert.False(t, topics[1].Enabled, "disabled topics are still listed")
 	assert.JSONEq(t, `{"type":"object","properties":{"dataset_id":{"type":"integer"}}}`, string(topics[0].Context))
 	assert.Nil(t, topics[1].Context)
 	require.NoError(t, mock.ExpectationsWereMet())
@@ -44,17 +46,19 @@ func TestGetUserSubscriptions(t *testing.T) {
 	SetPoolForTest(mockDB)
 
 	now := time.Now()
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT subscription_id, user_id, topic_id, context, created_at FROM notifications.subscriptions")).
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT subscription_id, user_id, topic_id, context, enabled, created_at FROM notifications.subscriptions")).
 		WithArgs(int64(42)).
-		WillReturnRows(sqlmock.NewRows([]string{"subscription_id", "user_id", "topic_id", "context", "created_at"}).
-			AddRow(int64(1), int64(42), int64(2), []byte(`{"filter":"critical"}`), now).
-			AddRow(int64(2), int64(42), int64(3), nil, now))
+		WillReturnRows(sqlmock.NewRows(subscriptionColumns).
+			AddRow(int64(1), int64(42), int64(2), []byte(`{"filter":"critical"}`), true, now).
+			AddRow(int64(2), int64(42), int64(3), nil, false, now))
 
 	subs, err := GetUserSubscriptions(context.Background(), 42)
 	require.NoError(t, err)
 	require.Len(t, subs, 2)
 	assert.JSONEq(t, `{"filter":"critical"}`, string(subs[0].Context))
 	assert.Nil(t, subs[1].Context)
+	assert.True(t, subs[0].Enabled)
+	assert.False(t, subs[1].Enabled, "disabled subscriptions are still listed")
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -68,8 +72,8 @@ func TestCreateSubscription_Success(t *testing.T) {
 	mock.ExpectBegin()
 	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.subscriptions")).
 		WithArgs(int64(42), int64(7), []byte("{}")).
-		WillReturnRows(sqlmock.NewRows([]string{"subscription_id", "user_id", "topic_id", "context", "created_at", "inserted"}).
-			AddRow(int64(9), int64(42), int64(7), []byte("{}"), now, true))
+		WillReturnRows(sqlmock.NewRows(append(subscriptionColumns, "inserted")).
+			AddRow(int64(9), int64(42), int64(7), []byte("{}"), true, now, true))
 	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO notifications.preferences")).
 		WithArgs(int64(42)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
@@ -92,10 +96,12 @@ func TestCreateSubscription_Upsert_UpdatesExisting(t *testing.T) {
 
 	now := time.Now()
 	mock.ExpectBegin()
-	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.subscriptions")).
+	// The conflict action must re-enable the row, so a user who disabled
+	// this subscription gets it back by subscribing again.
+	mock.ExpectQuery(regexp.QuoteMeta("ON CONFLICT (user_id, topic_id, context) DO UPDATE SET enabled = true")).
 		WithArgs(int64(42), int64(7), []byte(`{"filter":"critical"}`)).
-		WillReturnRows(sqlmock.NewRows([]string{"subscription_id", "user_id", "topic_id", "context", "created_at", "inserted"}).
-			AddRow(int64(9), int64(42), int64(7), []byte(`{"filter":"critical"}`), now, false))
+		WillReturnRows(sqlmock.NewRows(append(subscriptionColumns, "inserted")).
+			AddRow(int64(9), int64(42), int64(7), []byte(`{"filter":"critical"}`), true, now, false))
 	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO notifications.preferences")).
 		WithArgs(int64(42)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
@@ -106,6 +112,7 @@ func TestCreateSubscription_Upsert_UpdatesExisting(t *testing.T) {
 	assert.Equal(t, int64(9), sub.SubscriptionID)
 	assert.JSONEq(t, `{"filter":"critical"}`, string(sub.Context))
 	assert.False(t, created, "re-subscribing with a context that already exists should report an update, not a new row")
+	assert.True(t, sub.Enabled)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -127,95 +134,105 @@ func TestCreateSubscription_TopicNotFound(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestDeleteSubscription_Deleted(t *testing.T) {
+var subscriptionColumns = []string{"subscription_id", "user_id", "topic_id", "context", "enabled", "created_at"}
+
+// setSubscriptionEnabledQuery pins the full WHERE clause (not just the
+// UPDATE prefix) so a regression that drops the "AND user_id = $2" scope
+// would fail these tests.
+const setSubscriptionEnabledQuery = "UPDATE notifications.subscriptions SET enabled = $3 WHERE subscription_id = $1 AND user_id = $2"
+
+func TestSetSubscriptionEnabled(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		mockDB, mock, err := sqlmock.New()
+		require.NoError(t, err)
+		SetPoolForTest(mockDB)
+
+		mock.ExpectQuery(regexp.QuoteMeta(setSubscriptionEnabledQuery)).
+			WithArgs(int64(9), int64(42), enabled).
+			WillReturnRows(sqlmock.NewRows(subscriptionColumns).
+				AddRow(int64(9), int64(42), int64(7), []byte(`{"filter":"critical"}`), enabled, time.Now()))
+
+		sub, err := SetSubscriptionEnabled(context.Background(), 9, 42, enabled)
+		require.NoError(t, err)
+		assert.Equal(t, int64(9), sub.SubscriptionID)
+		assert.Equal(t, enabled, sub.Enabled)
+		assert.JSONEq(t, `{"filter":"critical"}`, string(sub.Context))
+		require.NoError(t, mock.ExpectationsWereMet())
+		mockDB.Close()
+	}
+}
+
+// Subscription 9 belongs to user 42; user 999 updating it must not match any
+// row, since the update is scoped by user_id.
+func TestSetSubscriptionEnabled_WrongUser(t *testing.T) {
 	mockDB, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	defer mockDB.Close()
 	SetPoolForTest(mockDB)
 
-	mock.ExpectExec(regexp.QuoteMeta("DELETE FROM notifications.subscriptions")).
-		WithArgs(int64(9), int64(42)).
-		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(regexp.QuoteMeta(setSubscriptionEnabledQuery)).
+		WithArgs(int64(9), int64(999), false).
+		WillReturnRows(sqlmock.NewRows(subscriptionColumns))
 
-	deleted, err := DeleteSubscription(context.Background(), 9, 42)
-	require.NoError(t, err)
-	assert.True(t, deleted)
+	_, err = SetSubscriptionEnabled(context.Background(), 9, 999, false)
+	assert.ErrorIs(t, err, ErrSubscriptionNotFound)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestDeleteSubscription_WrongUser(t *testing.T) {
+func TestSetSubscriptionEnabled_DBError(t *testing.T) {
 	mockDB, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	defer mockDB.Close()
 	SetPoolForTest(mockDB)
 
-	// subscription 9 belongs to user 42; user 999 attempting to delete it
-	// must not match any row, since the query is scoped by user_id. Pin the
-	// full WHERE clause (not just the DELETE prefix) so a regression that
-	// drops the "AND user_id = $2" scope would fail this test.
-	mock.ExpectExec(regexp.QuoteMeta("DELETE FROM notifications.subscriptions WHERE subscription_id = $1 AND user_id = $2")).
-		WithArgs(int64(9), int64(999)).
-		WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectQuery(regexp.QuoteMeta(setSubscriptionEnabledQuery)).
+		WithArgs(int64(9), int64(42), false).
+		WillReturnError(errors.New("connection reset"))
 
-	deleted, err := DeleteSubscription(context.Background(), 9, 999)
-	require.NoError(t, err)
-	assert.False(t, deleted)
+	_, err = SetSubscriptionEnabled(context.Background(), 9, 42, false)
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, ErrSubscriptionNotFound)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestDeleteSubscription_NotFound(t *testing.T) {
-	mockDB, mock, err := sqlmock.New()
-	require.NoError(t, err)
-	defer mockDB.Close()
-	SetPoolForTest(mockDB)
-
-	mock.ExpectExec(regexp.QuoteMeta("DELETE FROM notifications.subscriptions")).
-		WithArgs(int64(9), int64(42)).
-		WillReturnResult(sqlmock.NewResult(0, 0))
-
-	deleted, err := DeleteSubscription(context.Background(), 9, 42)
-	require.NoError(t, err)
-	assert.False(t, deleted)
-	require.NoError(t, mock.ExpectationsWereMet())
-}
-
-func TestTopicExists(t *testing.T) {
-	mockDB, mock, err := sqlmock.New()
-	require.NoError(t, err)
-	defer mockDB.Close()
-	SetPoolForTest(mockDB)
-
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT EXISTS(SELECT 1 FROM notifications.topics WHERE topic_id = $1)")).
-		WithArgs(int64(7)).
-		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
-
-	exists, err := TopicExists(context.Background(), 7)
-	require.NoError(t, err)
-	assert.True(t, exists)
-	require.NoError(t, mock.ExpectationsWereMet())
-}
-
-func TestGetTopicNotifications(t *testing.T) {
+func TestGetUserNotifications(t *testing.T) {
 	mockDB, mock, err := sqlmock.New()
 	require.NoError(t, err)
 	defer mockDB.Close()
 	SetPoolForTest(mockDB)
 
 	now := time.Now()
-	// Pin the full WHERE clause (not just a prefix) so a regression that
-	// drops the "AND s.user_id = $2" scope would fail this test.
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT n.notification_id, n.subscription_id, n.title, n.message, n.metadata, n.created_at FROM notifications.notifications n JOIN notifications.subscriptions s ON s.subscription_id = n.subscription_id WHERE s.topic_id = $1 AND s.user_id = $2")).
-		WithArgs(int64(7), int64(42), 50, 0).
-		WillReturnRows(sqlmock.NewRows([]string{"notification_id", "subscription_id", "title", "message", "metadata", "created_at"}).
-			AddRow(int64(1), int64(20), "Dataset published", "dataset 12 was published", []byte(`{"datasetId":12}`), now).
-			AddRow(int64(2), int64(21), "Dataset deleted", "dataset 5 was deleted", nil, now))
+	// Pin the full WHERE clause so a regression that drops the
+	// "s.user_id = $1" scope would fail this test. Deliberately no filter on
+	// s.enabled: history under disabled subscriptions must still be returned.
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT n.notification_id, n.subscription_id, s.topic_id, n.title, n.message, n.metadata, n.created_at FROM notifications.notifications n JOIN notifications.subscriptions s ON s.subscription_id = n.subscription_id WHERE s.user_id = $1 ORDER BY")).
+		WithArgs(int64(42), 50, 0).
+		WillReturnRows(sqlmock.NewRows([]string{"notification_id", "subscription_id", "topic_id", "title", "message", "metadata", "created_at"}).
+			AddRow(int64(1), int64(20), int64(7), "Dataset published", "dataset 12 was published", []byte(`{"datasetId":12}`), now).
+			AddRow(int64(2), int64(21), int64(8), "Dataset deleted", "dataset 5 was deleted", nil, now))
 
-	notifications, err := GetTopicNotifications(context.Background(), 7, 42, 50, 0)
+	notifications, err := GetUserNotifications(context.Background(), 42, 50, 0)
 	require.NoError(t, err)
 	require.Len(t, notifications, 2)
+	assert.Equal(t, int64(7), notifications[0].TopicID)
+	assert.Equal(t, int64(8), notifications[1].TopicID)
 	assert.JSONEq(t, `{"datasetId":12}`, string(notifications[0].Metadata))
 	assert.Nil(t, notifications[1].Metadata)
 	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestGetUserNotifications_DBError(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	SetPoolForTest(mockDB)
+
+	mock.ExpectQuery(regexp.QuoteMeta("FROM notifications.notifications n")).
+		WithArgs(int64(42), 50, 0).
+		WillReturnError(errors.New("connection reset"))
+
+	_, err = GetUserNotifications(context.Background(), 42, 50, 0)
+	require.Error(t, err)
 }
 
 func TestGetNotificationPreferences(t *testing.T) {
@@ -420,12 +437,13 @@ func TestGetTopic(t *testing.T) {
 
 	mock.ExpectQuery(regexp.QuoteMeta("FROM notifications.topics WHERE topic_id = $1")).
 		WithArgs(int64(4)).
-		WillReturnRows(sqlmock.NewRows([]string{"topic_id", "name", "description", "created_at", "context"}).
-			AddRow(int64(4), "UPDATE_README", nil, time.Now(), []byte(`{"type":"object"}`)))
+		WillReturnRows(sqlmock.NewRows([]string{"topic_id", "name", "description", "enabled", "created_at", "context"}).
+			AddRow(int64(4), "UPDATE_README", nil, false, time.Now(), []byte(`{"type":"object"}`)))
 
 	topic, err := GetTopic(context.Background(), 4)
 	require.NoError(t, err)
 	assert.Equal(t, "UPDATE_README", topic.Name)
+	assert.False(t, topic.Enabled)
 	assert.JSONEq(t, `{"type":"object"}`, string(topic.Context))
 	require.NoError(t, mock.ExpectationsWereMet())
 }

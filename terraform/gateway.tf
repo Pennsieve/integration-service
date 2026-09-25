@@ -4,6 +4,9 @@
 # requires a shared secret (see aws_ssm_parameter.webhook_shared_secret) in
 # the X-Pennsieve-Webhook-Secret header, and also applies a payload size cap
 # and a per-sender rate limit before touching the DB.
+#
+# The notifications API is served by its own gateway; see
+# notification_gateway.tf.
 resource "aws_apigatewayv2_api" "integration_service_api" {
   name          = "${var.environment_name}-${var.service_name}-api-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
   protocol_type = "HTTP"
@@ -77,117 +80,6 @@ resource "aws_lambda_permission" "webhook_receiver_apigateway_permission" {
   statement_id  = "AllowExecutionFromAPIGateway"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.webhook_receiver_lambda.function_name
-  principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_apigatewayv2_api.integration_service_api.execution_arn}/*/*"
-}
-
-##################################################
-# Notifications API — terraform/notification-service.yml
-##################################################
-
-# Delegates to the shared Pennsieve Lambda REQUEST authorizer (see
-# pennsieve-go-api's lambda/authorizer) rather than a native JWT authorizer:
-# the "user_claim" that handler.NotificationHandler reads is minted by that
-# Lambda after resolving the caller's Cognito identity against Postgres, not
-# present in any raw Cognito token claim. Surfaced on
-# req.RequestContext.Authorizer.Lambda["user_claim"].
-resource "aws_apigatewayv2_authorizer" "pennsieve_lambda_authorizer" {
-  api_id                            = aws_apigatewayv2_api.integration_service_api.id
-  name                              = "${var.environment_name}-${var.service_name}-pennsieve-lambda-authorizer"
-  authorizer_type                   = "REQUEST"
-  authorizer_uri                    = data.terraform_remote_state.api_gateway.outputs.authorizer_lambda_invoke_uri
-  authorizer_credentials_arn        = data.terraform_remote_state.api_gateway.outputs.authorizer_invocation_role
-  authorizer_payload_format_version = "2.0"
-  enable_simple_responses           = true
-  authorizer_result_ttl_in_seconds  = 300
-  identity_sources                  = ["$request.header.Authorization"]
-}
-
-resource "aws_apigatewayv2_integration" "notification_integration" {
-  api_id                 = aws_apigatewayv2_api.integration_service_api.id
-  integration_type       = "AWS_PROXY"
-  connection_type        = "INTERNET"
-  integration_method     = "POST"
-  integration_uri        = aws_lambda_function.notification_lambda.invoke_arn
-  payload_format_version = "2.0"
-}
-
-resource "aws_apigatewayv2_route" "notification_get_topics_route" {
-  api_id             = aws_apigatewayv2_api.integration_service_api.id
-  route_key          = "GET /notification/topics"
-  target             = "integrations/${aws_apigatewayv2_integration.notification_integration.id}"
-  authorization_type = "CUSTOM"
-  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_lambda_authorizer.id
-}
-
-resource "aws_apigatewayv2_route" "notification_get_subscriptions_route" {
-  api_id             = aws_apigatewayv2_api.integration_service_api.id
-  route_key          = "GET /notification/subscriptions"
-  target             = "integrations/${aws_apigatewayv2_integration.notification_integration.id}"
-  authorization_type = "CUSTOM"
-  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_lambda_authorizer.id
-}
-
-resource "aws_apigatewayv2_route" "notification_subscribe_route" {
-  api_id             = aws_apigatewayv2_api.integration_service_api.id
-  route_key          = "POST /notification/subscriptions/{topicId}"
-  target             = "integrations/${aws_apigatewayv2_integration.notification_integration.id}"
-  authorization_type = "CUSTOM"
-  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_lambda_authorizer.id
-}
-
-resource "aws_apigatewayv2_route" "notification_unsubscribe_route" {
-  api_id             = aws_apigatewayv2_api.integration_service_api.id
-  route_key          = "DELETE /notification/subscriptions/{subscriptionId}"
-  target             = "integrations/${aws_apigatewayv2_integration.notification_integration.id}"
-  authorization_type = "CUSTOM"
-  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_lambda_authorizer.id
-}
-
-resource "aws_apigatewayv2_route" "notification_get_topic_notifications_route" {
-  api_id             = aws_apigatewayv2_api.integration_service_api.id
-  route_key          = "GET /notification/{topicId}/notifications"
-  target             = "integrations/${aws_apigatewayv2_integration.notification_integration.id}"
-  authorization_type = "CUSTOM"
-  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_lambda_authorizer.id
-}
-
-# The notification preferences routes. The handler additionally checks that
-# {userId} is the caller's own id and returns 403 otherwise; the authorizer
-# only establishes who the caller is, not which records they may touch.
-#
-# GET returns the full preferences resource (email/push opt-ins plus
-# notificationsLastSeen); POST fully replaces the email/push opt-ins; PATCH
-# is a partial update of just notificationsLastSeen, split out because it is
-# written far more often (every notifications-UI open) than the other two.
-resource "aws_apigatewayv2_route" "notification_get_user_last_seen_route" {
-  api_id             = aws_apigatewayv2_api.integration_service_api.id
-  route_key          = "GET /notification/user/{userId}"
-  target             = "integrations/${aws_apigatewayv2_integration.notification_integration.id}"
-  authorization_type = "CUSTOM"
-  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_lambda_authorizer.id
-}
-
-resource "aws_apigatewayv2_route" "notification_set_user_last_seen_route" {
-  api_id             = aws_apigatewayv2_api.integration_service_api.id
-  route_key          = "POST /notification/user/{userId}"
-  target             = "integrations/${aws_apigatewayv2_integration.notification_integration.id}"
-  authorization_type = "CUSTOM"
-  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_lambda_authorizer.id
-}
-
-resource "aws_apigatewayv2_route" "notification_update_user_last_seen_route" {
-  api_id             = aws_apigatewayv2_api.integration_service_api.id
-  route_key          = "PATCH /notification/user/{userId}"
-  target             = "integrations/${aws_apigatewayv2_integration.notification_integration.id}"
-  authorization_type = "CUSTOM"
-  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_lambda_authorizer.id
-}
-
-resource "aws_lambda_permission" "notification_apigateway_permission" {
-  statement_id  = "AllowExecutionFromAPIGateway"
-  action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.notification_lambda.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.integration_service_api.execution_arn}/*/*"
 }

@@ -24,8 +24,27 @@ const (
 	maxNotificationsLimit     = 200
 )
 
+// Route keys of the notifications API gateway (terraform/notification_gateway.tf).
+// Its API mapping serves them under the /notification base path, so e.g.
+// routeGetTopics is reached at /notification/topics on the API domain.
+const (
+	routeGetTopics          = "GET /topics"
+	routeGetSubscriptions   = "GET /subscriptions"
+	routeSubscribe          = "POST /topic/{topicId}/subscription"
+	routeUpdateSubscription = "PATCH /subscription/{subscriptionId}"
+	routeGetMessages        = "GET /messages"
+	routeGetUserPreferences = "GET /user/{userId}"
+	routeSetUserPreferences = "POST /user/{userId}"
+	routeUpdateUserLastSeen = "PATCH /user/{userId}"
+)
+
 // NotificationHandler serves the user subscription and notification
 // retrieval API described in terraform/notification-service.yml.
+//
+// Requests are dispatched on req.RouteKey, the API Gateway route that
+// matched, rather than on req.RawPath: the raw path may or may not carry
+// the API mapping's /notification base path depending on how the request
+// reached the gateway, while the route key never does.
 //
 // NOTE: unlike WebhookHandler (shared-secret, internal-only), these routes
 // are user-facing. The caller's Pennsieve user id arrives via the shared
@@ -48,26 +67,23 @@ func NotificationHandler(ctx context.Context, req events.APIGatewayV2HTTPRequest
 		return notifErrorResponse(http.StatusUnauthorized, "missing or invalid bearer token"), nil
 	}
 
-	method := req.RequestContext.HTTP.Method
-	path := req.RawPath
-
-	switch {
-	case method == http.MethodGet && strings.HasPrefix(path, "/notification/user/"):
-		return handleGetNotificationPreferences(ctx, userID, req)
-	case method == http.MethodPost && strings.HasPrefix(path, "/notification/user/"):
-		return handleSetNotificationPreferences(ctx, userID, req)
-	case method == http.MethodPatch && strings.HasPrefix(path, "/notification/user/"):
-		return handleUpdateNotificationsLastSeen(ctx, userID, req)
-	case method == http.MethodGet && path == "/notification/topics":
+	switch req.RouteKey {
+	case routeGetTopics:
 		return handleGetTopics(ctx)
-	case method == http.MethodGet && path == "/notification/subscriptions":
+	case routeGetSubscriptions:
 		return handleGetSubscriptions(ctx, userID)
-	case method == http.MethodPost && strings.HasPrefix(path, "/notification/subscriptions/"):
+	case routeSubscribe:
 		return handleSubscribe(ctx, userID, req)
-	case method == http.MethodDelete && strings.HasPrefix(path, "/notification/subscriptions/"):
-		return handleUnsubscribe(ctx, userID, req)
-	case method == http.MethodGet && strings.HasPrefix(path, "/notification/") && strings.HasSuffix(path, "/notifications"):
-		return handleGetTopicNotifications(ctx, userID, req)
+	case routeUpdateSubscription:
+		return handleUpdateSubscription(ctx, userID, req)
+	case routeGetMessages:
+		return handleGetMessages(ctx, userID, req)
+	case routeGetUserPreferences:
+		return handleGetNotificationPreferences(ctx, userID, req)
+	case routeSetUserPreferences:
+		return handleSetNotificationPreferences(ctx, userID, req)
+	case routeUpdateUserLastSeen:
+		return handleUpdateNotificationsLastSeen(ctx, userID, req)
 	default:
 		return notifErrorResponse(http.StatusNotFound, "not found"), nil
 	}
@@ -91,15 +107,17 @@ func handleGetSubscriptions(ctx context.Context, userID int64) (events.APIGatewa
 	return notifJSONResponse(http.StatusOK, nonNilSubscriptions(subs)), nil
 }
 
-// handleSubscribe serves POST /notification/subscriptions/{topicId}. The
+// handleSubscribe serves POST /notification/topic/{topicId}/subscription. The
 // request body is the subscription's context: a free-form JSON object that
 // must satisfy the JSON Schema stored as the topic's context, and whose
 // referenced dataset (if any) must exist. See validateSubscriptionContext.
 // An empty or JSON null body is treated as {}, so it reaches the topic's
 // context schema like any other object: a topic with no context accepts it,
-// and one whose context has required properties rejects it.
+// and one whose context has required properties rejects it. A disabled
+// topic accepts no new subscriptions (409), and subscribing again to one of
+// the caller's own disabled subscriptions re-enables it.
 func handleSubscribe(ctx context.Context, userID int64, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	topicID, err := pathParamInt64(req, "topicId", 2)
+	topicID, err := pathParamInt64(req, "topicId")
 	if err != nil {
 		log.Printf("ERROR subscription validation: invalid topic id: %v", err)
 		return notifErrorResponse(http.StatusBadRequest, "invalid topic id"), nil
@@ -125,6 +143,11 @@ func handleSubscribe(ctx context.Context, userID int64, req events.APIGatewayV2H
 		return notifErrorResponse(http.StatusInternalServerError, "failed to create subscription"), nil
 	}
 
+	if !topic.Enabled {
+		log.Printf("ERROR subscription validation: topic %d (%s) is disabled", topic.TopicID, topic.Name)
+		return notifErrorResponse(http.StatusConflict, "topic is disabled"), nil
+	}
+
 	if errResp := validateSubscriptionContext(ctx, topic, body); errResp != nil {
 		return *errResp, nil
 	}
@@ -144,44 +167,46 @@ func handleSubscribe(ctx context.Context, userID int64, req events.APIGatewayV2H
 	return notifJSONResponse(statusCode, sub), nil
 }
 
-func handleUnsubscribe(ctx context.Context, userID int64, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	subscriptionID, err := pathParamInt64(req, "subscriptionId", 2)
+// handleUpdateSubscription serves PATCH /notification/subscription/{subscriptionId},
+// turning one of the caller's own subscriptions on or off. This replaces
+// unsubscribing by deleting the subscription: a disabled subscription gets
+// no new notifications, but it and the notifications already posted to it
+// are kept, so the user's history survives and they can re-enable it later.
+func handleUpdateSubscription(ctx context.Context, userID int64, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+	subscriptionID, err := pathParamInt64(req, "subscriptionId")
 	if err != nil {
 		return notifErrorResponse(http.StatusBadRequest, "invalid subscription id"), nil
 	}
 
-	deleted, err := db.DeleteSubscription(ctx, subscriptionID, userID)
+	body, errResp := decodeJSONBody[models.UpdateSubscriptionRequest](req)
+	if errResp != nil {
+		return *errResp, nil
+	}
+	if body.Enabled == nil {
+		return notifErrorResponse(http.StatusBadRequest, "enabled is required and must be a boolean"), nil
+	}
+
+	sub, err := db.SetSubscriptionEnabled(ctx, subscriptionID, userID, *body.Enabled)
 	if err != nil {
-		log.Printf("ERROR delete subscription: %v", err)
-		return notifErrorResponse(http.StatusInternalServerError, "failed to delete subscription"), nil
+		if errors.Is(err, db.ErrSubscriptionNotFound) {
+			return notifErrorResponse(http.StatusNotFound, "subscription not found"), nil
+		}
+		log.Printf("ERROR set subscription enabled: %v", err)
+		return notifErrorResponse(http.StatusInternalServerError, "failed to update subscription"), nil
 	}
-	if !deleted {
-		return notifErrorResponse(http.StatusNotFound, "subscription not found"), nil
-	}
-	return events.APIGatewayV2HTTPResponse{StatusCode: http.StatusNoContent}, nil
+	return notifJSONResponse(http.StatusOK, sub), nil
 }
 
-func handleGetTopicNotifications(ctx context.Context, userID int64, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
-	topicID, err := pathParamInt64(req, "topicId", 1)
-	if err != nil {
-		return notifErrorResponse(http.StatusBadRequest, "invalid topic id"), nil
-	}
-
-	exists, err := db.TopicExists(ctx, topicID)
-	if err != nil {
-		log.Printf("ERROR topic exists: %v", err)
-		return notifErrorResponse(http.StatusInternalServerError, "failed to fetch notifications"), nil
-	}
-	if !exists {
-		return notifErrorResponse(http.StatusNotFound, "topic not found"), nil
-	}
-
+// handleGetMessages serves GET /notification/messages: every notification
+// posted to any of the caller's subscriptions, newest first and paginated,
+// including those posted to subscriptions the caller has since disabled.
+func handleGetMessages(ctx context.Context, userID int64, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	limit, offset := parsePagination(req.QueryStringParameters)
 
-	notifications, err := db.GetTopicNotifications(ctx, topicID, userID, limit, offset)
+	notifications, err := db.GetUserNotifications(ctx, userID, limit, offset)
 	if err != nil {
-		log.Printf("ERROR get topic notifications: %v", err)
-		return notifErrorResponse(http.StatusInternalServerError, "failed to fetch notifications"), nil
+		log.Printf("ERROR get user notifications: %v", err)
+		return notifErrorResponse(http.StatusInternalServerError, "failed to fetch messages"), nil
 	}
 	return notifJSONResponse(http.StatusOK, nonNilNotifications(notifications)), nil
 }
@@ -278,7 +303,7 @@ func handleUpdateNotificationsLastSeen(ctx context.Context, callerID int64, req 
 // authenticated, just not permitted. Returning 403 for ids that don't exist
 // too keeps the route from confirming which user ids are real.
 func authorizedTargetUserID(callerID int64, req events.APIGatewayV2HTTPRequest) (int64, *events.APIGatewayV2HTTPResponse) {
-	targetID, err := pathParamInt64(req, "userId", 2)
+	targetID, err := pathParamInt64(req, "userId")
 	if err != nil {
 		resp := notifErrorResponse(http.StatusBadRequest, "invalid user id")
 		return 0, &resp
@@ -304,18 +329,38 @@ func authenticatedUserID(req events.APIGatewayV2HTTPRequest) (int64, error) {
 	return claims.UserClaim.Id, nil
 }
 
-// pathParamInt64 reads a path parameter by key, falling back to the
-// path segment at index (0-based, counted after trimming leading/trailing
-// slashes) when API Gateway didn't populate PathParameters.
-func pathParamInt64(req events.APIGatewayV2HTTPRequest, key string, index int) (int64, error) {
+// pathParamInt64 reads a path parameter by key. When API Gateway didn't
+// populate PathParameters, it falls back to the matching segment of the raw
+// path, located by aligning the matched route's path template (from
+// req.RouteKey) with the end of the raw path, so the fallback works whether
+// or not the raw path carries the API mapping's base path.
+func pathParamInt64(req events.APIGatewayV2HTTPRequest, key string) (int64, error) {
 	value := req.PathParameters[key]
 	if value == "" {
-		segments := strings.Split(strings.Trim(req.RawPath, "/"), "/")
-		if index >= 0 && index < len(segments) {
-			value = segments[index]
-		}
+		value = pathSegmentForParam(req.RouteKey, req.RawPath, key)
 	}
 	return strconv.ParseInt(value, 10, 64)
+}
+
+// pathSegmentForParam returns the segment of rawPath that the {key}
+// placeholder in routeKey's path template matched, or "" if there is none.
+func pathSegmentForParam(routeKey, rawPath, key string) string {
+	_, template, ok := strings.Cut(routeKey, " ")
+	if !ok {
+		return ""
+	}
+	templateSegments := strings.Split(strings.Trim(template, "/"), "/")
+	pathSegments := strings.Split(strings.Trim(rawPath, "/"), "/")
+	offset := len(pathSegments) - len(templateSegments)
+	if offset < 0 {
+		return ""
+	}
+	for i, segment := range templateSegments {
+		if segment == "{"+key+"}" {
+			return pathSegments[offset+i]
+		}
+	}
+	return ""
 }
 
 // decodedBody returns req.Body, base64-decoded if necessary.

@@ -5,28 +5,47 @@ import (
 	"time"
 )
 
-// Topic is an event category users may subscribe to.
+// Topic is an event category users may subscribe to. A disabled topic
+// accepts no new subscriptions, but is kept (rather than deleted) so the
+// subscriptions and notification history under it survive.
 type Topic struct {
 	TopicID     int64           `json:"topic_id"`
 	Name        string          `json:"name"`
 	Description string          `json:"description,omitempty"`
+	Enabled     bool            `json:"enabled"`
 	CreatedAt   time.Time       `json:"created_at"`
 	Context     json.RawMessage `json:"context,omitempty"`
 }
 
-// Subscription represents a user's interest in a topic.
+// Subscription represents a user's interest in a topic. Users turn a
+// subscription off by disabling it rather than deleting it, since deleting
+// it would cascade to the notifications already posted to it.
 type Subscription struct {
 	SubscriptionID int64           `json:"subscription_id"`
 	UserID         int64           `json:"user_id"`
 	TopicID        int64           `json:"topic_id"`
 	Context        json.RawMessage `json:"context,omitempty"`
+	Enabled        bool            `json:"enabled"`
 	CreatedAt      time.Time       `json:"created_at"`
 }
 
-// Notification records that an event occurred for a subscription.
+// UpdateSubscriptionRequest is the JSON body accepted by
+// PATCH /notification/subscription/{subscriptionId}.
+//
+// The field is a pointer so the handler can reject an absent or null value:
+// json.Unmarshal leaves a pointer nil in both cases, so nil after a
+// successful unmarshal means "not supplied".
+type UpdateSubscriptionRequest struct {
+	Enabled *bool `json:"enabled"`
+}
+
+// Notification records that an event occurred for a subscription. TopicID
+// is the topic of that subscription, included so clients listing every
+// notification a user has can still group them by topic.
 type Notification struct {
 	NotificationID int64           `json:"notification_id"`
 	SubscriptionID int64           `json:"subscription_id"`
+	TopicID        int64           `json:"topic_id"`
 	Title          string          `json:"title"`
 	Message        string          `json:"message"`
 	Metadata       json.RawMessage `json:"metadata,omitempty"`
