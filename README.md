@@ -35,8 +35,8 @@ The `notifications` schema (`internal/dbmigrate/migrations/notifications/`) hold
 
 | Table | Purpose |
 | --- | --- |
-| `topics` | Event categories a user may subscribe to. |
-| `subscriptions` | A user's subscription to a topic, optionally scoped by a free-form JSON `context` (e.g. a dataset id). Unique on `(user_id, topic_id, context)`. |
+| `topics` | Event categories a user may subscribe to. `enabled` (boolean, default `true`) controls whether a topic accepts new subscriptions. |
+| `subscriptions` | A user's subscription to a topic, optionally scoped by a free-form JSON `context` (e.g. a dataset id). Unique on `(user_id, topic_id, context)`. `enabled` (boolean, default `true`) controls whether new notifications are delivered to it. |
 | `notifications` | Individual notification events posted to a subscription. |
 | `user_notifications` | Per-user delivery/read state (`READ`/`UNREAD`) for a notification. |
 | `preferences` | Per-user notification settings: `email_enabled`, `sms_enabled`, `push_enabled` (booleans, all with defaults), and `notifications_last_seen` (nullable timestamp, no default — `NULL` means "never viewed"). Keyed on `user_id`, one row per user. |
@@ -50,6 +50,12 @@ no row at all. Reads treat a missing row the same as a row with the column defau
 regardless of whether a row exists yet. `sms_enabled` exists in the schema but is not yet exposed
 by the API below.
 
+Topics and subscriptions are switched off by setting `enabled = false`, never by deleting the
+row: `notifications` cascade-delete with their subscription (and subscriptions with their topic),
+so a delete would also erase the user's in-app and email notification history. A disabled
+subscription stops receiving new notifications but keeps everything already posted to it, and
+re-subscribing with the same context re-enables it.
+
 Every table that references a user (`subscriptions.user_id`, `preferences.user_id`, etc.)
 foreign-keys to `pennsieve.users(id)`, so writes for an unknown user id fail with a foreign-key
 violation, which the Go layer maps to `db.ErrUserNotFound`.
@@ -59,23 +65,35 @@ behind the nullable, no-default `notifications_last_seen` column specifically.
 
 ## API Endpoints
 
-All notification/subscription routes are served by a single Lambda (`internal/handler/notification_handler.go`,
-wired up in `terraform/gateway.tf`) that dispatches on method + path; there's no per-route Lambda
-function. Every route sits behind the shared Pennsieve Lambda REQUEST authorizer, which resolves
-the caller's bearer token to a Pennsieve user id. The full request/response schemas are documented
-in `terraform/notification-service.yml` (an OpenAPI spec kept for documentation, not wired into any
+The notification/subscription routes have their own API Gateway (`notification_service_api` in
+`terraform/notification_gateway.tf`), separate from the integration API in `terraform/gateway.tf`,
+which now serves only `/webhook`. It is mapped onto the shared API domain under the
+`notification` API mapping key, so its Terraform routes omit that prefix (`GET /topics` is served
+at `https://<api domain>/notification/topics`).
+
+All of its routes are served by a single Lambda (`internal/handler/notification_handler.go`) that
+dispatches on the matched API Gateway route key; there's no per-route Lambda function. Every route
+sits behind the shared Pennsieve Lambda REQUEST authorizer, which resolves the caller's bearer
+token to a Pennsieve user id. The full request/response schemas are documented in
+`terraform/notification-service.yml` (an OpenAPI spec kept for documentation, not wired into any
 build).
+
+Paths follow one naming rule: plural for a collection, singular for a single resource.
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `GET` | `/notification/topics` | List every topic a user may subscribe to. |
-| `GET` | `/notification/subscriptions` | List the caller's own subscriptions. |
-| `POST` | `/notification/subscriptions/{topicId}` | Subscribe the caller to a topic (upserts on `(user_id, topic_id, context)`). |
-| `DELETE` | `/notification/subscriptions/{subscriptionId}` | Unsubscribe the caller from one of their own subscriptions. |
-| `GET` | `/notification/{topicId}/notifications` | List notifications posted to a topic via the caller's own subscription(s), paginated. |
+| `GET` | `/notification/topics` | List every topic, including disabled ones (only enabled topics accept new subscriptions). |
+| `GET` | `/notification/subscriptions` | List the caller's own subscriptions, enabled and disabled. |
+| `POST` | `/notification/topic/{topicId}/subscription` | Subscribe the caller to a topic (upserts on `(user_id, topic_id, context)`, re-enabling a disabled match). `409` if the topic is disabled. |
+| `PATCH` | `/notification/subscription/{subscriptionId}` | Enable or disable one of the caller's own subscriptions with `{"enabled": boolean}`. Replaces unsubscribing by deletion; history is kept. |
+| `GET` | `/notification/messages` | List every notification posted to any of the caller's subscriptions (including disabled ones), newest first, paginated with `limit`/`offset`. |
 | `GET` | `/notification/user/{userId}` | Get the caller's notification preferences: `emailEnabled`, `pushEnabled`, and `notificationsLastSeen`. |
 | `POST` | `/notification/user/{userId}` | Fully replace the caller's `emailEnabled`/`pushEnabled` preferences. Never touches `notificationsLastSeen`. |
 | `PATCH` | `/notification/user/{userId}` | Partially update just `notificationsLastSeen` (e.g. on opening the notifications UI), leaving `emailEnabled`/`pushEnabled` untouched. |
+
+There is intentionally no `DELETE` route and no per-topic notifications route: subscriptions are
+disabled rather than deleted, and clients group `GET /notification/messages` by each
+notification's `topic_id` instead.
 
 The `/notification/user/{userId}` routes all require `{userId}` to be the caller's own id —
 any other value is rejected with `403`, even if that id doesn't exist, so the route can't be used

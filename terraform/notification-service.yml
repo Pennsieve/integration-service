@@ -1,26 +1,36 @@
 #file: noinspection MaybeTerraformTemplateInspection
 # NOTE: like terraform/integration-service.yml, this spec is documentation
-# rather than a build input — the API Gateway in gateway.tf is wired up via
-# individual aws_apigatewayv2_* resources (see the "Notifications API"
-# section of gateway.tf), not an imported OpenAPI body, and there is no
+# rather than a build input — the notifications API Gateway in
+# notification_gateway.tf is wired up via individual aws_apigatewayv2_*
+# resources, not an imported OpenAPI body, and there is no
 # .github/workflows/rdme-openapi.yml in this repo yet. It exists so that
 # if/when integration-service adopts the org-standard OpenAPI-driven gateway
 # + ReadMe publishing pattern, the notification/subscription API is already
 # documented.
 #
+# Paths below are as served on the API domain. The notifications gateway is
+# mapped under the "notification" API mapping key, so its routes are declared
+# in Terraform without the /notification prefix (e.g. "GET /topics").
+#
+# Naming: plural paths name a collection (/topics, /subscriptions,
+# /messages); singular paths name one resource (/subscription/{id},
+# /user/{id}, /topic/{id}/subscription).
+#
 # Auth assumption: unlike /webhook (shared-secret, internal-only), these
 # endpoints are user-facing and sit behind the shared Pennsieve Lambda REQUEST
 # authorizer (see aws_apigatewayv2_authorizer.pennsieve_lambda_authorizer in
-# gateway.tf), which resolves the caller's bearer token to a Pennsieve user
+# notification_gateway.tf), which resolves the caller's bearer token to a Pennsieve user
 # and surfaces it as the "user_claim" context key consumed by the Lambda
 # handler.
 openapi: 3.0.1
 info:
-  version: "1.0"
+  version: "2.0"
   title: Integration Service - Notifications
   description: |
     User subscription and notification retrieval API for the Integration
-    Service's email/notification system.
+    Service's email/notification system. Subscriptions are never deleted:
+    users enable or disable them, so the notifications already delivered to
+    a subscription (in-app and email) stay in the user's history.
   termsOfService: https://docs.pennsieve.io/page/pennsieve-terms-of-use
   contact:
     name: Pennsieve Support
@@ -92,7 +102,9 @@ components:
       name: limit
       in: query
       required: false
-      description: Maximum number of notifications to return
+      description: >-
+        Maximum number of notifications to return. A missing or out-of-range
+        value falls back to the default.
       schema: { type: integer, format: int32, default: 50, minimum: 1, maximum: 200 }
     offset:
       name: offset
@@ -119,10 +131,20 @@ components:
           type: string
         description:
           type: string
+        enabled:
+          type: boolean
+          description: >-
+            Whether the topic accepts new subscriptions. Disabled topics are
+            still listed so existing subscriptions and history under them can
+            be displayed.
+        context:
+          type: object
+          nullable: true
+          description: JSON Schema that a subscription's context must satisfy.
         created_at:
           type: string
           format: date-time
-      required: [topic_id, name, created_at]
+      required: [topic_id, name, enabled, created_at]
     Subscription:
       type: object
       properties:
@@ -139,10 +161,22 @@ components:
           type: object
           description: Free-form JSON context for the subscription (e.g. filters).
           nullable: true
+        enabled:
+          type: boolean
+          description: >-
+            Whether new notifications are delivered to this subscription.
+            Disabling it keeps the subscription and its notification history.
         created_at:
           type: string
           format: date-time
-      required: [subscription_id, user_id, topic_id, created_at]
+      required: [subscription_id, user_id, topic_id, enabled, created_at]
+    UpdateSubscriptionRequest:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+          description: Turn the subscription on (true) or off (false). Required and non-null.
+      required: [enabled]
     SubscribeRequest:
       type: object
       description: >-
@@ -220,6 +254,10 @@ components:
         subscription_id:
           type: integer
           format: int64
+        topic_id:
+          type: integer
+          format: int64
+          description: Topic of the subscription the notification was posted to.
         title:
           type: string
         message:
@@ -230,13 +268,15 @@ components:
         created_at:
           type: string
           format: date-time
-      required: [notification_id, subscription_id, title, message, created_at]
+      required: [notification_id, subscription_id, topic_id, title, message, created_at]
 
 paths:
   /notification/topics:
     get:
       summary: Get available topics
-      description: Returns every topic a user may subscribe to.
+      description: >-
+        Returns every topic, including disabled ones. Only enabled topics
+        accept new subscriptions.
       operationId: getTopics
       tags: [Notifications]
       security:
@@ -257,7 +297,9 @@ paths:
   /notification/subscriptions:
     get:
       summary: Get the caller's subscriptions
-      description: Returns every topic the authenticated user is currently subscribed to.
+      description: >-
+        Returns every subscription belonging to the authenticated user, both
+        enabled and disabled.
       operationId: getUserSubscriptions
       tags: [Notifications]
       security:
@@ -275,7 +317,7 @@ paths:
         '5XX':
           $ref: '#/components/responses/Error'
 
-  /notification/subscriptions/{topicId}:
+  /notification/topic/{topicId}/subscription:
     post:
       summary: Subscribe to a topic
       description: |
@@ -284,8 +326,8 @@ paths:
         stored: it must be a JSON object matching the topic's context JSON
         Schema, and any dataset it references (organizationId + datasetId)
         must exist. An empty body is treated as {}. Calling this again with
-        the same context updates that subscription rather than creating a
-        duplicate.
+        the same context returns that subscription rather than creating a
+        duplicate, re-enabling it if the caller had disabled it.
       operationId: subscribeToTopic
       tags: [Notifications]
       security:
@@ -305,9 +347,9 @@ paths:
               schema: { $ref: '#/components/schemas/Subscription' }
         '200':
           description: >-
-            Caller was already subscribed to this topic; the subscription's
-            context was updated in place (upsert) rather than creating a
-            duplicate row.
+            Caller was already subscribed to this topic with this context; the
+            existing subscription is returned (and re-enabled if it was
+            disabled) rather than creating a duplicate row.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Subscription' }
@@ -326,27 +368,48 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: Topic is disabled and accepts no new subscriptions
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '5XX':
           $ref: '#/components/responses/Error'
 
-  /notification/subscriptions/{subscriptionId}:
-    delete:
-      summary: Unsubscribe from a topic
+  /notification/subscription/{subscriptionId}:
+    patch:
+      summary: Enable or disable a subscription
       description: |
-        Deletes the caller's subscription by its subscription id. Deleting by
-        subscription id (rather than topic id) is unambiguous and matches the
-        Subscription table's own primary key.
-      operationId: unsubscribeFromTopic
+        Turns one of the caller's own subscriptions on or off. This replaces
+        unsubscribing by deletion: a disabled subscription receives no new
+        notifications, but the subscription and the notifications already
+        posted to it are kept, so the user's in-app and email history is
+        preserved and the subscription can be re-enabled later.
+
+        A subscription that doesn't exist and one that belongs to another
+        user both return 404, so the route can't be used to probe which
+        subscription ids exist.
+      operationId: updateSubscription
       tags: [Notifications]
       security:
         - bearer_auth: [ ]
       parameters:
         - $ref: '#/components/parameters/subscriptionId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateSubscriptionRequest' }
       responses:
-        '204':
-          description: Subscription deleted
+        '200':
+          description: Subscription updated; returns the updated resource
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Subscription' }
         '400':
-          description: Invalid subscriptionId
+          description: >-
+            Invalid subscriptionId, malformed base64 body, body is not valid
+            JSON, or enabled is missing, null, or not a boolean
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -354,6 +417,33 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '5XX':
+          $ref: '#/components/responses/Error'
+
+  /notification/messages:
+    get:
+      summary: Retrieve the caller's notifications
+      description: >-
+        Returns every notification posted to any of the caller's
+        subscriptions, newest first, including those posted to subscriptions
+        the caller has since disabled.
+      operationId: getMessages
+      tags: [Notifications]
+      security:
+        - bearer_auth: [ ]
+      parameters:
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+      responses:
+        '200':
+          description: List of the caller's notifications
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Notification' }
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '5XX':
           $ref: '#/components/responses/Error'
 
@@ -484,41 +574,6 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           description: User does not exist
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-        '5XX':
-          $ref: '#/components/responses/Error'
-
-  /notification/{topicId}/notifications:
-    get:
-      summary: Retrieve notifications for a topic
-      description: Returns notifications posted to the given topic, newest first.
-      operationId: getTopicNotifications
-      tags: [Notifications]
-      security:
-        - bearer_auth: [ ]
-      parameters:
-        - $ref: '#/components/parameters/topicId'
-        - $ref: '#/components/parameters/limit'
-        - $ref: '#/components/parameters/offset'
-      responses:
-        '200':
-          description: List of notifications for the topic
-          content:
-            application/json:
-              schema:
-                type: array
-                items: { $ref: '#/components/schemas/Notification' }
-        '400':
-          description: Invalid topicId
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          description: Topic does not exist
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }

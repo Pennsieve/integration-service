@@ -16,6 +16,10 @@ import (
 // does not exist in notifications.topics.
 var ErrTopicNotFound = errors.New("topic not found")
 
+// ErrSubscriptionNotFound is returned when an operation references a
+// subscription id that does not exist, or that belongs to another user.
+var ErrSubscriptionNotFound = errors.New("subscription not found")
+
 // ErrUserNotFound is returned when an operation references a user id that
 // does not exist in pennsieve.users.
 var ErrUserNotFound = errors.New("user not found")
@@ -25,10 +29,12 @@ var ErrUserNotFound = errors.New("user not found")
 // https://www.postgresql.org/docs/current/errcodes-appendix.html
 const pqForeignKeyViolation = "23503"
 
-// GetTopics returns every topic a user may subscribe to.
+// GetTopics returns every topic, including disabled ones, so clients can
+// still label notification history posted under a topic that has since been
+// disabled. Only enabled topics accept new subscriptions.
 func GetTopics(ctx context.Context) ([]models.Topic, error) {
 	const q = `
-		SELECT topic_id, name, description, created_at, context
+		SELECT topic_id, name, description, enabled, created_at, context
 		FROM notifications.topics
 		ORDER BY name`
 
@@ -43,7 +49,7 @@ func GetTopics(ctx context.Context) ([]models.Topic, error) {
 		var t models.Topic
 		var description sql.NullString
 		var topicContext []byte
-		if err := rows.Scan(&t.TopicID, &t.Name, &description, &t.CreatedAt, &topicContext); err != nil {
+		if err := rows.Scan(&t.TopicID, &t.Name, &description, &t.Enabled, &t.CreatedAt, &topicContext); err != nil {
 			return nil, fmt.Errorf("get topics: %w", err)
 		}
 		t.Description = description.String
@@ -53,10 +59,11 @@ func GetTopics(ctx context.Context) ([]models.Topic, error) {
 	return topics, rows.Err()
 }
 
-// GetUserSubscriptions returns every subscription belonging to userID.
+// GetUserSubscriptions returns every subscription belonging to userID, both
+// enabled and disabled.
 func GetUserSubscriptions(ctx context.Context, userID int64) ([]models.Subscription, error) {
 	const q = `
-		SELECT subscription_id, user_id, topic_id, context, created_at
+		SELECT subscription_id, user_id, topic_id, context, enabled, created_at
 		FROM notifications.subscriptions
 		WHERE user_id = $1
 		ORDER BY created_at DESC`
@@ -83,7 +90,9 @@ func GetUserSubscriptions(ctx context.Context, userID int64) ([]models.Subscript
 // contexts differ (e.g. following a topic for several datasets); calling it
 // again with a context that already matches an existing row updates that
 // row instead of creating a duplicate, since (user_id, topic_id, context) is
-// unique. The returned bool reports whether a new row was inserted (true)
+// unique. Subscribing again also re-enables that row if the user had
+// disabled it, since subscriptions are disabled rather than deleted. The
+// returned bool reports whether a new row was inserted (true)
 // versus an existing row being updated (false), so callers can distinguish
 // 201 Created from 200 OK.
 //
@@ -102,8 +111,8 @@ func CreateSubscription(ctx context.Context, userID, topicID int64, subscription
 	const subQ = `
 		INSERT INTO notifications.subscriptions (user_id, topic_id, context)
 		VALUES ($1, $2, $3)
-		ON CONFLICT (user_id, topic_id, context) DO UPDATE SET context = EXCLUDED.context
-		RETURNING subscription_id, user_id, topic_id, context, created_at, (xmax = 0) AS inserted`
+		ON CONFLICT (user_id, topic_id, context) DO UPDATE SET enabled = true
+		RETURNING subscription_id, user_id, topic_id, context, enabled, created_at, (xmax = 0) AS inserted`
 
 	row := tx.QueryRowContext(ctx, subQ, userID, topicID, defaultJSON(subscriptionContext))
 	s, inserted, err := scanSubscriptionWithInserted(row)
@@ -129,35 +138,28 @@ func CreateSubscription(ctx context.Context, userID, topicID int64, subscription
 	return s, inserted, nil
 }
 
-// DeleteSubscription removes userID's subscription identified by
-// subscriptionID. The delete is scoped to userID so a user can never delete
-// another user's subscription by guessing its id. Returns false if no
-// matching subscription was found.
-func DeleteSubscription(ctx context.Context, subscriptionID, userID int64) (bool, error) {
+// SetSubscriptionEnabled turns userID's subscription identified by
+// subscriptionID on or off and returns the updated subscription. The update
+// is scoped to userID so a user can never change another user's
+// subscription by guessing its id; either way, a subscription the caller
+// doesn't own reports ErrSubscriptionNotFound. Disabling only stops new
+// notifications being delivered to the subscription: the row, and the
+// notifications already posted to it, are kept.
+func SetSubscriptionEnabled(ctx context.Context, subscriptionID, userID int64, enabled bool) (models.Subscription, error) {
 	const q = `
-		DELETE FROM notifications.subscriptions
-		WHERE subscription_id = $1 AND user_id = $2`
+		UPDATE notifications.subscriptions
+		SET enabled = $3
+		WHERE subscription_id = $1 AND user_id = $2
+		RETURNING subscription_id, user_id, topic_id, context, enabled, created_at`
 
-	res, err := dbPool.ExecContext(ctx, q, subscriptionID, userID)
+	s, err := scanSubscription(dbPool.QueryRowContext(ctx, q, subscriptionID, userID, enabled))
+	if errors.Is(err, sql.ErrNoRows) {
+		return models.Subscription{}, ErrSubscriptionNotFound
+	}
 	if err != nil {
-		return false, fmt.Errorf("delete subscription: %w", err)
+		return models.Subscription{}, fmt.Errorf("set subscription enabled: %w", err)
 	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf("delete subscription: %w", err)
-	}
-	return n > 0, nil
-}
-
-// TopicExists reports whether topicID exists in notifications.topics.
-func TopicExists(ctx context.Context, topicID int64) (bool, error) {
-	const q = `SELECT EXISTS(SELECT 1 FROM notifications.topics WHERE topic_id = $1)`
-
-	var exists bool
-	if err := dbPool.QueryRowContext(ctx, q, topicID).Scan(&exists); err != nil {
-		return false, fmt.Errorf("topic exists: %w", err)
-	}
-	return exists, nil
+	return s, nil
 }
 
 // GetTopic returns the topic identified by topicID, including the context
@@ -165,14 +167,14 @@ func TopicExists(ctx context.Context, topicID int64) (bool, error) {
 // ErrTopicNotFound if topicID doesn't exist.
 func GetTopic(ctx context.Context, topicID int64) (models.Topic, error) {
 	const q = `
-		SELECT topic_id, name, description, created_at, context
+		SELECT topic_id, name, description, enabled, created_at, context
 		FROM notifications.topics
 		WHERE topic_id = $1`
 
 	var t models.Topic
 	var description sql.NullString
 	var topicContext []byte
-	err := dbPool.QueryRowContext(ctx, q, topicID).Scan(&t.TopicID, &t.Name, &description, &t.CreatedAt, &topicContext)
+	err := dbPool.QueryRowContext(ctx, q, topicID).Scan(&t.TopicID, &t.Name, &description, &t.Enabled, &t.CreatedAt, &topicContext)
 	if errors.Is(err, sql.ErrNoRows) {
 		return models.Topic{}, ErrTopicNotFound
 	}
@@ -213,24 +215,24 @@ func DatasetExists(ctx context.Context, organizationID, datasetID int64) (bool, 
 	return exists, nil
 }
 
-// GetTopicNotifications returns notifications posted to topicID via userID's
-// own subscription(s) to that topic, newest first, bounded by limit/offset.
-// Notifications are scoped to a subscription rather than a topic directly,
-// so this joins through notifications.subscriptions to find rows for that
-// topic, additionally filtering to the caller's own subscriptions so one
-// user can't read notifications generated for another user's subscription.
-func GetTopicNotifications(ctx context.Context, topicID, userID int64, limit, offset int) ([]models.Notification, error) {
+// GetUserNotifications returns every notification posted to any of userID's
+// subscriptions, newest first, bounded by limit/offset. Notifications are
+// scoped to a subscription rather than a user directly, so this joins
+// through notifications.subscriptions to find the caller's own rows.
+// Subscriptions the user has disabled are included too: disabling one stops
+// new deliveries, but the history already posted to it stays readable.
+func GetUserNotifications(ctx context.Context, userID int64, limit, offset int) ([]models.Notification, error) {
 	const q = `
-		SELECT n.notification_id, n.subscription_id, n.title, n.message, n.metadata, n.created_at
+		SELECT n.notification_id, n.subscription_id, s.topic_id, n.title, n.message, n.metadata, n.created_at
 		FROM notifications.notifications n
 		JOIN notifications.subscriptions s ON s.subscription_id = n.subscription_id
-		WHERE s.topic_id = $1 AND s.user_id = $2
-		ORDER BY n.created_at DESC
-		LIMIT $3 OFFSET $4`
+		WHERE s.user_id = $1
+		ORDER BY n.created_at DESC, n.notification_id DESC
+		LIMIT $2 OFFSET $3`
 
-	rows, err := dbPool.QueryContext(ctx, q, topicID, userID, limit, offset)
+	rows, err := dbPool.QueryContext(ctx, q, userID, limit, offset)
 	if err != nil {
-		return nil, fmt.Errorf("get topic notifications: %w", err)
+		return nil, fmt.Errorf("get user notifications: %w", err)
 	}
 	defer rows.Close()
 
@@ -238,8 +240,8 @@ func GetTopicNotifications(ctx context.Context, topicID, userID int64, limit, of
 	for rows.Next() {
 		var n models.Notification
 		var metadata []byte
-		if err := rows.Scan(&n.NotificationID, &n.SubscriptionID, &n.Title, &n.Message, &metadata, &n.CreatedAt); err != nil {
-			return nil, fmt.Errorf("get topic notifications: %w", err)
+		if err := rows.Scan(&n.NotificationID, &n.SubscriptionID, &n.TopicID, &n.Title, &n.Message, &metadata, &n.CreatedAt); err != nil {
+			return nil, fmt.Errorf("get user notifications: %w", err)
 		}
 		n.Metadata = metadata
 		notifications = append(notifications, n)
@@ -256,7 +258,7 @@ type subscriptionScanner interface {
 func scanSubscription(row subscriptionScanner) (models.Subscription, error) {
 	var s models.Subscription
 	var context []byte
-	if err := row.Scan(&s.SubscriptionID, &s.UserID, &s.TopicID, &context, &s.CreatedAt); err != nil {
+	if err := row.Scan(&s.SubscriptionID, &s.UserID, &s.TopicID, &context, &s.Enabled, &s.CreatedAt); err != nil {
 		return models.Subscription{}, err
 	}
 	s.Context = context
@@ -272,7 +274,7 @@ func scanSubscriptionWithInserted(row subscriptionScanner) (models.Subscription,
 	var s models.Subscription
 	var context []byte
 	var inserted bool
-	if err := row.Scan(&s.SubscriptionID, &s.UserID, &s.TopicID, &context, &s.CreatedAt, &inserted); err != nil {
+	if err := row.Scan(&s.SubscriptionID, &s.UserID, &s.TopicID, &context, &s.Enabled, &s.CreatedAt, &inserted); err != nil {
 		return models.Subscription{}, false, err
 	}
 	s.Context = context
