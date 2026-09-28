@@ -36,25 +36,10 @@ func initDB(ctx context.Context) error {
 	if dberr != nil {
 		return fmt.Errorf("failed to get DB name: %w", dberr)
 	}
-	dbusername, usererr := aws.GetSSMParam(ctx, fmt.Sprintf("/%s/integration-service/integrations-postgres-user", env), false)
-	if usererr != nil {
-		return fmt.Errorf("failed to get DB username: %w", usererr)
-	}
-	dbpassword, pwerr := aws.GetSSMParam(ctx, fmt.Sprintf("/%s/integration-service/integrations-postgres-password", env), true)
-	if pwerr != nil {
-		return fmt.Errorf("failed to get DB password: %w", pwerr)
-	}
-	dbhostname, hosterr := aws.GetSSMParam(ctx, fmt.Sprintf("/%s/integration-service/integrations-postgres-host", env), false)
-	if hosterr != nil {
-		return fmt.Errorf("failed to get DB hostname: %w", hosterr)
-	}
 
-	connectionStr := fmt.Sprintf("host=%s user=%s password=%s dbname=%s sslmode=require",
-		dbhostname, dbusername, dbpassword, dbname)
-
-	db, err := sql.Open("postgres", connectionStr)
+	db, err := openDB(ctx, dbname)
 	if err != nil {
-		return fmt.Errorf("failed to open database connection: %w", err)
+		return err
 	}
 
 	db.SetMaxOpenConns(dbMaxOpenConns)
@@ -67,6 +52,41 @@ func initDB(ctx context.Context) error {
 
 	dbPool = db
 	return nil
+}
+
+// openDB connects through the RDS proxy with IAM auth when RDS_PROXY_ENDPOINT
+// is set, and otherwise with the integrations-postgres-* host, user and
+// password parameters.
+func openDB(ctx context.Context, dbname string) (*sql.DB, error) {
+	if settings, ok := proxySettingsFromEnv(); ok {
+		connector, err := newIAMConnector(ctx, settings, dbname)
+		if err != nil {
+			return nil, fmt.Errorf("failed to set up RDS proxy connection: %w", err)
+		}
+		return sql.OpenDB(connector), nil
+	}
+
+	dbusername, usererr := aws.GetSSMParam(ctx, fmt.Sprintf("/%s/integration-service/integrations-postgres-user", env), false)
+	if usererr != nil {
+		return nil, fmt.Errorf("failed to get DB username: %w", usererr)
+	}
+	dbpassword, pwerr := aws.GetSSMParam(ctx, fmt.Sprintf("/%s/integration-service/integrations-postgres-password", env), true)
+	if pwerr != nil {
+		return nil, fmt.Errorf("failed to get DB password: %w", pwerr)
+	}
+	dbhostname, hosterr := aws.GetSSMParam(ctx, fmt.Sprintf("/%s/integration-service/integrations-postgres-host", env), false)
+	if hosterr != nil {
+		return nil, fmt.Errorf("failed to get DB hostname: %w", hosterr)
+	}
+
+	connectionStr := fmt.Sprintf("host=%s user=%s password=%s dbname=%s sslmode=require",
+		dbhostname, dbusername, dbpassword, dbname)
+
+	db, err := sql.Open("postgres", connectionStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open database connection: %w", err)
+	}
+	return db, nil
 }
 
 func SetPoolForTest(pool *sql.DB) {
