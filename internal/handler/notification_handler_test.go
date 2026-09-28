@@ -674,10 +674,19 @@ func TestNotificationHandler_RemovedRoutes(t *testing.T) {
 
 var notificationColumns = []string{"notification_id", "subscription_id", "topic_id", "title", "message", "metadata", "created_at"}
 
+// expectNotificationsCount queues the COUNT(*) query GetUserNotifications
+// runs before fetching the page.
+func expectNotificationsCount(mock sqlmock.Sqlmock, userID int64, total int) {
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*) FROM notifications.notifications n")).
+		WithArgs(userID).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(total))
+}
+
 func TestNotificationHandler_GetMessages(t *testing.T) {
 	mock := newSubscribeMock(t)
 	now := time.Now()
-	mock.ExpectQuery(regexp.QuoteMeta("FROM notifications.notifications n JOIN notifications.subscriptions s ON s.subscription_id = n.subscription_id WHERE s.user_id = $1")).
+	expectNotificationsCount(mock, 42, 2)
+	mock.ExpectQuery(regexp.QuoteMeta("FROM notifications.notifications n JOIN notifications.subscriptions s ON s.subscription_id = n.subscription_id WHERE s.user_id = $1 ORDER BY n.created_at DESC, n.notification_id DESC")).
 		WithArgs(int64(42), defaultNotificationsLimit, 0).
 		WillReturnRows(sqlmock.NewRows(notificationColumns).
 			AddRow(int64(2), int64(21), int64(8), "Readme updated", "dataset 5 readme changed", []byte(`{"datasetId":5}`), now).
@@ -687,18 +696,22 @@ func TestNotificationHandler_GetMessages(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
-	var notifications []models.Notification
-	require.NoError(t, json.Unmarshal([]byte(resp.Body), &notifications))
-	require.Len(t, notifications, 2)
-	assert.Equal(t, "Readme updated", notifications[0].Title)
-	assert.Equal(t, int64(8), notifications[0].TopicID)
-	assert.JSONEq(t, `{"datasetId":5}`, string(notifications[0].Metadata))
-	assert.Equal(t, int64(7), notifications[1].TopicID)
+	var page models.NotificationsPage
+	require.NoError(t, json.Unmarshal([]byte(resp.Body), &page))
+	assert.Equal(t, defaultNotificationsLimit, page.Limit)
+	assert.Equal(t, 0, page.Offset)
+	assert.Equal(t, 2, page.TotalCount)
+	require.Len(t, page.Messages, 2)
+	assert.Equal(t, "Readme updated", page.Messages[0].Title)
+	assert.Equal(t, int64(8), page.Messages[0].TopicID)
+	assert.JSONEq(t, `{"datasetId":5}`, string(page.Messages[0].Metadata))
+	assert.Equal(t, int64(7), page.Messages[1].TopicID)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestNotificationHandler_GetMessages_Pagination(t *testing.T) {
 	mock := newSubscribeMock(t)
+	expectNotificationsCount(mock, 42, 25)
 	mock.ExpectQuery(regexp.QuoteMeta("FROM notifications.notifications n")).
 		WithArgs(int64(42), 10, 20).
 		WillReturnRows(sqlmock.NewRows(notificationColumns))
@@ -708,12 +721,41 @@ func TestNotificationHandler_GetMessages_Pagination(t *testing.T) {
 	resp, err := NotificationHandler(context.Background(), req)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
-	assert.JSONEq(t, `[]`, resp.Body)
+	// A page past the end still reports the total and an empty (not null)
+	// messages array.
+	assert.JSONEq(t, `{"limit":10,"offset":20,"totalCount":25,"messages":[]}`, resp.Body)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestNotificationHandler_GetMessages_OrderAscending(t *testing.T) {
+	mock := newSubscribeMock(t)
+	expectNotificationsCount(mock, 42, 0)
+	mock.ExpectQuery(regexp.QuoteMeta("ORDER BY n.created_at ASC, n.notification_id ASC")).
+		WithArgs(int64(42), defaultNotificationsLimit, 0).
+		WillReturnRows(sqlmock.NewRows(notificationColumns))
+
+	req := authedNotifReq(routeGetMessages, nil, 42)
+	req.QueryStringParameters = map[string]string{"orderDirection": "ASC"}
+	resp, err := NotificationHandler(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestNotificationHandler_GetMessages_InvalidOrderDirection(t *testing.T) {
+	mock := newSubscribeMock(t)
+
+	req := authedNotifReq(routeGetMessages, nil, 42)
+	req.QueryStringParameters = map[string]string{"orderDirection": "newest"}
+	resp, err := NotificationHandler(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestNotificationHandler_GetMessages_DBError(t *testing.T) {
 	mock := newSubscribeMock(t)
+	expectNotificationsCount(mock, 42, 2)
 	mock.ExpectQuery(regexp.QuoteMeta("FROM notifications.notifications n")).
 		WithArgs(int64(42), defaultNotificationsLimit, 0).
 		WillReturnError(errors.New("connection reset"))
@@ -721,6 +763,18 @@ func TestNotificationHandler_GetMessages_DBError(t *testing.T) {
 	resp, err := NotificationHandler(context.Background(), authedNotifReq(routeGetMessages, nil, 42))
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+}
+
+func TestNotificationHandler_GetMessages_CountDBError(t *testing.T) {
+	mock := newSubscribeMock(t)
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*) FROM notifications.notifications n")).
+		WithArgs(int64(42)).
+		WillReturnError(errors.New("connection reset"))
+
+	resp, err := NotificationHandler(context.Background(), authedNotifReq(routeGetMessages, nil, 42))
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestParsePagination(t *testing.T) {
@@ -746,6 +800,29 @@ func TestParsePagination(t *testing.T) {
 			limit, offset := parsePagination(c.params)
 			assert.Equal(t, c.wantLimit, limit)
 			assert.Equal(t, c.wantOffset, offset)
+		})
+	}
+}
+
+func TestParseOrderDirection(t *testing.T) {
+	cases := []struct {
+		name          string
+		params        map[string]string
+		wantAscending bool
+		wantErr       bool
+	}{
+		{"defaults to descending when absent", nil, false, false},
+		{"desc is descending", map[string]string{"orderDirection": "desc"}, false, false},
+		{"asc is ascending", map[string]string{"orderDirection": "asc"}, true, false},
+		{"matching is case-insensitive", map[string]string{"orderDirection": "Asc"}, true, false},
+		{"unknown value is rejected", map[string]string{"orderDirection": "oldest"}, false, true},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			ascending, err := parseOrderDirection(c.params)
+			assert.Equal(t, c.wantAscending, ascending)
+			assert.Equal(t, c.wantErr, err != nil)
 		})
 	}
 }

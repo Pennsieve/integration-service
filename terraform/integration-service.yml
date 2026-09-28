@@ -1,12 +1,10 @@
 #file: noinspection MaybeTerraformTemplateInspection
-# NOTE: this spec is not yet wired into Terraform (the API Gateway in
-# gateway.tf is defined via individual aws_apigatewayv2_* resources, not an
-# imported OpenAPI body) and there is no .github/workflows/rdme-openapi.yml
-# in this repo yet. It exists so that if/when integration-service adopts the
-# org-standard OpenAPI-driven gateway + ReadMe publishing pattern used by
-# workflow-service, packages-service, etc., /webhook is already marked
-# x-internal: true and gets stripped before anything is published to
-# https://docs.pennsieve.io.
+# NOTE: this spec is not wired into Terraform (the API Gateway in gateway.tf
+# is defined via individual aws_apigatewayv2_* resources, not an imported
+# OpenAPI body) and, unlike terraform/notification-service.yml, it is not
+# published to https://docs.pennsieve.io by .github/workflows/rdme-openapi.yml:
+# its only endpoint, /webhook, is internal-only. /webhook is still marked
+# x-internal: true so it would be stripped if this spec were ever published.
 openapi: 3.0.1
 info:
   version: "3.0"

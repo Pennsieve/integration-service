@@ -75,8 +75,11 @@ All of its routes are served by a single Lambda (`internal/handler/notification_
 dispatches on the matched API Gateway route key; there's no per-route Lambda function. Every route
 sits behind the shared Pennsieve Lambda REQUEST authorizer, which resolves the caller's bearer
 token to a Pennsieve user id. The full request/response schemas are documented in
-`terraform/notification-service.yml` (an OpenAPI spec kept for documentation, not wired into any
-build).
+`terraform/notification-service.yml`, an OpenAPI spec that isn't wired into any build but is
+published to [docs.pennsieve.io/reference](https://docs.pennsieve.io/reference) on every merge to
+`main` by `.github/workflows/rdme-openapi.yml` (ReadMe definition slug `integration-service`). The
+Integration API spec, `terraform/integration-service.yml`, is not published: `/webhook` is
+internal-only.
 
 Paths follow one naming rule: plural for a collection, singular for a single resource.
 
@@ -86,7 +89,7 @@ Paths follow one naming rule: plural for a collection, singular for a single res
 | `GET` | `/notification/subscriptions` | List the caller's own subscriptions, enabled and disabled. |
 | `POST` | `/notification/topic/{topicId}/subscription` | Subscribe the caller to a topic (upserts on `(user_id, topic_id, context)`, re-enabling a disabled match). `409` if the topic is disabled. |
 | `PATCH` | `/notification/subscription/{subscriptionId}` | Enable or disable one of the caller's own subscriptions with `{"enabled": boolean}`. Replaces unsubscribing by deletion; history is kept. |
-| `GET` | `/notification/messages` | List every notification posted to any of the caller's subscriptions (including disabled ones), newest first, paginated with `limit`/`offset`. |
+| `GET` | `/notification/messages` | Page through the notifications posted to any of the caller's subscriptions (including disabled ones). Query params: `limit` (default 50, max 200), `offset` (default 0), `orderDirection` (`desc` most recent first, the default, or `asc`). Returns `{"limit", "offset", "totalCount", "messages": [...]}`. |
 | `GET` | `/notification/user/{userId}` | Get the caller's notification preferences: `emailEnabled`, `pushEnabled`, and `notificationsLastSeen`. |
 | `POST` | `/notification/user/{userId}` | Fully replace the caller's `emailEnabled`/`pushEnabled` preferences. Never touches `notificationsLastSeen`. |
 | `PATCH` | `/notification/user/{userId}` | Partially update just `notificationsLastSeen` (e.g. on opening the notifications UI), leaving `emailEnabled`/`pushEnabled` untouched. |

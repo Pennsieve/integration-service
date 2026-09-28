@@ -52,6 +52,18 @@ type Notification struct {
 	CreatedAt      time.Time       `json:"created_at"`
 }
 
+// NotificationsPage is the JSON body of GET /notification/messages: one page
+// of the caller's notifications plus the paging it was cut with. The
+// limit/offset/totalCount envelope follows the Pennsieve convention for
+// paginated lists (e.g. collections-service's GET /collections), with the
+// items keyed after the collection path.
+type NotificationsPage struct {
+	Limit      int            `json:"limit"`
+	Offset     int            `json:"offset"`
+	TotalCount int            `json:"totalCount"`
+	Messages   []Notification `json:"messages"`
+}
+
 // NotificationErrorResponse is the JSON body returned for failed
 // notification/subscription API requests.
 type NotificationErrorResponse struct {

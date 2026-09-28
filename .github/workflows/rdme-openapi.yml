@@ -1,0 +1,55 @@
+# Publishes the Notifications API reference to ReadMe on every merge to main.
+#
+# Only terraform/notification-service.yml is published. The Integration API
+# (terraform/integration-service.yml) is deliberately left out: its only
+# endpoint, POST /webhook, is internal-only (shared-secret auth, x-internal).
+#
+# Modeled on Pennsieve/account-service's .github/workflows/rdme-openapi.yml.
+# Uses rdme@v10, the version for ReadMe Refactored, which addresses an API
+# definition by slug.
+#
+# ⚠️  Renaming an OpenAPI tag does NOT restructure the docs on its own.
+#     ReadMe maps tags to reference subpages when a definition is first created
+#     and does not propagate later additions or removals — a removed tag leaves
+#     an orphaned subpage, and a new tag gets no subpage, so endpoints keep
+#     rendering under the old headings however many times this runs.
+#     See https://github.com/readmeio/rdme/issues/1173.
+#     After changing tag names, reconcile the subpages in the ReadMe dashboard —
+#     or delete and re-create the definition, which rebuilds the tree cleanly.
+#     Treat tag names as sticky: each rename costs manual work.
+name: ReadMe GitHub Action 🦉
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  rdme-openapi:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo 📚
+        uses: actions/checkout@v4
+
+      # Strips x-internal operations, then any path left with no operations, then
+      # any declared tag no longer used by a surviving operation. Without the
+      # last step, a tag whose only endpoints are internal renders as an empty
+      # section in the published docs.
+      - name: Strip internal endpoints
+        uses: mikefarah/yq@master
+        with:
+          cmd: yq 'del(.paths[][] | select(.x-internal == true)) | del(.paths[] | select(length == 0)) | [.paths[][].tags[]] as $used | .tags |= map(select(.name as $n | $used | any_c(. == $n)))' terraform/notification-service.yml > terraform/notification-service-public.yml
+
+      # --slug is pinned deliberately, and pinned to the *repo name*, per the
+      # convention for Pennsieve repos publishing to this ReadMe project
+      # (slug == repo name). Left unset, rdme would infer
+      # `terraform-notification-service-public.yml` from the file path, leaking
+      # the build layout into a public URL and creating a second definition on
+      # every rename of the spec file.
+      #
+      # --confirm-overwrite is required in CI: without it the command prompts
+      # before overwriting and there is nothing to answer the prompt.
+      - name: Upload API definition 🚀
+        uses: readmeio/rdme@v10
+        with:
+          rdme: openapi upload terraform/notification-service-public.yml --key=${{ secrets.README_API_KEY }} --slug=integration-service --confirm-overwrite

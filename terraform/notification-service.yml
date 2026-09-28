@@ -1,12 +1,11 @@
 #file: noinspection MaybeTerraformTemplateInspection
-# NOTE: like terraform/integration-service.yml, this spec is documentation
-# rather than a build input — the notifications API Gateway in
-# notification_gateway.tf is wired up via individual aws_apigatewayv2_*
-# resources, not an imported OpenAPI body, and there is no
-# .github/workflows/rdme-openapi.yml in this repo yet. It exists so that
-# if/when integration-service adopts the org-standard OpenAPI-driven gateway
-# + ReadMe publishing pattern, the notification/subscription API is already
-# documented.
+# NOTE: this spec is documentation rather than a build input — the
+# notifications API Gateway in notification_gateway.tf is wired up via
+# individual aws_apigatewayv2_* resources, not an imported OpenAPI body. It
+# is published to https://docs.pennsieve.io/reference on every merge to main
+# by .github/workflows/rdme-openapi.yml, so keep it in step with the handler
+# (internal/handler/notification_handler.go). Mark any operation that must
+# not be published with x-internal: true; the workflow strips those first.
 #
 # Paths below are as served on the API domain. The notifications gateway is
 # mapped under the "notification" API mapping key, so its routes are declared
@@ -24,7 +23,7 @@
 # handler.
 openapi: 3.0.1
 info:
-  version: "2.0"
+  version: "3.0"
   title: Integration Service - Notifications
   description: |
     User subscription and notification retrieval API for the Integration
@@ -110,8 +109,22 @@ components:
       name: offset
       in: query
       required: false
-      description: Number of notifications to skip, for pagination
+      description: >-
+        Number of notifications to skip, for pagination. A missing or
+        negative value falls back to the default.
       schema: { type: integer, format: int32, default: 0, minimum: 0 }
+    orderDirection:
+      name: orderDirection
+      in: query
+      required: false
+      description: |
+        Sort order by creation time (case-insensitive):
+          * desc - Descending, most recent first
+          * asc - Ascending, oldest first
+      schema:
+        type: string
+        enum: [asc, desc]
+        default: desc
   schemas:
     Error:
       type: object
@@ -269,6 +282,28 @@ components:
           type: string
           format: date-time
       required: [notification_id, subscription_id, topic_id, title, message, created_at]
+    NotificationsPage:
+      type: object
+      description: One page of the caller's notifications.
+      properties:
+        limit:
+          type: integer
+          description: The page size that was applied.
+        offset:
+          type: integer
+          description: The offset that was applied.
+        totalCount:
+          type: integer
+          description: >-
+            Number of the caller's notifications across all pages. A page
+            is the last one when offset + limit >= totalCount.
+        messages:
+          type: array
+          description: >-
+            This page's notifications in the requested order. Empty (never
+            null) when offset is at or past totalCount.
+          items: { $ref: '#/components/schemas/Notification' }
+      required: [limit, offset, totalCount, messages]
 
 paths:
   /notification/topics:
@@ -424,9 +459,13 @@ paths:
     get:
       summary: Retrieve the caller's notifications
       description: >-
-        Returns every notification posted to any of the caller's
-        subscriptions, newest first, including those posted to subscriptions
-        the caller has since disabled.
+        Returns one page of the notifications posted to any of the caller's
+        subscriptions, including those posted to subscriptions the caller has
+        since disabled. Notifications are ordered by creation time, most
+        recent first unless orderDirection=asc; notifications created at the
+        same instant are ordered by notification_id in the same direction, so
+        the order is stable from one page to the next. Page through with
+        limit and offset until offset + limit >= totalCount.
       operationId: getMessages
       tags: [Notifications]
       security:
@@ -434,14 +473,18 @@ paths:
       parameters:
         - $ref: '#/components/parameters/limit'
         - $ref: '#/components/parameters/offset'
+        - $ref: '#/components/parameters/orderDirection'
       responses:
         '200':
-          description: List of the caller's notifications
+          description: One page of the caller's notifications
           content:
             application/json:
-              schema:
-                type: array
-                items: { $ref: '#/components/schemas/Notification' }
+              schema: { $ref: '#/components/schemas/NotificationsPage' }
+        '400':
+          description: Invalid orderDirection
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '401':
           $ref: '#/components/responses/Unauthorized'
         '5XX':

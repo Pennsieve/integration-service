@@ -202,22 +202,62 @@ func TestGetUserNotifications(t *testing.T) {
 	SetPoolForTest(mockDB)
 
 	now := time.Now()
-	// Pin the full WHERE clause so a regression that drops the
-	// "s.user_id = $1" scope would fail this test. Deliberately no filter on
-	// s.enabled: history under disabled subscriptions must still be returned.
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT n.notification_id, n.subscription_id, s.topic_id, n.title, n.message, n.metadata, n.created_at FROM notifications.notifications n JOIN notifications.subscriptions s ON s.subscription_id = n.subscription_id WHERE s.user_id = $1 ORDER BY")).
+	// Pin the full WHERE clause on both queries so a regression that drops
+	// the "s.user_id = $1" scope would fail this test. Deliberately no filter
+	// on s.enabled: history under disabled subscriptions must still be
+	// returned (and counted).
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*) FROM notifications.notifications n JOIN notifications.subscriptions s ON s.subscription_id = n.subscription_id WHERE s.user_id = $1")).
+		WithArgs(int64(42)).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(7))
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT n.notification_id, n.subscription_id, s.topic_id, n.title, n.message, n.metadata, n.created_at FROM notifications.notifications n JOIN notifications.subscriptions s ON s.subscription_id = n.subscription_id WHERE s.user_id = $1 ORDER BY n.created_at DESC, n.notification_id DESC LIMIT $2 OFFSET $3")).
 		WithArgs(int64(42), 50, 0).
 		WillReturnRows(sqlmock.NewRows([]string{"notification_id", "subscription_id", "topic_id", "title", "message", "metadata", "created_at"}).
 			AddRow(int64(1), int64(20), int64(7), "Dataset published", "dataset 12 was published", []byte(`{"datasetId":12}`), now).
 			AddRow(int64(2), int64(21), int64(8), "Dataset deleted", "dataset 5 was deleted", nil, now))
 
-	notifications, err := GetUserNotifications(context.Background(), 42, 50, 0)
+	notifications, totalCount, err := GetUserNotifications(context.Background(), 42, 50, 0, false)
 	require.NoError(t, err)
+	assert.Equal(t, 7, totalCount)
 	require.Len(t, notifications, 2)
 	assert.Equal(t, int64(7), notifications[0].TopicID)
 	assert.Equal(t, int64(8), notifications[1].TopicID)
 	assert.JSONEq(t, `{"datasetId":12}`, string(notifications[0].Metadata))
 	assert.Nil(t, notifications[1].Metadata)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestGetUserNotifications_Ascending(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	SetPoolForTest(mockDB)
+
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*)")).
+		WithArgs(int64(42)).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(0))
+	mock.ExpectQuery(regexp.QuoteMeta("WHERE s.user_id = $1 ORDER BY n.created_at ASC, n.notification_id ASC LIMIT $2 OFFSET $3")).
+		WithArgs(int64(42), 10, 30).
+		WillReturnRows(sqlmock.NewRows([]string{"notification_id", "subscription_id", "topic_id", "title", "message", "metadata", "created_at"}))
+
+	notifications, totalCount, err := GetUserNotifications(context.Background(), 42, 10, 30, true)
+	require.NoError(t, err)
+	assert.Equal(t, 0, totalCount)
+	assert.Empty(t, notifications)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestGetUserNotifications_CountDBError(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	SetPoolForTest(mockDB)
+
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*)")).
+		WithArgs(int64(42)).
+		WillReturnError(errors.New("connection reset"))
+
+	_, _, err = GetUserNotifications(context.Background(), 42, 50, 0, false)
+	require.Error(t, err)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -227,11 +267,14 @@ func TestGetUserNotifications_DBError(t *testing.T) {
 	defer mockDB.Close()
 	SetPoolForTest(mockDB)
 
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*)")).
+		WithArgs(int64(42)).
+		WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(2))
 	mock.ExpectQuery(regexp.QuoteMeta("FROM notifications.notifications n")).
 		WithArgs(int64(42), 50, 0).
 		WillReturnError(errors.New("connection reset"))
 
-	_, err = GetUserNotifications(context.Background(), 42, 50, 0)
+	_, _, err = GetUserNotifications(context.Background(), 42, 50, 0, false)
 	require.Error(t, err)
 }
 

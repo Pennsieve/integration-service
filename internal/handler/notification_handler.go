@@ -197,18 +197,29 @@ func handleUpdateSubscription(ctx context.Context, userID int64, req events.APIG
 	return notifJSONResponse(http.StatusOK, sub), nil
 }
 
-// handleGetMessages serves GET /notification/messages: every notification
-// posted to any of the caller's subscriptions, newest first and paginated,
-// including those posted to subscriptions the caller has since disabled.
+// handleGetMessages serves GET /notification/messages: one page of the
+// notifications posted to any of the caller's subscriptions, including those
+// posted to subscriptions the caller has since disabled. Pages are newest
+// first unless orderDirection=asc, and the response carries the total count
+// so clients can tell how many pages there are.
 func handleGetMessages(ctx context.Context, userID int64, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	limit, offset := parsePagination(req.QueryStringParameters)
+	ascending, err := parseOrderDirection(req.QueryStringParameters)
+	if err != nil {
+		return notifErrorResponse(http.StatusBadRequest, err.Error()), nil
+	}
 
-	notifications, err := db.GetUserNotifications(ctx, userID, limit, offset)
+	notifications, totalCount, err := db.GetUserNotifications(ctx, userID, limit, offset, ascending)
 	if err != nil {
 		log.Printf("ERROR get user notifications: %v", err)
 		return notifErrorResponse(http.StatusInternalServerError, "failed to fetch messages"), nil
 	}
-	return notifJSONResponse(http.StatusOK, nonNilNotifications(notifications)), nil
+	return notifJSONResponse(http.StatusOK, models.NotificationsPage{
+		Limit:      limit,
+		Offset:     offset,
+		TotalCount: totalCount,
+		Messages:   nonNilNotifications(notifications),
+	}), nil
 }
 
 // handleGetNotificationPreferences serves GET /notification/user/{userId},
@@ -404,6 +415,22 @@ func parsePagination(params map[string]string) (limit, offset int) {
 		offset = v
 	}
 	return limit, offset
+}
+
+// parseOrderDirection reads the orderDirection query parameter, reporting
+// whether it asks for ascending (oldest first) order. It is absent or "desc"
+// for the default newest-first order; matching is case-insensitive. Unlike
+// limit/offset, an unrecognized value is rejected rather than defaulted,
+// since silently serving the opposite order would look like a bug.
+func parseOrderDirection(params map[string]string) (ascending bool, err error) {
+	switch strings.ToLower(params["orderDirection"]) {
+	case "", "desc":
+		return false, nil
+	case "asc":
+		return true, nil
+	default:
+		return false, errors.New("orderDirection must be asc or desc")
+	}
 }
 
 func nonNilTopics(topics []models.Topic) []models.Topic {

@@ -215,24 +215,49 @@ func DatasetExists(ctx context.Context, organizationID, datasetID int64) (bool, 
 	return exists, nil
 }
 
-// GetUserNotifications returns every notification posted to any of userID's
-// subscriptions, newest first, bounded by limit/offset. Notifications are
-// scoped to a subscription rather than a user directly, so this joins
-// through notifications.subscriptions to find the caller's own rows.
-// Subscriptions the user has disabled are included too: disabling one stops
-// new deliveries, but the history already posted to it stays readable.
-func GetUserNotifications(ctx context.Context, userID int64, limit, offset int) ([]models.Notification, error) {
-	const q = `
-		SELECT n.notification_id, n.subscription_id, s.topic_id, n.title, n.message, n.metadata, n.created_at
+// userNotificationsFrom is the FROM/WHERE clause shared by the page and
+// count queries in GetUserNotifications, so the two can't drift apart and
+// report a totalCount for a different set of rows than the page is cut from.
+const userNotificationsFrom = `
 		FROM notifications.notifications n
 		JOIN notifications.subscriptions s ON s.subscription_id = n.subscription_id
-		WHERE s.user_id = $1
-		ORDER BY n.created_at DESC, n.notification_id DESC
+		WHERE s.user_id = $1`
+
+// GetUserNotifications returns one page of the notifications posted to any
+// of userID's subscriptions, bounded by limit/offset, together with the total
+// number of such notifications across all pages. Pages are ordered by
+// created_at, newest first unless ascending is set, with notification_id as
+// the tiebreaker so rows sharing a timestamp keep a stable order between
+// pages. Notifications are scoped to a subscription rather than a user
+// directly, so this joins through notifications.subscriptions to find the
+// caller's own rows. Subscriptions the user has disabled are included too:
+// disabling one stops new deliveries, but the history already posted to it
+// stays readable.
+//
+// The total is counted by a separate query rather than COUNT(*) OVER () on
+// the page query, since a page past the end has no rows to carry it.
+func GetUserNotifications(ctx context.Context, userID int64, limit, offset int, ascending bool) ([]models.Notification, int, error) {
+	var totalCount int
+	if err := dbPool.QueryRowContext(ctx, `SELECT COUNT(*)`+userNotificationsFrom, userID).Scan(&totalCount); err != nil {
+		return nil, 0, fmt.Errorf("count user notifications: %w", err)
+	}
+
+	// ORDER BY direction can't be a bind parameter, so pick between two
+	// fixed clauses rather than formatting caller input into the SQL.
+	orderBy := `
+		ORDER BY n.created_at DESC, n.notification_id DESC`
+	if ascending {
+		orderBy = `
+		ORDER BY n.created_at ASC, n.notification_id ASC`
+	}
+	q := `
+		SELECT n.notification_id, n.subscription_id, s.topic_id, n.title, n.message, n.metadata, n.created_at` +
+		userNotificationsFrom + orderBy + `
 		LIMIT $2 OFFSET $3`
 
 	rows, err := dbPool.QueryContext(ctx, q, userID, limit, offset)
 	if err != nil {
-		return nil, fmt.Errorf("get user notifications: %w", err)
+		return nil, 0, fmt.Errorf("get user notifications: %w", err)
 	}
 	defer rows.Close()
 
@@ -241,12 +266,15 @@ func GetUserNotifications(ctx context.Context, userID int64, limit, offset int) 
 		var n models.Notification
 		var metadata []byte
 		if err := rows.Scan(&n.NotificationID, &n.SubscriptionID, &n.TopicID, &n.Title, &n.Message, &metadata, &n.CreatedAt); err != nil {
-			return nil, fmt.Errorf("get user notifications: %w", err)
+			return nil, 0, fmt.Errorf("get user notifications: %w", err)
 		}
 		n.Metadata = metadata
 		notifications = append(notifications, n)
 	}
-	return notifications, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("get user notifications: %w", err)
+	}
+	return notifications, totalCount, nil
 }
 
 // subscriptionScanner abstracts over *sql.Row and *sql.Rows so
