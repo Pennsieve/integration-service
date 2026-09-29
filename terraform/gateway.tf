@@ -152,6 +152,14 @@ resource "aws_apigatewayv2_route" "notification_get_topic_notifications_route" {
   authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_lambda_authorizer.id
 }
 
+resource "aws_apigatewayv2_route" "notification_get_messages_route" {
+  api_id             = aws_apigatewayv2_api.integration_service_api.id
+  route_key          = "GET /notification/messages"
+  target             = "integrations/${aws_apigatewayv2_integration.notification_integration.id}"
+  authorization_type = "CUSTOM"
+  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_lambda_authorizer.id
+}
+
 # The notification preferences routes. The handler additionally checks that
 # {userId} is the caller's own id and returns 403 otherwise; the authorizer
 # only establishes who the caller is, not which records they may touch.
