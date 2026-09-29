@@ -70,6 +70,7 @@ func TestCreateSubscription_Success(t *testing.T) {
 
 	now := time.Now()
 	mock.ExpectBegin()
+	expectLockTopic(mock, 7, true)
 	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.subscriptions")).
 		WithArgs(int64(42), int64(7), []byte("{}")).
 		WillReturnRows(sqlmock.NewRows(append(subscriptionColumns, "inserted")).
@@ -96,6 +97,7 @@ func TestCreateSubscription_Upsert_UpdatesExisting(t *testing.T) {
 
 	now := time.Now()
 	mock.ExpectBegin()
+	expectLockTopic(mock, 7, true)
 	// The conflict action must re-enable the row, so a user who disabled
 	// this subscription gets it back by subscribing again.
 	mock.ExpectQuery(regexp.QuoteMeta("ON CONFLICT (user_id, topic_id, context) DO UPDATE SET enabled = true")).
@@ -123,6 +125,27 @@ func TestCreateSubscription_TopicNotFound(t *testing.T) {
 	SetPoolForTest(mockDB)
 
 	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta("FROM notifications.topics")).
+		WithArgs(int64(999)).
+		WillReturnError(sql.ErrNoRows)
+	mock.ExpectRollback()
+
+	_, _, err = CreateSubscription(context.Background(), 42, 999, nil)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrTopicNotFound))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// The row lock keeps the topic from being deleted before the insert, but an
+// FK violation is still mapped to ErrTopicNotFound as a backstop.
+func TestCreateSubscription_TopicNotFound_ForeignKey(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	SetPoolForTest(mockDB)
+
+	mock.ExpectBegin()
+	expectLockTopic(mock, 999, true)
 	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.subscriptions")).
 		WithArgs(int64(42), int64(999), []byte("{}")).
 		WillReturnError(&pq.Error{Code: pqForeignKeyViolation})
@@ -132,6 +155,52 @@ func TestCreateSubscription_TopicNotFound(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrTopicNotFound))
 	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// A topic disabled after the handler's GetTopic check must still be caught
+// here, before anything is inserted or re-enabled.
+func TestCreateSubscription_TopicDisabled(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	SetPoolForTest(mockDB)
+
+	mock.ExpectBegin()
+	expectLockTopic(mock, 7, false)
+	mock.ExpectRollback()
+
+	_, _, err = CreateSubscription(context.Background(), 42, 7, nil)
+	require.Error(t, err)
+	assert.True(t, errors.Is(err, ErrTopicDisabled))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestCreateSubscription_LockTopicDBError(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	SetPoolForTest(mockDB)
+
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta("FROM notifications.topics")).
+		WithArgs(int64(7)).
+		WillReturnError(errors.New("connection reset"))
+	mock.ExpectRollback()
+
+	_, _, err = CreateSubscription(context.Background(), 42, 7, nil)
+	require.Error(t, err)
+	assert.False(t, errors.Is(err, ErrTopicNotFound))
+	assert.False(t, errors.Is(err, ErrTopicDisabled))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// expectLockTopic registers CreateSubscription's in-transaction read of the
+// topic's enabled flag. FOR SHARE is pinned so dropping the row lock (and
+// reopening the check-then-insert race) fails the tests.
+func expectLockTopic(mock sqlmock.Sqlmock, topicID int64, enabled bool) {
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT enabled FROM notifications.topics WHERE topic_id = $1 FOR SHARE")).
+		WithArgs(topicID).
+		WillReturnRows(sqlmock.NewRows([]string{"enabled"}).AddRow(enabled))
 }
 
 var subscriptionColumns = []string{"subscription_id", "user_id", "topic_id", "context", "enabled", "created_at"}

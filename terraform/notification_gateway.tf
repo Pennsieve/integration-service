@@ -33,18 +33,7 @@ resource "aws_apigatewayv2_stage" "notification_service_api_stage" {
   access_log_settings {
     destination_arn = aws_cloudwatch_log_group.notification_service_api_gateway_log_group.arn
 
-    format = jsonencode({
-      requestId               = "$context.requestId"
-      sourceIp                = "$context.identity.sourceIp"
-      requestTime             = "$context.requestTime"
-      protocol                = "$context.protocol"
-      httpMethod              = "$context.httpMethod"
-      resourcePath            = "$context.resourcePath"
-      routeKey                = "$context.routeKey"
-      status                  = "$context.status"
-      responseLength          = "$context.responseLength"
-      integrationErrorMessage = "$context.integrationErrorMessage"
-    })
+    format = local.api_gateway_access_log_format
   }
 }
 

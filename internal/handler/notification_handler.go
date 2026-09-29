@@ -157,6 +157,10 @@ func handleSubscribe(ctx context.Context, userID int64, req events.APIGatewayV2H
 		if errors.Is(err, db.ErrTopicNotFound) {
 			return notifErrorResponse(http.StatusNotFound, "topic not found"), nil
 		}
+		// The topic was disabled after the GetTopic check above.
+		if errors.Is(err, db.ErrTopicDisabled) {
+			return notifErrorResponse(http.StatusConflict, "topic is disabled"), nil
+		}
 		log.Printf("ERROR create subscription: %v", err)
 		return notifErrorResponse(http.StatusInternalServerError, "failed to create subscription"), nil
 	}

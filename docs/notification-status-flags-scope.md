@@ -1,143 +1,175 @@
 # Notification Status Flags and Notifications Table
 
-2026-09-24
+2026-09-24, revised 2026-09-29 to match the settled ClickUp ticket
+([Notification Status: Topic/Subscription/User-Level Enable-Disable](https://app.clickup.com/t/8664796/868m9jtky))
+and what migration `20260925143247_add_topic_and_subscription_enabled` actually
+ships. The ticket is the source of truth. If this doc and the ticket disagree,
+the ticket wins, and this doc should be fixed.
 
 ## Why These Tasks Exist
 
-The current notification system is delete-or-nothing at every layer. The only way for a user to stop receiving notifications for a topic is to delete their subscription — losing their configuration permanently. There is no way for a platform admin to suppress a topic without removing it, which would destroy all subscriber relationships. And there is no user-level global mute: a user who wants a temporary break has no recourse except manually unsubscribing from everything and rebuilding on return.
+Before this work, the notification system was delete-or-nothing. The only way
+for a user to stop receiving notifications for a topic was to delete their
+subscription. Because `notifications` rows cascade off `subscriptions`, and
+`subscriptions` rows cascade off `topics`, that delete also erased the user's
+notification history. Admins had no way to suppress a topic without destroying
+every subscriber relationship.
 
-These two tasks address that gap in tandem. Status flags introduce reversible enable/disable controls at three independent layers without touching subscription or topic records. The NOTIFICATIONS table establishes a durable record of every notification generated, decoupled from whether a delivery actually occurred — making it possible to suppress sends without erasing the notification history users expect to browse.
+Status flags replace deletes with reversible enable/disable switches. The
+NOTIFICATIONS table keeps a durable record of every notification generated, so
+suppressing sends doesn't erase the history users browse.
 
-## Three Status Granularities
+## Status Flags
 
-Three orthogonal boolean switches, each at a different layer of the notification stack. A notification is only delivered if all three resolve to enabled.
-
-| Layer | Column | Owned by | Values | Affects |
+| Layer | Column | Owned by | Shipped in this PR | Affects |
 | --- | --- | --- | --- | --- |
-| Topic | `topics.status` | Platform / admin | `enabled`, `disabled` | All subscriptions to that topic, platform-wide |
-| Subscription | `subscriptions.status` | User (per topic) | `enabled`, `disabled` | One user's subscription to one topic |
-| Preference | `notification_preferences.status` | User (global) | `active`, `paused` | All of that user's notifications across all subscriptions |
+| Topic | `topics.enabled BOOLEAN NOT NULL DEFAULT true` | Platform / admin | Column only; no API to change it | Every subscription on that topic |
+| Subscription | `subscriptions.enabled BOOLEAN NOT NULL DEFAULT true` | User | Column + `PATCH /notification/subscription/{subscriptionId}` | One user's subscription |
+| User | See the ticket | User | Not in this PR | All of that user's subscriptions |
 
-The send gate evaluates all three in sequence:
+These are plain booleans, not `status TEXT CHECK (...)` enums. Existing rows are
+backfilled as enabled, because they were all live before the migration.
 
+What the API does today:
+
+- `PATCH /notification/subscription/{subscriptionId}` with `{"enabled": bool}`
+  turns one of the caller's own subscriptions on or off. The update is scoped
+  to the caller, so someone else's subscription returns 404.
+- `POST /notification/topic/{topicId}/subscription` returns 409 when the topic
+  is disabled. Subscribing again with a context that matches an existing
+  disabled subscription re-enables it instead of creating a duplicate.
+- `GET /notification/topics` lists disabled topics too, so clients can still
+  label history posted under them. `GET /notification/subscriptions` and
+  `GET /notification/messages` include disabled subscriptions, and the history
+  already posted to them.
+
+### A disabled topic implicitly disables its subscriptions
+
+Per the ticket: *"If a topic is disabled, all subscriptions on that topic are
+implicitly also disabled."*
+
+"Implicitly" means the cascade is derived when the flags are read. It is never
+written. Disabling a topic does **not** touch `subscriptions.enabled`. Anything
+deciding whether a subscription is effectively on evaluates both flags:
+
+```sql
+-- Effective state of a subscription
+t.enabled AND s.enabled
+-- FROM notifications.subscriptions s
+-- JOIN notifications.topics t ON t.topic_id = s.topic_id
 ```
-should_send = topic.enabled AND subscription.enabled AND preference.not_paused
-```
 
-Status flags live after notification generation, at the send step. The ChangelogEvent → subscription-match → NOTIFICATION row pipeline is unaffected. Rows are always written; flags only gate dispatch.
+This has two consequences, and both are intended:
+
+- Re-enabling a topic brings back exactly the subscriptions that were enabled
+  before, and nothing else. A user who turned a subscription off stays off,
+  whatever happened to the topic in the meantime. Nothing has to remember which
+  subscriptions were switched off by the topic and which by their owner.
+- No trigger, and no multi-row `UPDATE` inside the topic-disable path, has to
+  stay in sync with the subscription flags.
+
+**Requirement for the queue-client notification-generation work:** its send
+query must include the `t.enabled AND s.enabled` predicate. Right now the two
+columns are fully independent. Only the read-time predicate ties them together,
+so a send path that checks `s.enabled` alone would keep delivering on disabled
+topics.
+
+This gap can't be reached through the API yet, because there is no endpoint to
+disable a topic. Topics can only be disabled with direct SQL.
+
+### New subscriptions on a disabled topic
+
+`CreateSubscription` reads `topics.enabled` inside its own transaction, with
+`SELECT ... FOR SHARE`, before the insert or the re-enable upsert. It returns
+`ErrTopicDisabled`, which the handler maps to 409. The handler's earlier
+`GetTopic` check is only there to fail fast before schema validation. The
+foreign-key constraint on its own doesn't catch this, because a disabled topic
+still satisfies it. The row lock makes a concurrent topic disable wait until
+the subscribe commits, rather than slipping in between the check and the
+insert.
+
+### Auditing
+
+Per the ticket, no auditing is needed for v1. There is no
+`notification_status_audit` table. The existing `notification_audit` table
+tracks notification delivery events, not flag changes.
+
+### User-level pause
+
+The ticket settles this question, and this PR does not implement it. Before
+adding a user-level column or a `paused_until` timestamp, check the ticket for
+the decided shape. Don't take it from an earlier draft of this doc.
+
+### Rolling back the migration
+
+The down migration drops both `enabled` columns and doesn't preserve their
+data. If users have already disabled subscriptions, a rollback loses that
+opt-out state. Re-running the up migration then backfills every row as
+`true`, which silently turns delivery back on for users who opted out. The
+down file has a comment with a snapshot query to run before any rollback in an
+environment where the flags have been used.
 
 ## NOTIFICATIONS Table
 
-This table is the source of truth for what the integration-service queue-client has actually dispatched — not what was matched or queued, but what was confirmed as a generated notification event. Rows are written before the send gate is evaluated, which is what makes pause semantics coherent: a paused user still accumulates rows and can browse "My Notifications" in the Pennsieve App.
+`notifications.notifications` is the durable record of every notification the
+queue client generates. It holds what was generated, not only what was
+delivered. Rows are written before the send gate is evaluated. That keeps the
+history browsable when a send is suppressed.
 
 | Column | Type | Notes |
 | --- | --- | --- |
-| `notification_id` | Serial, PK | Auto-populated by Postgres |
-| `subscription_id` | FK → SUBSCRIPTIONS | Required on insert; user and topic inferred via join |
-| `title` | text | Rendered email subject line |
-| `message` | text | Rendered email body or push payload |
-| `created_at` | timestamptz | Auto-populated by Postgres; when the row was written, not when it was sent |
-| `sent_at` | timestamptz, nullable | **Proposed addition.** Null = suppressed or pending; populated when dispatch confirms. Required to distinguish delivered from paused-suppressed. |
+| `notification_id` | `SERIAL` PK | |
+| `subscription_id` | FK → `subscriptions`, `ON DELETE CASCADE` | User and topic are reached through a join |
+| `title` | `TEXT` | Rendered subject line |
+| `message` | `TEXT` | Rendered body |
+| `metadata` | `JSONB`, nullable | |
+| `created_at` | `TIMESTAMPTZ` | When the row was written, not when it was sent |
 
-`subscription_id` as the sole FK is intentional: user, topic, and delivery channel are all reachable via join, keeping the table normalized. `title` and `message` store post-render content (the human-readable output), not the raw ChangelogEvent — this is the right choice for auditability and for serving the frontend directly.
+`subscription_id` is the only FK on purpose. User, topic and delivery channel
+are all reachable with a join, which keeps the table normalized.
 
-The gap between `created_at` and `sent_at` is meaningful. It records how long a notification sat suppressed, and is the primary signal for any future delivery reporting or debugging.
+Not in this PR: a nullable `sent_at TIMESTAMPTZ` would separate delivered rows
+from suppressed ones. It belongs with the queue-client dispatch work. Whether
+it's needed there depends on how that work records delivery. The existing
+`user_notifications.delivered_at` may already cover it.
 
-## API Endpoint Design
+## Pipeline Placement
 
-**Endpoint naming:** Rename `GET /notifications/notifications` to `GET /notifications/messages`. The current path is a namespace collision that will confuse every developer who touches it. Confirm with the FE team before changing.
-
-**Query parameters:** Two parameters are proposed; they solve different UX problems and are not mutually exclusive.
-
-| Parameter | Type | Behaviour |
-| --- | --- | --- |
-| `since` | timestamp | `WHERE created_at > ?` — caller supplies an absolute window |
-| `recent` | boolean | Server fetches `notificationsLastSeen` for the user and applies it as the window |
-
-`recent=true` is the better default for the webapp's notification feed — the client should not need to store and send `notificationsLastSeen` itself; that is server state. `since` suits programmatic or power use cases where the caller controls the window. If both parameters are present, `since` takes precedence.
-
-Server-side resolution logic:
-
-```
-if since:
-    WHERE created_at > since
-elif recent:
-    fetch user.notificationsLastSeen
-    WHERE created_at > notificationsLastSeen
-else:
-    return all (paginated)
-```
-
-**Items not yet scoped — flag for FE input before launch:**
-
-- Pagination (limit/offset or cursor). The notifications feed grows unboundedly; this is required before launch.
-- Whether `GET /notifications/messages` updates `notificationsLastSeen`, or whether a separate `POST /notifications/seen` handles that. If the GET updates it, concurrent requests create a race condition.
-- Filtering by topic or subscription ID — not in scope for v1, but the FE will likely request it once the UI is built.
-
-## How the Two Tasks Relate
-
-The NOTIFICATIONS table is what makes the status flag semantics viable. Without a durable row written before the send gate is evaluated, "pause notifications" would have to mean "don't generate the notification at all" — which would break the browsing experience. The two tasks share a design dependency even if they are independent in implementation.
-
-The pipeline must be structured so the send gate is evaluated at dispatch time, not at generation time:
+The status flags gate dispatch. They don't gate matching or row generation.
 
 ```
 ChangelogEvent
-  → match subscriptions
-  → write NOTIFICATION row  ← always happens
-  → enqueue send job
-      → check topic.status + subscription.status + preference.status
-      → send OR skip (set sent_at OR leave null)
+  → match subscriptions (topic_id + context containment; no enabled check)
+  → write NOTIFICATION row                       ← always happens
+  → send gate: topics.enabled AND subscriptions.enabled
+      → send, or skip
 ```
 
-If the current architecture inlines the send step with notification generation, separating them is a refactor, not just a schema change. This dependency should be scoped and confirmed before either task begins implementation.
+Leaving the flags out of the match query means history keeps accumulating
+while a subscription or topic is off. The flags decide only whether anything is
+delivered.
 
-## Open Questions and Recommendations
+## API Endpoint Design (as shipped)
 
-**1. Does pause take a duration/timestamp, or is it a manual toggle?**
+`GET /notification/messages` replaced the old
+`GET /notification/{topicId}/notifications`. It returns the caller's
+notifications across all their subscriptions, one page at a time:
 
-Recommendation: manual toggle for v1, with a nullable `paused_until TIMESTAMPTZ` column added to `notification_preferences` now. Adding the column costs nothing and avoids a future migration. For v1, if `paused_until` is null and status is `paused`, the pause is indefinite. If `paused_until` is set, a check at send time (or a background job) can auto-resume. Do not build the scheduler in v1 unless there is an explicit product requirement.
+| Parameter | Default | Notes |
+| --- | --- | --- |
+| `limit` | 50 | Values from 1 to 200. Anything else falls back to the default |
+| `offset` | 0 | |
+| `orderDirection` | `desc` | `asc` or `desc` by `created_at`, with `notification_id` as the tiebreaker. Any other value returns 400 |
 
-**2. Do topic-level and subscription-level disables need separate audit tables?**
+The response is `{limit, offset, totalCount, messages}`.
 
-Recommendation: one shared audit table for v1, discriminated by `entity_type`. A single `notification_status_audit` table with columns `(entity_type, entity_id, changed_by, old_status, new_status, changed_at)` handles both. The distinction matters for UI — admins see topic-level changes, users see subscription-level changes — but that is a query filter, not a schema split. Separate tables only make sense if the two have meaningfully different access patterns or retention policies, which is not established.
+`notificationsLastSeen` is read by `GET /notification/user/{userId}` and set by
+a separate `PATCH /notification/user/{userId}`. The messages GET never updates
+it, which avoids the race you'd get if concurrent GETs wrote it (see
+`docs/notifications-last-seen.md`).
 
-**3. How does a disabled topic interact with existing subscriptions?**
+Still open for FE input:
 
-Recommendation: dormant semantics — subscriptions are unaffected, and topic-level disable is a standalone gate in the send check. The alternative (cascading disable to all subscriptions) creates a silent state problem: if a topic is re-enabled, do subscriptions auto-resume? Which ones? What if a user manually disabled their subscription while the topic was disabled? Dormant semantics are simpler to reason about, audit, and test. Cascading creates hidden coupling and makes rollback ambiguous.
-
-## Schema Summary
-
-All changes are additive. No existing columns are modified.
-
-```sql
--- Topic layer
-ALTER TABLE topics
-  ADD COLUMN status TEXT NOT NULL DEFAULT 'enabled'
-    CHECK (status IN ('enabled', 'disabled'));
-
--- Subscription layer
-ALTER TABLE subscriptions
-  ADD COLUMN status TEXT NOT NULL DEFAULT 'enabled'
-    CHECK (status IN ('enabled', 'disabled'));
-
--- Preference layer (user-global)
-ALTER TABLE notification_preferences
-  ADD COLUMN status TEXT NOT NULL DEFAULT 'active'
-    CHECK (status IN ('active', 'paused')),
-  ADD COLUMN paused_until TIMESTAMPTZ NULL;
-
--- NOTIFICATIONS table: proposed addition
-ALTER TABLE notifications
-  ADD COLUMN sent_at TIMESTAMPTZ NULL;
-
--- Shared audit log
-CREATE TABLE notification_status_audit (
-  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  entity_type  TEXT NOT NULL CHECK (entity_type IN ('topic', 'subscription', 'preference')),
-  entity_id    UUID NOT NULL,
-  changed_by   UUID NOT NULL REFERENCES users(id),
-  old_status   TEXT,
-  new_status   TEXT NOT NULL,
-  changed_at   TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-```
+- A `since` / `recent=true` window filter based on `notificationsLastSeen`. It
+  isn't implemented, and the client can filter by `created_at` in the meantime.
+- Filtering by topic or subscription ID. It's out of scope for v1.

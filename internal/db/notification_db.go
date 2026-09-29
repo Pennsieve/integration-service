@@ -16,6 +16,10 @@ import (
 // does not exist in notifications.topics.
 var ErrTopicNotFound = errors.New("topic not found")
 
+// ErrTopicDisabled is returned when an operation would add or re-enable a
+// subscription on a topic whose enabled flag is false.
+var ErrTopicDisabled = errors.New("topic is disabled")
+
 // ErrSubscriptionNotFound is returned when an operation references a
 // subscription id that does not exist, or that belongs to another user.
 var ErrSubscriptionNotFound = errors.New("subscription not found")
@@ -100,13 +104,36 @@ func GetUserSubscriptions(ctx context.Context, userID int64) ([]models.Subscript
 // (email_enabled = true) if one doesn't already exist, so the delivery path
 // always has a preferences row to read.
 //
-// Returns ErrTopicNotFound if topicID doesn't exist.
+// The topic's enabled flag is read inside the same transaction as the
+// insert, under FOR SHARE, so a concurrent disable of the topic blocks until
+// this commits rather than slipping in between the check and the insert; a
+// caller's earlier GetTopic read is not enough on its own, since the FK
+// constraint alone is still satisfied by a disabled topic.
+//
+// Returns ErrTopicNotFound if topicID doesn't exist, and ErrTopicDisabled if
+// it is disabled.
 func CreateSubscription(ctx context.Context, userID, topicID int64, subscriptionContext []byte) (models.Subscription, bool, error) {
 	tx, err := dbPool.BeginTx(ctx, nil)
 	if err != nil {
 		return models.Subscription{}, false, fmt.Errorf("create subscription: %w", err)
 	}
 	defer tx.Rollback()
+
+	const topicQ = `
+		SELECT enabled
+		FROM notifications.topics
+		WHERE topic_id = $1
+		FOR SHARE`
+	var topicEnabled bool
+	if err := tx.QueryRowContext(ctx, topicQ, topicID).Scan(&topicEnabled); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return models.Subscription{}, false, ErrTopicNotFound
+		}
+		return models.Subscription{}, false, fmt.Errorf("create subscription: lock topic: %w", err)
+	}
+	if !topicEnabled {
+		return models.Subscription{}, false, ErrTopicDisabled
+	}
 
 	const subQ = `
 		INSERT INTO notifications.subscriptions (user_id, topic_id, context)

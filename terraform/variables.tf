@@ -50,4 +50,20 @@ locals {
   # localhost is dev-only: allowing it in prod would let any page a user
   # visits call the prod API with their bearer token.
   cors_allowed_origins = var.environment_name == "prod" ? ["https://discover.pennsieve.io", "https://app.pennsieve.io"] : ["http://localhost:3000", "https://discover.pennsieve.net", "https://app.pennsieve.net"]
+
+  # Shared by the webhook (gateway.tf) and notifications
+  # (notification_gateway.tf) API stages so the two gateways' access logs
+  # keep the same shape; change it here, not per stage.
+  api_gateway_access_log_format = jsonencode({
+    requestId               = "$context.requestId"
+    sourceIp                = "$context.identity.sourceIp"
+    requestTime             = "$context.requestTime"
+    protocol                = "$context.protocol"
+    httpMethod              = "$context.httpMethod"
+    resourcePath            = "$context.resourcePath"
+    routeKey                = "$context.routeKey"
+    status                  = "$context.status"
+    responseLength          = "$context.responseLength"
+    integrationErrorMessage = "$context.integrationErrorMessage"
+  })
 }

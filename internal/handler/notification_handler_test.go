@@ -177,6 +177,9 @@ func expectGetTopicEnabled(mock sqlmock.Sqlmock, topicID int64, topicContext []b
 // storing storedContext.
 func expectCreateSubscription(mock sqlmock.Sqlmock, userID, topicID int64, storedContext []byte, inserted bool) {
 	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta("FOR SHARE")).
+		WithArgs(topicID).
+		WillReturnRows(sqlmock.NewRows([]string{"enabled"}).AddRow(true))
 	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.subscriptions")).
 		WithArgs(userID, topicID, storedContext).
 		WillReturnRows(sqlmock.NewRows(append(subscriptionColumns, "inserted")).
@@ -264,6 +267,9 @@ func TestNotificationHandler_Subscribe_UpsertReEnables(t *testing.T) {
 	mock := newSubscribeMock(t)
 	expectGetTopic(mock, 7, nil)
 	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta("FOR SHARE")).
+		WithArgs(int64(7)).
+		WillReturnRows(sqlmock.NewRows([]string{"enabled"}).AddRow(true))
 	mock.ExpectQuery(regexp.QuoteMeta("ON CONFLICT (user_id, topic_id, context) DO UPDATE SET enabled = true")).
 		WithArgs(int64(42), int64(7), []byte("{}")).
 		WillReturnRows(sqlmock.NewRows(append(subscriptionColumns, "inserted")).
@@ -284,6 +290,24 @@ func TestNotificationHandler_Subscribe_UpsertReEnables(t *testing.T) {
 func TestNotificationHandler_Subscribe_DisabledTopic(t *testing.T) {
 	mock := newSubscribeMock(t)
 	expectGetTopicEnabled(mock, 7, nil, false)
+
+	resp, err := NotificationHandler(context.Background(), authedNotifReq(routeSubscribe, map[string]string{"topicId": "7"}, 42))
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusConflict, resp.StatusCode)
+	assert.Contains(t, resp.Body, "topic is disabled")
+	assert.NoError(t, mock.ExpectationsWereMet(), "no subscription should be stored")
+}
+
+// A topic disabled between the handler's GetTopic check and the insert is
+// caught by CreateSubscription's locked re-read and still reported as 409.
+func TestNotificationHandler_Subscribe_TopicDisabledDuringCreate(t *testing.T) {
+	mock := newSubscribeMock(t)
+	expectGetTopic(mock, 7, nil)
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta("FOR SHARE")).
+		WithArgs(int64(7)).
+		WillReturnRows(sqlmock.NewRows([]string{"enabled"}).AddRow(false))
+	mock.ExpectRollback()
 
 	resp, err := NotificationHandler(context.Background(), authedNotifReq(routeSubscribe, map[string]string{"topicId": "7"}, 42))
 	require.NoError(t, err)
@@ -435,6 +459,9 @@ func TestNotificationHandler_Subscribe_DBError(t *testing.T) {
 	mock := newSubscribeMock(t)
 	expectGetTopic(mock, 7, nil)
 	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta("FOR SHARE")).
+		WithArgs(int64(7)).
+		WillReturnRows(sqlmock.NewRows([]string{"enabled"}).AddRow(true))
 	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.subscriptions")).
 		WithArgs(int64(42), int64(7), []byte("{}")).
 		WillReturnError(errors.New("connection reset"))
@@ -467,6 +494,9 @@ func TestNotificationHandler_Subscribe_TopicDeletedBeforeInsert(t *testing.T) {
 	mock := newSubscribeMock(t)
 	expectGetTopic(mock, 7, nil)
 	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta("FOR SHARE")).
+		WithArgs(int64(7)).
+		WillReturnRows(sqlmock.NewRows([]string{"enabled"}).AddRow(true))
 	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.subscriptions")).
 		WithArgs(int64(42), int64(7), []byte("{}")).
 		WillReturnError(&pq.Error{Code: "23503"})
