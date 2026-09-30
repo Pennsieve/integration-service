@@ -110,6 +110,49 @@ func TestMigrations(t *testing.T) {
 		require.Error(t, err)
 	})
 
+	t.Run("notifications.topics and subscriptions default to enabled and can be disabled", func(t *testing.T) {
+		var topicID int
+		var topicEnabled bool
+		err := db.QueryRow(
+			`INSERT INTO notifications.topics (name) VALUES ($1) RETURNING topic_id, enabled`,
+			"test-topic-enabled",
+		).Scan(&topicID, &topicEnabled)
+		require.NoError(t, err)
+		require.True(t, topicEnabled)
+
+		var subscriptionID int
+		var subscriptionEnabled bool
+		err = db.QueryRow(
+			`INSERT INTO notifications.subscriptions (user_id, topic_id) VALUES ($1, $2) RETURNING subscription_id, enabled`,
+			seededUserID, topicID,
+		).Scan(&subscriptionID, &subscriptionEnabled)
+		require.NoError(t, err)
+		require.True(t, subscriptionEnabled)
+
+		_, err = db.Exec(
+			`INSERT INTO notifications.notifications (subscription_id, title, message) VALUES ($1, $2, $3)`,
+			subscriptionID, "title", "message",
+		)
+		require.NoError(t, err)
+
+		// Disabling (the replacement for deleting) must keep the history.
+		_, err = db.Exec(`UPDATE notifications.subscriptions SET enabled = false WHERE subscription_id = $1`, subscriptionID)
+		require.NoError(t, err)
+		_, err = db.Exec(`UPDATE notifications.topics SET enabled = false WHERE topic_id = $1`, topicID)
+		require.NoError(t, err)
+
+		var count int
+		err = db.QueryRow(
+			`SELECT count(*) FROM notifications.notifications WHERE subscription_id = $1`,
+			subscriptionID,
+		).Scan(&count)
+		require.NoError(t, err)
+		require.Equal(t, 1, count)
+
+		_, err = db.Exec(`UPDATE notifications.subscriptions SET enabled = NULL WHERE subscription_id = $1`, subscriptionID)
+		require.Error(t, err, "enabled must be NOT NULL")
+	})
+
 	t.Run("notifications.preferences carries a nullable notifications_last_seen", func(t *testing.T) {
 		// Seeded without the column: a user who has never viewed their
 		// notifications must read back NULL, not a backfilled default.

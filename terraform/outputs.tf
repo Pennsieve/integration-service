@@ -21,5 +21,5 @@ output "webhook_receiver_url" {
 
 output "notification_api_url" {
   description = "Base HTTPS URL for the Notifications API described in terraform/notification-service.yml"
-  value       = "https://${var.api_domain_name}/integration/notification"
+  value       = "https://${var.api_domain_name}/notification"
 }
