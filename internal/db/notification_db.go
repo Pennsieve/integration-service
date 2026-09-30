@@ -89,6 +89,40 @@ func GetUserSubscriptions(ctx context.Context, userID int64) ([]models.Subscript
 	return subs, rows.Err()
 }
 
+// MatchSubscriptions returns every subscription to topicID whose context
+// contains eventContext (context @> eventContext), the JSON object built by
+// notification_matcher.ExtractContext. An empty object matches every
+// subscription to the topic.
+//
+// Enabled flags are deliberately not checked here: matching decides which
+// subscriptions an event is recorded against, and topics.enabled AND
+// subscriptions.enabled only gate sending (see
+// docs/notification-status-flags-scope.md), so both flags are returned for
+// the caller to apply.
+func MatchSubscriptions(ctx context.Context, topicID int64, eventContext []byte) ([]models.Subscription, error) {
+	const q = `
+		SELECT subscription_id, user_id, topic_id, context, enabled, created_at
+		FROM notifications.subscriptions
+		WHERE topic_id = $1 AND context @> $2::jsonb
+		ORDER BY subscription_id`
+
+	rows, err := dbPool.QueryContext(ctx, q, topicID, defaultJSON(eventContext))
+	if err != nil {
+		return nil, fmt.Errorf("match subscriptions: %w", err)
+	}
+	defer rows.Close()
+
+	var subs []models.Subscription
+	for rows.Next() {
+		s, err := scanSubscription(rows)
+		if err != nil {
+			return nil, fmt.Errorf("match subscriptions: %w", err)
+		}
+		subs = append(subs, s)
+	}
+	return subs, rows.Err()
+}
+
 // CreateSubscription subscribes userID to topicID under the given context.
 // A user can hold multiple subscriptions to the same topic as long as their
 // contexts differ (e.g. following a topic for several datasets); calling it

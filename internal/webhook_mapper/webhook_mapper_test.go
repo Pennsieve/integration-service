@@ -35,7 +35,7 @@ func TestMapWebhookMessages_MatchesEventsToURLs(t *testing.T) {
 	})
 
 	mapped := map[string][]models.EventMessage{
-		"org1": {{OrgID: "org1", DatasetID: 1, Category: "FILES", Type: "UPLOAD"}},
+		"org1": {{OrgID: "org1", DatasetID: new(1), Category: "FILES", Type: "UPLOAD"}},
 	}
 
 	result := MapWebhookMessages(context.Background(), mapped, false)
@@ -54,7 +54,7 @@ func TestMapWebhookMessages_NoMatchingWebhookYieldsNoURLs(t *testing.T) {
 	})
 
 	mapped := map[string][]models.EventMessage{
-		"org2": {{OrgID: "org2", DatasetID: 1, Category: "FILES", Type: "UPLOAD"}},
+		"org2": {{OrgID: "org2", DatasetID: new(1), Category: "FILES", Type: "UPLOAD"}},
 	}
 
 	result := MapWebhookMessages(context.Background(), mapped, false)
@@ -62,4 +62,28 @@ func TestMapWebhookMessages_NoMatchingWebhookYieldsNoURLs(t *testing.T) {
 	// The event is still recorded, but with no URLs since nothing subscribed.
 	require.Contains(t, result, "1:FILES")
 	assert.Empty(t, result["1:FILES"].URLs)
+}
+
+func TestMapWebhookMessages_SkipsEventsWithoutDatasetOrOrg(t *testing.T) {
+	cache.Set("org3", models.WebhookCache{
+		Updated: time.Now(),
+		Webhooks: []models.WebhookRecord{
+			{APIURL: "https://a.example/hook", EventName: "FILES", DatasetID: 1},
+		},
+	})
+
+	mapped := map[string][]models.EventMessage{
+		"org3": {
+			{OrgID: "org3", Category: "FILES", Type: "UPLOAD"},
+			{OrgID: "org3", DatasetID: new(1), Category: "FILES", Type: "UPLOAD"},
+		},
+		// No organizationId: skipped before the cache is consulted.
+		"": {{DatasetID: new(1), Category: "FILES", Type: "UPLOAD"}},
+	}
+
+	result := MapWebhookMessages(context.Background(), mapped, false)
+
+	require.Len(t, result, 1)
+	assert.Len(t, result["1:FILES"].Messages, 1)
+	assert.Equal(t, []string{"https://a.example/hook"}, result["1:FILES"].URLs)
 }

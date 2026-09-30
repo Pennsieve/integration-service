@@ -30,7 +30,7 @@ func TestMapEvents_GroupsByOrg(t *testing.T) {
 	assert.False(t, forceRefresh)
 	assert.Len(t, mapped["org1"], 2)
 	assert.Len(t, mapped["org2"], 1)
-	assert.Equal(t, 1, mapped["org1"][0].DatasetID)
+	assert.Equal(t, new(1), mapped["org1"][0].DatasetID)
 }
 
 func TestMapEvents_ForceRefreshOnCreateDataset(t *testing.T) {
@@ -51,14 +51,60 @@ func TestMapEvents_DatasetIdAsString(t *testing.T) {
 
 	mapped, _, err := MapEvents(events)
 	require.NoError(t, err)
-	assert.Equal(t, 2252, mapped["org1"][0].DatasetID)
+	assert.Equal(t, new(2252), mapped["org1"][0].DatasetID)
+}
+
+func TestMapEvents_MissingDatasetIdIsRecordedNotRejected(t *testing.T) {
+	// UPDATE_README-style events can arrive without a datasetId; that must
+	// not fail the decode, let alone the batch.
+	events := sqsEvent(
+		map[string]interface{}{"organizationId": "45", "eventType": "UPDATE_README"},
+		map[string]interface{}{"organizationId": "45", "datasetId": nil, "eventType": "UPDATE_README"},
+	)
+
+	mapped, _, err := MapEvents(events)
+	require.NoError(t, err)
+	require.Len(t, mapped["45"], 2)
+	assert.Nil(t, mapped["45"][0].DatasetID)
+	assert.Nil(t, mapped["45"][1].DatasetID)
+}
+
+func TestMapEvents_OrganizationIdAsNumber(t *testing.T) {
+	events := sqsEvent(
+		map[string]interface{}{"organizationId": 45, "datasetId": "123", "eventType": "UPDATE_README"},
+	)
+
+	mapped, _, err := MapEvents(events)
+	require.NoError(t, err)
+	require.Len(t, mapped["45"], 1)
+	assert.Equal(t, new(123), mapped["45"][0].DatasetID)
+}
+
+func TestMapEvents_SkipsBadRecordsAndKeepsTheRest(t *testing.T) {
+	good := sqsEvent(
+		map[string]interface{}{"organizationId": "org1", "datasetId": 1, "eventCategory": "FILES", "eventType": "UPLOAD"},
+	)["Records"].([]interface{})[0]
+
+	events := map[string]interface{}{"Records": []interface{}{
+		"not an object",
+		map[string]interface{}{"messageId": "no-body"},
+		map[string]interface{}{"body": 123},
+		map[string]interface{}{"body": "{not json"},
+		map[string]interface{}{"body": `{"Message": 5}`},
+		map[string]interface{}{"body": `{"Message": "{\"datasetId\": \"abc\"}"}`},
+		good,
+	}}
+
+	mapped, _, err := MapEvents(events)
+	require.NoError(t, err, "a bad record must not fail the batch")
+	require.Len(t, mapped, 1)
+	assert.Len(t, mapped["org1"], 1)
 }
 
 func TestMapEvents_RejectsMalformedEnvelope(t *testing.T) {
 	cases := map[string]map[string]interface{}{
 		"missing Records":    {"NotRecords": []interface{}{}},
 		"records wrong type": {"Records": "nope"},
-		"body not a string":  {"Records": []interface{}{map[string]interface{}{"body": 123}}},
 	}
 	for name, ev := range cases {
 		t.Run(name, func(t *testing.T) {
