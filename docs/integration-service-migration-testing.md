@@ -6,7 +6,7 @@
 
 `github-service` and `collections-service` (sibling Pennsieve repos) both solve this the same way:
 1. Build a "seeded" Postgres image = the shared `pennsieve/pennsievedb:<tag>-seed` base image (which already has the core `pennsieve` schema, e.g. `pennsieve.users`) **plus** the service's own migrations baked in, committed as `pennsieve/pennsievedb-<service>:<tag>-seed`.
-2. `docker-compose.test.yml` starts that seeded image + a `test` container (`Dockerfile.test`, plain `golang:1.27-alpine`, `go test ./...`) wired together via env vars that match `dbmigrate-go`'s config keys (`POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE`).
+2. `docker-compose.test.yml` starts that seeded image + a `test` container (`Dockerfile.test`, plain `golang:1.27.1-alpine`, `go test ./...`) wired together via env vars that match `dbmigrate-go`'s config keys (`POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE`).
 3. `Makefile` targets (`build-postgres`, `test`, `test-ci`, `docker-clean`) wrap the compose files so both local devs and Jenkins invoke the same thing.
 
 `integration-service`'s migrations already assume the same base schema — `20260803000000_create_notifications_schema.up.sql` has FKs to `pennsieve.users` — so it needs exactly the same base seed image (`pennsieve/pennsievedb:V20241120161735-seed`) that both reference repos already use. This plan replicates that pattern, scaled down (no S3/minio needed — `internal/aws/aws.go` only talks to SSM, which stays mocked/unused in tests as today).
@@ -21,7 +21,7 @@
 
 ### 2. Local/CI test runner (mirrors both repos)
 
-- **`Dockerfile.test`** (new): `golang:1.27-alpine` (matches `go.mod`'s `go 1.27.0`), `COPY go.mod go.sum`, `go mod download`, `COPY cmd cmd` / `COPY internal internal`, `CMD ["go", "test", "-v", "./..."]`.
+- **`Dockerfile.test`** (new): `golang:1.27.1-alpine` (matches `go.mod`'s `go 1.27.1`), `COPY go.mod go.sum`, `go mod download`, `COPY cmd cmd` / `COPY internal internal`, `CMD ["go", "test", "-v", "./..."]`.
 - **`docker-compose.test.yml`** (new): a `test` service (build from `Dockerfile.test`, `depends_on: pennsievedb-integration`, env `POSTGRES_HOST=pennsievedb-integration`, `POSTGRES_USER=postgres`, `POSTGRES_PASSWORD=password`, `POSTGRES_DATABASE=postgres`, and a `/var/run/docker.sock` volume mount so the testcontainers-based migration test in step 3 can start its own container from inside this one — same trick `collections-service` uses) + a `pennsievedb-integration` service pinned to the tag produced by `build-postgres.sh`, with port `5432` exposed so `go test` can also be run directly on the host against the same container.
 - **`Makefile`**: add `test: docker-clean` → `docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from test` then `make clean`; `test-ci` variant for Jenkins; update `docker-clean` to tear down both compose files.
 
