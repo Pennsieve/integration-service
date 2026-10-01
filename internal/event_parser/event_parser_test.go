@@ -92,6 +92,8 @@ func TestMapEvents_SkipsBadRecordsAndKeepsTheRest(t *testing.T) {
 		map[string]interface{}{"body": "{not json"},
 		map[string]interface{}{"body": `{"Message": 5}`},
 		map[string]interface{}{"body": `{"Message": "{\"datasetId\": \"abc\"}"}`},
+		map[string]interface{}{"body": `{"Message": "{\"organizationId\": \"org1\", \"datasetId\": \"-5\"}"}`},
+		map[string]interface{}{"body": `{"Message": "{\"organizationId\": \"org1\", \"datasetId\": 0}"}`},
 		good,
 	}}
 

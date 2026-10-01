@@ -42,8 +42,10 @@ func MapWebhookMessages(ctx context.Context, mapped map[string][]models.EventMes
 			EventMessage.Category (json:"eventCategory") is used to build the message bucket key (fmt.Sprintf("%d:%s", evt.DatasetID, evt.Category)).
 			WebhookRecord.EventName is used when building the webhook lookup (fmt.Sprintf("%d:%s", w.DatasetID, w.EventName)).
 		*/
+		noDataset := 0
 		for _, evt := range events {
 			if evt.DatasetID == nil {
+				noDataset++
 				continue
 			}
 			// Assumption: evt.Category (the message's eventCategory) uses the
@@ -60,6 +62,9 @@ func MapWebhookMessages(ctx context.Context, mapped map[string][]models.EventMes
 			}
 
 			result[key] = entry
+		}
+		if noDataset > 0 {
+			log.Printf("Skipping %d event(s) with no datasetId for org %s\n", noDataset, orgID)
 		}
 	}
 

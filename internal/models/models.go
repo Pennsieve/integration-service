@@ -85,23 +85,27 @@ func stringOrNumber(raw json.RawMessage) (string, error) {
 	return n.String(), nil
 }
 
-// optionalInt reads a JSON number or numeric string as an int, and returns
-// nil for a missing or null field.
+// optionalInt reads a JSON number or numeric string as a positive int, and
+// returns nil for a missing or null field. Ids are always positive, so zero
+// or a negative value is rejected here rather than left for each consumer
+// to catch: one that only nil-checks would otherwise build a lookup key
+// that silently matches nothing.
 func optionalInt(raw json.RawMessage) (*int, error) {
 	if isAbsent(raw) {
 		return nil, nil
 	}
 	var n int
-	if err := json.Unmarshal(raw, &n); err == nil {
-		return &n, nil
+	if err := json.Unmarshal(raw, &n); err != nil {
+		var s string
+		if err := json.Unmarshal(raw, &s); err != nil {
+			return nil, fmt.Errorf("cannot unmarshal %s", raw)
+		}
+		if n, err = strconv.Atoi(s); err != nil {
+			return nil, fmt.Errorf("cannot convert %q to int: %w", s, err)
+		}
 	}
-	var s string
-	if err := json.Unmarshal(raw, &s); err != nil {
-		return nil, fmt.Errorf("cannot unmarshal %s", raw)
-	}
-	n, err := strconv.Atoi(s)
-	if err != nil {
-		return nil, fmt.Errorf("cannot convert %q to int: %w", s, err)
+	if n <= 0 {
+		return nil, fmt.Errorf("got %d, want a positive integer", n)
 	}
 	return &n, nil
 }

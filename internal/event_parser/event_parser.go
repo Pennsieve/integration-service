@@ -8,6 +8,12 @@ import (
 	"github.com/Pennsieve/integration-service/internal/models"
 )
 
+// SkippedRecordMarker begins the log line for every record MapEvents skips.
+// A CloudWatch metric filter counts it (terraform/cloudwatch.tf) and alarms
+// on a sustained rate, standing in for the DLQ alarm that used to catch bad
+// records when they failed the batch. Changing it breaks that alarm.
+const SkippedRecordMarker = "SKIPPED_EVENT_RECORD"
+
 // MapEvents decodes the SNS-wrapped events in an SQS batch and groups them
 // by organization. It also reports whether any event should force a webhook
 // cache refresh.
@@ -15,7 +21,8 @@ import (
 // Only a malformed batch envelope is an error. A record that can't be
 // decoded is logged and skipped, so one bad record doesn't fail the whole
 // batch: a returned error makes Lambda retry every record in the batch until
-// it lands in the DLQ, taking the good records with it.
+// it lands in the DLQ, taking the good records with it. Skipped records never
+// reach the DLQ, so the skip log line is what alerting watches.
 func MapEvents(events map[string]interface{}) (map[string][]models.EventMessage, bool, error) {
 	mapped := make(map[string][]models.EventMessage)
 	forceRefresh := false
@@ -27,7 +34,7 @@ func MapEvents(events map[string]interface{}) (map[string][]models.EventMessage,
 	for i, r := range records {
 		msg, err := decodeRecord(r)
 		if err != nil {
-			log.Printf("WARN skipping record %d (%s): %v", i, recordMessageID(r), err)
+			log.Printf("WARN %s index=%d messageId=%s: %v", SkippedRecordMarker, i, recordMessageID(r), err)
 			continue
 		}
 

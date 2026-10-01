@@ -92,7 +92,6 @@ func TestExtractContext_BadFields(t *testing.T) {
 		"missing organizationId":     `{"datasetId":"123"}`,
 		"non-numeric organizationId": `{"organizationId":"org1","datasetId":"123"}`,
 		"zero organizationId":        `{"organizationId":"0","datasetId":"123"}`,
-		"negative datasetId":         `{"organizationId":"45","datasetId":-1}`,
 	}
 	for name, raw := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -100,6 +99,13 @@ func TestExtractContext_BadFields(t *testing.T) {
 			assert.ErrorIs(t, err, ErrBadField)
 		})
 	}
+
+	// Decoding rejects a non-positive datasetId, but the extractor checks
+	// it too for events built some other way.
+	t.Run("negative datasetId", func(t *testing.T) {
+		_, err := ExtractContext(updateReadme, models.EventMessage{OrgID: "45", DatasetID: new(-1)})
+		assert.ErrorIs(t, err, ErrBadField)
+	})
 }
 
 func TestExtractContext_RequiredFieldEventsDontCarry(t *testing.T) {

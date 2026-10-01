@@ -83,6 +83,13 @@ func ExtractContext(topic models.Topic, event models.EventMessage) (map[string]a
 
 // requiredFields returns the "required" list of a topic's context JSON
 // Schema, or nothing for a topic with no context.
+//
+// It trusts that a topic's context is a JSON Schema. Nothing enforces that
+// yet: topic contexts are hand-maintained. Valid JSON of another shape, such
+// as an example payload, has no "required" list and so extracts {}, which
+// matches every subscription to the topic. Whatever path comes to create or
+// edit topics must validate that a declared context is a JSON Schema whose
+// "required" list parses and is non-empty.
 func requiredFields(topicContext json.RawMessage) ([]string, error) {
 	trimmed := bytes.TrimSpace(topicContext)
 	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
