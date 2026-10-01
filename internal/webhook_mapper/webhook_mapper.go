@@ -18,6 +18,13 @@ func MapWebhookMessages(ctx context.Context, mapped map[string][]models.EventMes
 	result := make(map[string]models.WebhookMessage)
 
 	for orgID, events := range mapped {
+		// Webhooks are registered per organization and dataset, so an event
+		// missing either can't match one.
+		if orgID == "" {
+			log.Printf("Skipping %d event(s) with no organizationId\n", len(events))
+			continue
+		}
+
 		cacheEntry, exists := cache.Get(orgID)
 
 		if forceRefresh || !exists || time.Since(cacheEntry.Updated) > cacheExpiration {
@@ -35,12 +42,17 @@ func MapWebhookMessages(ctx context.Context, mapped map[string][]models.EventMes
 			EventMessage.Category (json:"eventCategory") is used to build the message bucket key (fmt.Sprintf("%d:%s", evt.DatasetID, evt.Category)).
 			WebhookRecord.EventName is used when building the webhook lookup (fmt.Sprintf("%d:%s", w.DatasetID, w.EventName)).
 		*/
+		noDataset := 0
 		for _, evt := range events {
+			if evt.DatasetID == nil {
+				noDataset++
+				continue
+			}
 			// Assumption: evt.Category (the message's eventCategory) uses the
 			// same vocabulary as the DB's webhook event_name (mapped into
 			// models.WebhookRecord.EventName). If these diverge, lookups will
 			// fail and webhooks won't be sent.
-			key := fmt.Sprintf("%d:%s", evt.DatasetID, evt.Category)
+			key := fmt.Sprintf("%d:%s", *evt.DatasetID, evt.Category)
 
 			entry := result[key]
 			entry.Messages = append(entry.Messages, evt)
@@ -50,6 +62,9 @@ func MapWebhookMessages(ctx context.Context, mapped map[string][]models.EventMes
 			}
 
 			result[key] = entry
+		}
+		if noDataset > 0 {
+			log.Printf("Skipping %d event(s) with no datasetId for org %s\n", noDataset, orgID)
 		}
 	}
 

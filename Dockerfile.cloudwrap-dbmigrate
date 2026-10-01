@@ -1,4 +1,7 @@
-FROM pennsieve/go-cloudwrap:1.25-alpine
+# Build with the Go version go.mod requires. pennsieve/go-cloudwrap bundles
+# its own (older) Go with GOTOOLCHAIN=local, so it can't compile this module;
+# it is only used below as the runtime image for its cloudwrap entrypoint.
+FROM golang:1.27-alpine AS build
 
 WORKDIR /app
 
@@ -11,5 +14,11 @@ COPY cmd cmd
 COPY internal internal
 
 RUN ["go", "build", "-o", "./integration-service-dbmigrate", "cmd/dbmigrate/main.go"]
+
+FROM pennsieve/go-cloudwrap:1.25-alpine
+
+WORKDIR /app
+
+COPY --from=build /app/integration-service-dbmigrate ./integration-service-dbmigrate
 
 CMD ["--service", "integration-service-dbmigrate", "exec", "/app/integration-service-dbmigrate"]
