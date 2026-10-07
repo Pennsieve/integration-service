@@ -1288,3 +1288,77 @@ func TestPathSegmentForParam(t *testing.T) {
 		})
 	}
 }
+
+// datasetPublishedContext is the context JSON Schema the
+// DATASET_PUBLISHED_IN_WORKSPACE topic is seeded with.
+const datasetPublishedContext = `{
+	"$schema": "http://json-schema.org",
+	"title": "DatasetPublishedInWorkspaceTopicConfiguration",
+	"type": "object",
+	"properties": {"organizationId": {"type": "integer"}},
+	"required": ["organizationId"],
+	"additionalProperties": false
+}`
+
+func expectOrganizationMember(mock sqlmock.Sqlmock, orgID, userID int64, member bool) {
+	mock.ExpectQuery(regexp.QuoteMeta("FROM pennsieve.organization_user")).
+		WithArgs(orgID, userID).
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(member))
+}
+
+func TestNotificationHandler_Subscribe_OrganizationLevelTopic(t *testing.T) {
+	mock := newSubscribeMock(t)
+	expectGetTopic(mock, 11, []byte(datasetPublishedContext))
+	expectOrganizationMember(mock, 45, 42, true)
+	expectCreateSubscription(mock, 42, 11, []byte(`{"organizationId": 45}`), true)
+
+	req := authedNotifReq(routeSubscribe, map[string]string{"topicId": "11"}, 42)
+	req.Body = `{"organizationId": 45}`
+	resp, err := NotificationHandler(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusCreated, resp.StatusCode)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestNotificationHandler_Subscribe_OrganizationLevelTopic_NotAMember(t *testing.T) {
+	mock := newSubscribeMock(t)
+	expectGetTopic(mock, 11, []byte(datasetPublishedContext))
+	expectOrganizationMember(mock, 45, 42, false)
+
+	req := authedNotifReq(routeSubscribe, map[string]string{"topicId": "11"}, 42)
+	req.Body = `{"organizationId": 45}`
+	resp, err := NotificationHandler(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	assert.NoError(t, mock.ExpectationsWereMet(), "no subscription should be stored")
+}
+
+func TestNotificationHandler_Subscribe_OrganizationLevelTopic_MembershipDBError(t *testing.T) {
+	mock := newSubscribeMock(t)
+	expectGetTopic(mock, 11, []byte(datasetPublishedContext))
+	mock.ExpectQuery(regexp.QuoteMeta("FROM pennsieve.organization_user")).
+		WithArgs(int64(45), int64(42)).
+		WillReturnError(errors.New("connection reset"))
+
+	req := authedNotifReq(routeSubscribe, map[string]string{"topicId": "11"}, 42)
+	req.Body = `{"organizationId": 45}`
+	resp, err := NotificationHandler(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+}
+
+// TestNotificationHandler_Subscribe_OrganizationLevelTopic_RejectsDatasetScope
+// checks that the topic can't be narrowed to one dataset: the event carries
+// no datasetId to match on, so such a subscription would silently receive
+// every publication in the organization.
+func TestNotificationHandler_Subscribe_OrganizationLevelTopic_RejectsDatasetScope(t *testing.T) {
+	mock := newSubscribeMock(t)
+	expectGetTopic(mock, 11, []byte(datasetPublishedContext))
+
+	req := authedNotifReq(routeSubscribe, map[string]string{"topicId": "11"}, 42)
+	req.Body = `{"organizationId": 45, "datasetId": 5}`
+	resp, err := NotificationHandler(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	assert.NoError(t, mock.ExpectationsWereMet(), "no dataset or membership lookup should run")
+}
