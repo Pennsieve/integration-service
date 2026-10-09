@@ -29,11 +29,39 @@ type WebhookRecord struct {
 // Consumers decide for themselves whether they need a field: webhooks skip
 // an event without a dataset, and notification matching skips it only for
 // topics whose context requires one.
+//
+// Detail is the event-specific eventDetail object, kept raw for whichever
+// consumer knows its shape (notification rendering). It is excluded from
+// marshaling so webhook deliveries keep their existing body.
 type EventMessage struct {
-	OrgID     string `json:"organizationId"`
-	DatasetID *int   `json:"datasetId"`
-	Category  string `json:"eventCategory"`
-	Type      string `json:"eventType"`
+	OrgID     string          `json:"organizationId"`
+	DatasetID *int            `json:"datasetId"`
+	Category  string          `json:"eventCategory"`
+	Type      string          `json:"eventType"`
+	Detail    json.RawMessage `json:"-"`
+}
+
+// Event categories and types the notification pipeline handles specially.
+// EventCategoryOrganization marks organization-level events, which carry no
+// datasetId on the envelope even when their detail describes a dataset.
+const (
+	EventCategoryOrganization            = "ORGANIZATION"
+	EventTypeDatasetPublishedInWorkspace = "DATASET_PUBLISHED_IN_WORKSPACE"
+)
+
+// DatasetPublishedInWorkspaceDetail is the eventDetail of a
+// DATASET_PUBLISHED_IN_WORKSPACE event, emitted by pennsieve-api once
+// Discover confirms a dataset publication (first version or revision) is
+// live. It holds everything a notification needs to render without a
+// follow-up lookup; the organization id is on the envelope, not here.
+type DatasetPublishedInWorkspaceDetail struct {
+	DatasetID        int    `json:"datasetId"`
+	DatasetNodeID    string `json:"datasetNodeId"`
+	DatasetName      string `json:"datasetName"`
+	PublishedVersion int    `json:"publishedVersion"`
+	DOI              string `json:"doi"`
+	OwnerUserID      int    `json:"ownerUserId"`
+	OwnerName        string `json:"ownerName"`
 }
 
 // UnmarshalJSON accepts organizationId and datasetId as either JSON numbers
@@ -45,6 +73,7 @@ func (e *EventMessage) UnmarshalJSON(data []byte) error {
 		DatasetID json.RawMessage `json:"datasetId"`
 		Category  string          `json:"eventCategory"`
 		Type      string          `json:"eventType"`
+		Detail    json.RawMessage `json:"eventDetail"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
@@ -59,7 +88,12 @@ func (e *EventMessage) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("datasetId: %w", err)
 	}
 
-	*e = EventMessage{OrgID: orgID, DatasetID: datasetID, Category: raw.Category, Type: raw.Type}
+	var detail json.RawMessage
+	if !isAbsent(raw.Detail) {
+		detail = raw.Detail
+	}
+
+	*e = EventMessage{OrgID: orgID, DatasetID: datasetID, Category: raw.Category, Type: raw.Type, Detail: detail}
 	return nil
 }
 

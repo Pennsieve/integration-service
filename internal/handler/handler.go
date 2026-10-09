@@ -9,6 +9,7 @@ import (
 	"github.com/Pennsieve/integration-service/internal/aws"
 	"github.com/Pennsieve/integration-service/internal/db"
 	"github.com/Pennsieve/integration-service/internal/event_parser"
+	"github.com/Pennsieve/integration-service/internal/notification_generator"
 	"github.com/Pennsieve/integration-service/internal/webhook_mapper"
 	"github.com/Pennsieve/integration-service/internal/webhook_sender"
 )
@@ -28,6 +29,8 @@ func Handler(ctx context.Context, events map[string]interface{}) (map[string]int
 	if err != nil {
 		return nil, fmt.Errorf("failed to map events: %w", err)
 	}
+
+	notification_generator.Generate(ctx, mappedEvents)
 
 	webhookMessages := webhook_mapper.MapWebhookMessages(ctx, mappedEvents, forceRefresh)
 	webhook_sender.BroadcastMessages(ctx, webhookMessages)

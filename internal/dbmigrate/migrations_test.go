@@ -183,6 +183,19 @@ func TestMigrations(t *testing.T) {
 		require.True(t, lastSeen.Valid)
 		require.True(t, written.Equal(lastSeen.Time))
 	})
+
+	t.Run("notifications.topics seeds the organization-level DATASET_PUBLISHED_IN_WORKSPACE topic", func(t *testing.T) {
+		var enabled bool
+		var required, additional string
+		err := db.QueryRow(
+			`SELECT enabled, context->'required', context->'additionalProperties'
+			 FROM notifications.topics WHERE name = 'DATASET_PUBLISHED_IN_WORKSPACE'`,
+		).Scan(&enabled, &required, &additional)
+		require.NoError(t, err)
+		require.True(t, enabled)
+		require.JSONEq(t, `["organizationId"]`, required, "scoped to an organization, never a dataset")
+		require.Equal(t, "false", additional)
+	})
 }
 
 func datasourceName() string {

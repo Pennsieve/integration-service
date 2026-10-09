@@ -611,3 +611,80 @@ func TestDatasetExists(t *testing.T) {
 		})
 	}
 }
+
+func TestGetTopicByName(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	SetPoolForTest(mockDB)
+
+	mock.ExpectQuery(regexp.QuoteMeta("FROM notifications.topics WHERE name = $1")).
+		WithArgs("DATASET_PUBLISHED_IN_WORKSPACE").
+		WillReturnRows(sqlmock.NewRows([]string{"topic_id", "name", "description", "enabled", "created_at", "context"}).
+			AddRow(int64(11), "DATASET_PUBLISHED_IN_WORKSPACE", "published", true, time.Now(), []byte(`{"required":["organizationId"]}`)))
+
+	topic, err := GetTopicByName(context.Background(), "DATASET_PUBLISHED_IN_WORKSPACE")
+	require.NoError(t, err)
+	assert.Equal(t, int64(11), topic.TopicID)
+	assert.Equal(t, "published", topic.Description)
+	assert.JSONEq(t, `{"required":["organizationId"]}`, string(topic.Context))
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestGetTopicByName_NotFound(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	SetPoolForTest(mockDB)
+
+	mock.ExpectQuery(regexp.QuoteMeta("WHERE name = $1")).WithArgs("NOPE").WillReturnError(sql.ErrNoRows)
+
+	_, err = GetTopicByName(context.Background(), "NOPE")
+	assert.ErrorIs(t, err, ErrTopicNotFound)
+}
+
+func TestCreateNotifications(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	SetPoolForTest(mockDB)
+
+	mock.ExpectExec(regexp.QuoteMeta("SELECT unnest($1::integer[]), $2, $3, $4::jsonb")).
+		WithArgs(pq.Array([]int64{3, 4}), "title", "message", []byte(`{"doi":"d"}`)).
+		WillReturnResult(sqlmock.NewResult(0, 2))
+
+	n, err := CreateNotifications(context.Background(), []int64{3, 4}, "title", "message", []byte(`{"doi":"d"}`))
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), n)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestCreateNotifications_NoSubscriptionsSkipsTheInsert(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	SetPoolForTest(mockDB)
+
+	n, err := CreateNotifications(context.Background(), nil, "title", "message", nil)
+	require.NoError(t, err)
+	assert.Zero(t, n)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestIsOrganizationMember(t *testing.T) {
+	for _, member := range []bool{true, false} {
+		mockDB, mock, err := sqlmock.New()
+		require.NoError(t, err)
+		SetPoolForTest(mockDB)
+
+		mock.ExpectQuery(regexp.QuoteMeta("FROM pennsieve.organization_user WHERE organization_id = $1 AND user_id = $2")).
+			WithArgs(int64(45), int64(42)).
+			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(member))
+
+		got, err := IsOrganizationMember(context.Background(), 45, 42)
+		require.NoError(t, err)
+		assert.Equal(t, member, got)
+		require.NoError(t, mock.ExpectationsWereMet())
+		mockDB.Close()
+	}
+}

@@ -247,6 +247,73 @@ func GetTopic(ctx context.Context, topicID int64) (models.Topic, error) {
 	return t, nil
 }
 
+// GetTopicByName returns the topic whose name is name. Topics are named
+// after the event type they notify on, so this is how an incoming event
+// finds its topic. Returns ErrTopicNotFound if no topic has that name.
+func GetTopicByName(ctx context.Context, name string) (models.Topic, error) {
+	const q = `
+		SELECT topic_id, name, description, enabled, created_at, context
+		FROM notifications.topics
+		WHERE name = $1`
+
+	var t models.Topic
+	var description sql.NullString
+	var topicContext []byte
+	err := dbPool.QueryRowContext(ctx, q, name).Scan(&t.TopicID, &t.Name, &description, &t.Enabled, &t.CreatedAt, &topicContext)
+	if errors.Is(err, sql.ErrNoRows) {
+		return models.Topic{}, ErrTopicNotFound
+	}
+	if err != nil {
+		return models.Topic{}, fmt.Errorf("get topic by name: %w", err)
+	}
+	t.Description = description.String
+	t.Context = topicContext
+	return t, nil
+}
+
+// CreateNotifications posts one notification, with the same title, message
+// and metadata, to each of subscriptionIDs in a single statement, so an
+// event is recorded against either all of its matched subscriptions or none.
+// It returns the number of rows written.
+//
+// Rows are written whatever the topic's and subscriptions' enabled flags:
+// notifications are the durable history, and the flags only gate sending
+// (see docs/notification-status-flags-scope.md).
+func CreateNotifications(ctx context.Context, subscriptionIDs []int64, title, message string, metadata []byte) (int64, error) {
+	if len(subscriptionIDs) == 0 {
+		return 0, nil
+	}
+	const q = `
+		INSERT INTO notifications.notifications (subscription_id, title, message, metadata)
+		SELECT unnest($1::integer[]), $2, $3, $4::jsonb`
+
+	var meta interface{}
+	if len(metadata) > 0 {
+		meta = metadata
+	}
+	res, err := dbPool.ExecContext(ctx, q, pq.Array(subscriptionIDs), title, message, meta)
+	if err != nil {
+		return 0, fmt.Errorf("create notifications: %w", err)
+	}
+	return res.RowsAffected()
+}
+
+// IsOrganizationMember reports whether userID belongs to organizationID, at
+// any permission level. An organization that doesn't exist has no members,
+// so it reports false rather than an error.
+func IsOrganizationMember(ctx context.Context, organizationID, userID int64) (bool, error) {
+	const q = `
+		SELECT EXISTS(
+			SELECT 1 FROM pennsieve.organization_user
+			WHERE organization_id = $1 AND user_id = $2)`
+
+	var member bool
+	if err := dbPool.QueryRowContext(ctx, q, organizationID, userID).Scan(&member); err != nil {
+		return false, fmt.Errorf("organization membership: %w", err)
+	}
+	return member, nil
+}
+
 // pqUndefinedTable is the error code Postgres reports when a query
 // references a table that doesn't exist, including one qualified by a schema
 // that doesn't exist, e.g. an organization schema for an organization id that

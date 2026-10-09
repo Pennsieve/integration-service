@@ -195,8 +195,11 @@ components:
       description: >-
         Free-form JSON object stored as the subscription's context. It must
         satisfy the JSON Schema in the topic's context (see GET
-        /notification/topics), and when it carries organizationId and
-        datasetId, that dataset must exist in that organization.
+        /notification/topics). When it carries organizationId and datasetId,
+        that dataset must exist in that organization; when it carries
+        organizationId alone (organization-level topics such as
+        DATASET_PUBLISHED_IN_WORKSPACE), the caller must be a member of that
+        organization.
       additionalProperties: true
       example:
         organizationId: 1
@@ -359,8 +362,10 @@ paths:
         Subscribes the authenticated user to the given topic. The request
         body is the subscription's context and is validated before it is
         stored: it must be a JSON object matching the topic's context JSON
-        Schema, and any dataset it references (organizationId + datasetId)
-        must exist. An empty body is treated as {}. Calling this again with
+        Schema, any dataset it references (organizationId + datasetId)
+        must exist, and an organization it is scoped to on its own
+        (organizationId without datasetId) must be one the caller belongs
+        to. An empty body is treated as {}. Calling this again with
         the same context returns that subscription rather than creating a
         duplicate, re-enabling it if the caller had disabled it.
       operationId: subscribeToTopic
@@ -398,6 +403,14 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: >-
+            The body is scoped to an organization (organizationId without
+            datasetId) the caller is not a member of. Returned whether or not
+            that organization exists.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '404':
           description: Topic does not exist
           content:

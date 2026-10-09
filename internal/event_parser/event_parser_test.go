@@ -115,3 +115,18 @@ func TestMapEvents_RejectsMalformedEnvelope(t *testing.T) {
 		})
 	}
 }
+
+func TestMapEvents_OrganizationEventWithoutDatasetID(t *testing.T) {
+	events := sqsEvent(map[string]interface{}{
+		"organizationId": "45",
+		"eventCategory":  "ORGANIZATION",
+		"eventType":      "DATASET_PUBLISHED_IN_WORKSPACE",
+		"eventDetail":    map[string]interface{}{"datasetId": 123, "doi": "10.26275/abcd"},
+	})
+
+	mapped, _, err := MapEvents(events)
+	require.NoError(t, err)
+	require.Len(t, mapped["45"], 1)
+	assert.Nil(t, mapped["45"][0].DatasetID)
+	assert.JSONEq(t, `{"datasetId":123,"doi":"10.26275/abcd"}`, string(mapped["45"][0].Detail))
+}
