@@ -126,13 +126,9 @@ func TestGenerate_LooksUpTopicOncePerBatch(t *testing.T) {
 
 func TestGenerate_SkipsWithoutQuerying(t *testing.T) {
 	cases := map[string]models.EventMessage{
-		// Dataset-scoped publishing events notify per-dataset subscribers
-		// through their own topics, never the workspace-wide one.
-		"dataset-scoped publication event": {OrgID: "45", DatasetID: new(123), Category: "PUBLISHING", Type: "COMPLETE_PUBLICATION"},
-		"event type without a renderer":    {OrgID: "45", DatasetID: new(123), Category: "METADATA", Type: "UPDATE_README"},
-		"wrong category":                   publishedEvent(t, "45", "PUBLISHING", publishedDetail),
-		"missing detail":                   publishedEvent(t, "45", models.EventCategoryOrganization, ""),
-		"detail without doi":               publishedEvent(t, "45", models.EventCategoryOrganization, `{"datasetId":1,"datasetName":"x","publishedVersion":1}`),
+		"wrong category":     publishedEvent(t, "45", "PUBLISHING", publishedDetail),
+		"missing detail":     publishedEvent(t, "45", models.EventCategoryOrganization, ""),
+		"detail without doi": publishedEvent(t, "45", models.EventCategoryOrganization, `{"datasetId":1,"datasetName":"x","publishedVersion":1}`),
 	}
 	for name, event := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -141,6 +137,69 @@ func TestGenerate_SkipsWithoutQuerying(t *testing.T) {
 			require.NoError(t, mock.ExpectationsWereMet(), "no query should run")
 		})
 	}
+}
+
+// updateReadmeContext is the context JSON Schema of the hand-maintained
+// UPDATE_README topic.
+const updateReadmeContext = `{
+	"type": "object",
+	"properties": {"organizationId": {"type": "integer"}, "datasetId": {"type": "integer"}},
+	"required": ["organizationId", "datasetId"]
+}`
+
+func TestGenerate_DefaultRendererForTypeWithoutOne(t *testing.T) {
+	mock := newMock(t)
+	mock.ExpectQuery(regexp.QuoteMeta("WHERE name = $1")).
+		WithArgs("UPDATE_README").
+		WillReturnRows(sqlmock.NewRows(topicColumns).
+			AddRow(int64(4), "UPDATE_README", nil, true, time.Now(), []byte(updateReadmeContext)))
+	mock.ExpectQuery(regexp.QuoteMeta("WHERE topic_id = $1 AND context @> $2::jsonb")).
+		WithArgs(int64(4), []byte(`{"datasetId":123,"organizationId":45}`)).
+		WillReturnRows(sqlmock.NewRows(subscriptionColumns).
+			AddRow(int64(3), int64(7), int64(4), []byte(`{"organizationId":45,"datasetId":123}`), true, time.Now()))
+	body := `{"organizationId":"45","datasetId":123,"eventCategory":"METADATA","eventType":"UPDATE_README","eventDetail":{"readme":"new"}}`
+	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO notifications.notifications")).
+		WithArgs(pq.Array([]int64{3}), "UPDATE_README", body, []byte(body)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	var event models.EventMessage
+	require.NoError(t, json.Unmarshal([]byte(body), &event))
+	Generate(context.Background(), map[string][]models.EventMessage{"45": {event}})
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestGenerate_DatasetScopedPublicationUsesItsOwnTopic(t *testing.T) {
+	// COMPLETE_PUBLICATION has no type-specific renderer, so it is rendered
+	// by default against its own topic, never the workspace-wide one.
+	mock := newMock(t)
+	mock.ExpectQuery(regexp.QuoteMeta("WHERE name = $1")).
+		WithArgs("COMPLETE_PUBLICATION").
+		WillReturnRows(sqlmock.NewRows(topicColumns))
+
+	Generate(context.Background(), map[string][]models.EventMessage{
+		"45": {{OrgID: "45", DatasetID: new(123), Category: "PUBLISHING", Type: "COMPLETE_PUBLICATION"}},
+	})
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestRendererFor(t *testing.T) {
+	r := rendererFor(models.EventTypeDatasetPublishedInWorkspace)
+	assert.Equal(t, models.EventCategoryOrganization, r.category)
+
+	r = rendererFor("UPDATE_README")
+	assert.Empty(t, r.category, "the default renderer accepts any category")
+	content, err := r.render(models.EventMessage{Type: "UPDATE_README"})
+	require.NoError(t, err)
+	assert.Equal(t, "UPDATE_README", content.Title)
+}
+
+func TestRenderDefault_FlatEventBody(t *testing.T) {
+	// Fields the event doesn't carry are left out rather than sent empty.
+	content, err := renderDefault(models.EventMessage{OrgID: "45", Category: "ORGANIZATION", Type: "ADD_TEAM_USER"})
+	require.NoError(t, err)
+	assert.Equal(t, "ADD_TEAM_USER", content.Title)
+	assert.Equal(t, `{"organizationId":"45","eventCategory":"ORGANIZATION","eventType":"ADD_TEAM_USER"}`, content.Message)
+	assert.JSONEq(t, content.Message, string(content.Metadata))
 }
 
 func TestGenerate_MissingTopicIsNotAnError(t *testing.T) {

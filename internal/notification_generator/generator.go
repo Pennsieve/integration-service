@@ -1,10 +1,11 @@
 // Package notification_generator turns incoming events into notification
 // rows for the subscriptions they match.
 //
-// Only event types with a renderer below generate notifications. Each one
-// is matched to the topic named after its event type, matched against that
-// topic's subscriptions (notification_matcher), and recorded once per
-// matched subscription. Rows are written regardless of the topic's and
+// Every event is matched to the topic named after its event type, then
+// against that topic's subscriptions (notification_matcher), and recorded
+// once per matched subscription. An event type with no topic generates
+// nothing. The notification's content comes from the event type's renderer
+// in renderers, or from defaultRenderer when it has none. Rows are written regardless of the topic's and
 // subscriptions' enabled flags, which gate sending rather than recording
 // (docs/notification-status-flags-scope.md); there is no send step yet.
 package notification_generator
@@ -33,15 +34,17 @@ type rendered struct {
 	Metadata json.RawMessage
 }
 
-// renderer describes one event type that generates notifications: the
-// eventCategory it must arrive with, and how to render it.
+// renderer describes how to render one event type's notifications: the
+// eventCategory it must arrive with ("" accepts any), and the render
+// function.
 type renderer struct {
 	category string
 	render   func(models.EventMessage) (rendered, error)
 }
 
-// renderers is keyed by eventType, which is also the name of the topic the
-// event notifies.
+// renderers holds the type-specific renderers, keyed by eventType (which is
+// also the name of the topic the event notifies). Event types missing here
+// use defaultRenderer.
 //
 // DATASET_PUBLISHED_IN_WORKSPACE is checked against the ORGANIZATION
 // category so it can't be confused with the dataset-scoped PUBLISHING
@@ -52,6 +55,18 @@ var renderers = map[string]renderer{
 		category: models.EventCategoryOrganization,
 		render:   renderDatasetPublishedInWorkspace,
 	},
+}
+
+// defaultRenderer renders any event type without a type-specific renderer,
+// in whatever category it arrives with.
+var defaultRenderer = renderer{render: renderDefault}
+
+// rendererFor returns eventType's renderer, falling back to defaultRenderer.
+func rendererFor(eventType string) renderer {
+	if r, ok := renderers[eventType]; ok {
+		return r
+	}
+	return defaultRenderer
 }
 
 // Generate records a notification for every subscription each event in
@@ -65,10 +80,7 @@ func Generate(ctx context.Context, mapped map[string][]models.EventMessage) {
 	topics := map[string]*models.Topic{}
 	for _, events := range mapped {
 		for _, event := range events {
-			if _, ok := renderers[event.Type]; !ok {
-				continue
-			}
-			n, err := generate(ctx, topics, event)
+			n, err := generate(ctx, topics, event, rendererFor(event.Type))
 			switch {
 			case errors.Is(err, errBadDetail), errors.Is(err, notification_matcher.ErrBadField):
 				log.Printf("WARN %s %s event for organization %q: %v",
@@ -84,12 +96,12 @@ func Generate(ctx context.Context, mapped map[string][]models.EventMessage) {
 	}
 }
 
-// generate records the notifications for one event that has a renderer,
-// returning how many were written. topics caches topic lookups for the
-// batch; a nil entry records a topic that doesn't exist.
-func generate(ctx context.Context, topics map[string]*models.Topic, event models.EventMessage) (int64, error) {
-	r := renderers[event.Type]
-	if event.Category != r.category {
+// generate records the notifications for one event, rendered by r, and
+// returns how many were written. The caller resolves r (see rendererFor) so
+// it isn't looked up again here. topics caches topic lookups for the batch;
+// a nil entry records a topic that doesn't exist.
+func generate(ctx context.Context, topics map[string]*models.Topic, event models.EventMessage, r renderer) (int64, error) {
+	if r.category != "" && event.Category != r.category {
 		return 0, fmt.Errorf("%w: eventCategory %q, want %q", errBadDetail, event.Category, r.category)
 	}
 	// Rendered before matching so a malformed detail is reported even while
@@ -101,10 +113,10 @@ func generate(ctx context.Context, topics map[string]*models.Topic, event models
 
 	topic, cached := topics[event.Type]
 	if !cached {
+		// Most event types have no topic, so a missing one isn't logged.
 		t, err := db.GetTopicByName(ctx, event.Type)
 		switch {
 		case errors.Is(err, db.ErrTopicNotFound):
-			log.Printf("WARN no topic named %s; not generating notifications for it", event.Type)
 		case err != nil:
 			return 0, err
 		default:
@@ -173,4 +185,23 @@ func renderDatasetPublishedInWorkspace(event models.EventMessage) (rendered, err
 		Message:  message,
 		Metadata: metadata,
 	}, nil
+}
+
+// renderDefault renders an event that has no type-specific renderer. The
+// title is the event type, and both the message and the metadata are the
+// event body as single-line JSON: the envelope fields plus eventDetail as
+// sent, so nothing in the event is lost even though nothing in it is
+// interpreted.
+func renderDefault(event models.EventMessage) (rendered, error) {
+	body, err := json.Marshal(struct {
+		OrgID     string          `json:"organizationId,omitempty"`
+		DatasetID *int            `json:"datasetId,omitempty"`
+		Category  string          `json:"eventCategory,omitempty"`
+		Type      string          `json:"eventType"`
+		Detail    json.RawMessage `json:"eventDetail,omitempty"`
+	}{event.OrgID, event.DatasetID, event.Category, event.Type, event.Detail})
+	if err != nil {
+		return rendered{}, fmt.Errorf("%w: %v", errBadDetail, err)
+	}
+	return rendered{Title: event.Type, Message: string(body), Metadata: body}, nil
 }

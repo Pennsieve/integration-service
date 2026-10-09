@@ -35,8 +35,8 @@ For each batch the consumer:
 1. **Decodes** every record (`internal/event_parser`). A record that can't be decoded is logged
    with `SKIPPED_EVENT_RECORD` and skipped instead of failing the batch; a CloudWatch alarm
    (`terraform/cloudwatch.tf`) fires on a sustained rate of those lines.
-2. **Records notifications** (`internal/notification_generator`) for event types it knows how to
-   render. The event is matched to the topic named after its `eventType`, then to that topic's
+2. **Records notifications** (`internal/notification_generator`) for every event whose
+   `eventType` names a topic. The event is matched to that topic's
    subscriptions whose context contains the topic's required fields read from the event
    (`internal/notification_matcher`), and one `notifications` row is written per matched
    subscription. Rows are written whatever the topic's and subscription's `enabled` flags are,
@@ -49,6 +49,11 @@ Webhook and notification failures are logged, not returned, so one failure never
 redeliver (and re-send) the rest of the batch.
 
 ### Notification events
+
+Each notification's title, message and metadata come from its event type's renderer. Event types
+without one use the default renderer: the title is the `eventType`, and the message and metadata
+are the event body (`organizationId`, `datasetId`, `eventCategory`, `eventType`, `eventDetail`) as
+single-line JSON. Event types with their own renderer:
 
 | Event type | Category | Topic context | Notifies |
 | --- | --- | --- | --- |
