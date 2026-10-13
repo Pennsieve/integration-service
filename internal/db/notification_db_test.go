@@ -619,11 +619,11 @@ func TestGetTopicByName(t *testing.T) {
 	SetPoolForTest(mockDB)
 
 	mock.ExpectQuery(regexp.QuoteMeta("FROM notifications.topics WHERE name = $1")).
-		WithArgs("DATASET_PUBLISHED_IN_WORKSPACE").
+		WithArgs("DATASET_PUBLISHED").
 		WillReturnRows(sqlmock.NewRows([]string{"topic_id", "name", "description", "enabled", "created_at", "context"}).
-			AddRow(int64(11), "DATASET_PUBLISHED_IN_WORKSPACE", "published", true, time.Now(), []byte(`{"required":["organizationId"]}`)))
+			AddRow(int64(11), "DATASET_PUBLISHED", "published", true, time.Now(), []byte(`{"required":["organizationId"]}`)))
 
-	topic, err := GetTopicByName(context.Background(), "DATASET_PUBLISHED_IN_WORKSPACE")
+	topic, err := GetTopicByName(context.Background(), "DATASET_PUBLISHED")
 	require.NoError(t, err)
 	assert.Equal(t, int64(11), topic.TopicID)
 	assert.Equal(t, "published", topic.Description)

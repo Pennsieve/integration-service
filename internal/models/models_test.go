@@ -11,16 +11,17 @@ import (
 func TestEventMessage_OrganizationEventDecodesDetailWithoutDatasetID(t *testing.T) {
 	raw := `{
 		"organizationId": "45",
-		"eventCategory": "ORGANIZATION",
-		"eventType": "DATASET_PUBLISHED_IN_WORKSPACE",
+		"eventCategory": "PUBLISHING",
+		"eventType": "DATASET_PUBLISHED",
 		"eventDetail": {"datasetId": 123, "datasetName": "Sleep EEG"}
 	}`
 	var e EventMessage
 	require.NoError(t, json.Unmarshal([]byte(raw), &e))
 	assert.Equal(t, "45", e.OrgID)
 	assert.Nil(t, e.DatasetID, "the detail's datasetId must not become the envelope's")
-	assert.Equal(t, EventCategoryOrganization, e.Category)
-	assert.Equal(t, EventTypeDatasetPublishedInWorkspace, e.Type)
+	assert.Nil(t, e.SubjectUserID)
+	assert.Equal(t, EventCategoryPublishing, e.Category)
+	assert.Equal(t, EventTypeDatasetPublished, e.Type)
 	assert.JSONEq(t, `{"datasetId": 123, "datasetName": "Sleep EEG"}`, string(e.Detail))
 }
 
@@ -45,4 +46,20 @@ func TestEventMessage_MarshalOmitsDetail(t *testing.T) {
 	b, err := json.Marshal(e)
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"organizationId":"45","datasetId":1,"eventCategory":"PUBLISHING","eventType":"COMPLETE_PUBLICATION"}`, string(b))
+}
+
+func TestEventMessage_SubjectUserID(t *testing.T) {
+	for name, raw := range map[string]string{
+		"number": `{"organizationId":"45","subjectUserId":7,"eventType":"ADD_TEAM_USER"}`,
+		"string": `{"organizationId":"45","subjectUserId":"7","eventType":"ADD_TEAM_USER"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			var e EventMessage
+			require.NoError(t, json.Unmarshal([]byte(raw), &e))
+			assert.Equal(t, new(7), e.SubjectUserID)
+		})
+	}
+
+	var e EventMessage
+	assert.Error(t, json.Unmarshal([]byte(`{"subjectUserId":0}`), &e), "ids are positive")
 }

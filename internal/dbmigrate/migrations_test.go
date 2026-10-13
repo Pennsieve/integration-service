@@ -184,17 +184,39 @@ func TestMigrations(t *testing.T) {
 		require.True(t, written.Equal(lastSeen.Time))
 	})
 
-	t.Run("notifications.topics seeds the organization-level DATASET_PUBLISHED_IN_WORKSPACE topic", func(t *testing.T) {
-		var enabled bool
-		var required, additional string
-		err := db.QueryRow(
-			`SELECT enabled, context->'required', context->'additionalProperties'
-			 FROM notifications.topics WHERE name = 'DATASET_PUBLISHED_IN_WORKSPACE'`,
-		).Scan(&enabled, &required, &additional)
-		require.NoError(t, err)
-		require.True(t, enabled)
-		require.JSONEq(t, `["organizationId"]`, required, "scoped to an organization, never a dataset")
-		require.Equal(t, "false", additional)
+	t.Run("notifications.topics is seeded with the Settings / Notifications topics", func(t *testing.T) {
+		workspace := `["organizationId"]`
+		personal := `["organizationId", "subjectUserId"]`
+		dataset := `["organizationId", "datasetId"]`
+		want := []struct{ name, required string }{
+			{"DATASET_PUBLISHED", workspace},
+			{"DATASET_EMBARGOED", workspace},
+			{"DATASET_EMBARGO_RELEASED", workspace},
+			{"DATASET_UNPUBLISHED", workspace},
+			{"DATASET_REVISED", workspace},
+			{"ADDED_TO_DATASET", personal},
+			{"UPDATE_ORGANIZATION_PERMISSION", personal},
+			{"ADD_TEAM_USER", personal},
+			{"DATASET_DELETED", workspace},
+			{"REMOVED_FROM_DATASET", personal},
+			{"REMOVE_TEAM_USER", personal},
+			{"CREATE_PACKAGE", dataset},
+			{"DELETE_PACKAGE", dataset},
+		}
+		for i, w := range want {
+			var topicID int
+			var enabled bool
+			var required, additional string
+			err := db.QueryRow(
+				`SELECT topic_id, enabled, context->'required', context->'additionalProperties'
+				 FROM notifications.topics WHERE name = $1`, w.name,
+			).Scan(&topicID, &enabled, &required, &additional)
+			require.NoError(t, err, w.name)
+			require.Equal(t, i+1, topicID, "%s keeps its seeded position", w.name)
+			require.True(t, enabled, w.name)
+			require.JSONEq(t, w.required, required, w.name)
+			require.Equal(t, "false", additional, w.name)
+		}
 	})
 }
 

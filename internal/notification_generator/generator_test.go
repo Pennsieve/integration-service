@@ -16,7 +16,7 @@ import (
 )
 
 // datasetPublishedContext is the context JSON Schema the
-// DATASET_PUBLISHED_IN_WORKSPACE topic is seeded with.
+// workspace-wide topics (DATASET_PUBLISHED, ...) are seeded with.
 const datasetPublishedContext = `{
 	"type": "object",
 	"properties": {"organizationId": {"type": "integer"}},
@@ -42,7 +42,7 @@ var (
 func publishedEvent(t *testing.T, orgID, category, detail string) models.EventMessage {
 	t.Helper()
 	raw := map[string]any{"organizationId": orgID, "eventCategory": category,
-		"eventType": models.EventTypeDatasetPublishedInWorkspace}
+		"eventType": models.EventTypeDatasetPublished}
 	if detail != "" {
 		raw["eventDetail"] = json.RawMessage(detail)
 	}
@@ -64,9 +64,9 @@ func newMock(t *testing.T) sqlmock.Sqlmock {
 
 func expectTopic(mock sqlmock.Sqlmock, enabled bool) {
 	mock.ExpectQuery(regexp.QuoteMeta("WHERE name = $1")).
-		WithArgs(models.EventTypeDatasetPublishedInWorkspace).
+		WithArgs(models.EventTypeDatasetPublished).
 		WillReturnRows(sqlmock.NewRows(topicColumns).
-			AddRow(int64(11), models.EventTypeDatasetPublishedInWorkspace, "published", enabled, time.Now(), []byte(datasetPublishedContext)))
+			AddRow(int64(11), models.EventTypeDatasetPublished, "published", enabled, time.Now(), []byte(datasetPublishedContext)))
 }
 
 func expectMatch(mock sqlmock.Sqlmock, orgID int, subscriptionIDs ...int64) {
@@ -87,12 +87,12 @@ func TestGenerate_RecordsOneNotificationPerMatchedSubscription(t *testing.T) {
 	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO notifications.notifications")).
 		WithArgs(pq.Array([]int64{1, 2}),
 			"Dataset published: Sleep EEG",
-			`"Sleep EEG" was published to Pennsieve Discover with DOI 10.26275/abcd. Dataset owner: Ada Lovelace.`,
+			`"Sleep EEG" (version 1) was published to Pennsieve Discover with DOI 10.26275/abcd. Dataset owner: Ada Lovelace.`,
 			sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(0, 2))
 
 	Generate(context.Background(), map[string][]models.EventMessage{
-		"45": {publishedEvent(t, "45", models.EventCategoryOrganization, publishedDetail)},
+		"45": {publishedEvent(t, "45", models.EventCategoryPublishing, publishedDetail)},
 	})
 	require.NoError(t, mock.ExpectationsWereMet())
 }
@@ -106,7 +106,7 @@ func TestGenerate_RecordsEvenWhenTopicDisabled(t *testing.T) {
 		WillReturnResult(sqlmock.NewResult(0, 1))
 
 	Generate(context.Background(), map[string][]models.EventMessage{
-		"45": {publishedEvent(t, "45", models.EventCategoryOrganization, publishedDetail)},
+		"45": {publishedEvent(t, "45", models.EventCategoryPublishing, publishedDetail)},
 	})
 	require.NoError(t, mock.ExpectationsWereMet())
 }
@@ -118,17 +118,17 @@ func TestGenerate_LooksUpTopicOncePerBatch(t *testing.T) {
 	expectMatch(mock, 46)
 
 	Generate(context.Background(), map[string][]models.EventMessage{
-		"45": {publishedEvent(t, "45", models.EventCategoryOrganization, publishedDetail)},
-		"46": {publishedEvent(t, "46", models.EventCategoryOrganization, publishedDetail)},
+		"45": {publishedEvent(t, "45", models.EventCategoryPublishing, publishedDetail)},
+		"46": {publishedEvent(t, "46", models.EventCategoryPublishing, publishedDetail)},
 	})
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestGenerate_SkipsWithoutQuerying(t *testing.T) {
 	cases := map[string]models.EventMessage{
-		"wrong category":     publishedEvent(t, "45", "PUBLISHING", publishedDetail),
-		"missing detail":     publishedEvent(t, "45", models.EventCategoryOrganization, ""),
-		"detail without doi": publishedEvent(t, "45", models.EventCategoryOrganization, `{"datasetId":1,"datasetName":"x","publishedVersion":1}`),
+		"wrong category":     publishedEvent(t, "45", models.EventCategoryOrganization, publishedDetail),
+		"missing detail":     publishedEvent(t, "45", models.EventCategoryPublishing, ""),
+		"detail without doi": publishedEvent(t, "45", models.EventCategoryPublishing, `{"datasetId":1,"datasetName":"x","publishedVersion":1}`),
 	}
 	for name, event := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -183,8 +183,8 @@ func TestGenerate_DatasetScopedPublicationUsesItsOwnTopic(t *testing.T) {
 }
 
 func TestRendererFor(t *testing.T) {
-	r := rendererFor(models.EventTypeDatasetPublishedInWorkspace)
-	assert.Equal(t, models.EventCategoryOrganization, r.category)
+	r := rendererFor(models.EventTypeDatasetPublished)
+	assert.Equal(t, models.EventCategoryPublishing, r.category)
 
 	r = rendererFor("UPDATE_README")
 	assert.Empty(t, r.category, "the default renderer accepts any category")
@@ -195,23 +195,23 @@ func TestRendererFor(t *testing.T) {
 
 func TestRenderDefault_FlatEventBody(t *testing.T) {
 	// Fields the event doesn't carry are left out rather than sent empty.
-	content, err := renderDefault(models.EventMessage{OrgID: "45", Category: "ORGANIZATION", Type: "ADD_TEAM_USER"})
+	content, err := renderDefault(models.EventMessage{OrgID: "45", SubjectUserID: new(7), Category: "ORGANIZATION", Type: "ADD_TEAM_USER"})
 	require.NoError(t, err)
 	assert.Equal(t, "ADD_TEAM_USER", content.Title)
-	assert.Equal(t, `{"organizationId":"45","eventCategory":"ORGANIZATION","eventType":"ADD_TEAM_USER"}`, content.Message)
+	assert.Equal(t, `{"organizationId":"45","subjectUserId":7,"eventCategory":"ORGANIZATION","eventType":"ADD_TEAM_USER"}`, content.Message)
 	assert.JSONEq(t, content.Message, string(content.Metadata))
 }
 
 func TestGenerate_MissingTopicIsNotAnError(t *testing.T) {
 	mock := newMock(t)
 	mock.ExpectQuery(regexp.QuoteMeta("WHERE name = $1")).
-		WithArgs(models.EventTypeDatasetPublishedInWorkspace).
+		WithArgs(models.EventTypeDatasetPublished).
 		WillReturnRows(sqlmock.NewRows(topicColumns))
 
 	Generate(context.Background(), map[string][]models.EventMessage{
 		"45": {
-			publishedEvent(t, "45", models.EventCategoryOrganization, publishedDetail),
-			publishedEvent(t, "45", models.EventCategoryOrganization, publishedDetail),
+			publishedEvent(t, "45", models.EventCategoryPublishing, publishedDetail),
+			publishedEvent(t, "45", models.EventCategoryPublishing, publishedDetail),
 		},
 	})
 	require.NoError(t, mock.ExpectationsWereMet(), "a missing topic is looked up once per batch")
@@ -222,28 +222,53 @@ func TestGenerate_EventWithoutOrganizationSkipsMatching(t *testing.T) {
 	expectTopic(mock, true)
 
 	Generate(context.Background(), map[string][]models.EventMessage{
-		"": {publishedEvent(t, "", models.EventCategoryOrganization, publishedDetail)},
+		"": {publishedEvent(t, "", models.EventCategoryPublishing, publishedDetail)},
 	})
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestRenderDatasetPublishedInWorkspace(t *testing.T) {
-	content, err := renderDatasetPublishedInWorkspace(publishedEvent(t, "45", models.EventCategoryOrganization, publishedDetail))
+func TestPublicationRenderers(t *testing.T) {
+	// Each lifecycle outcome has its own copy. A later version published
+	// through the ordinary flow is still DATASET_PUBLISHED; only
+	// DATASET_REVISED reports a revision.
+	cases := []struct{ eventType, title, message string }{
+		{models.EventTypeDatasetPublished, "Dataset published: Sleep EEG",
+			`"Sleep EEG" (version 3) was published to Pennsieve Discover with DOI 10.26275/abcd.`},
+		{models.EventTypeDatasetEmbargoed, "Dataset embargoed: Sleep EEG",
+			`"Sleep EEG" (version 3) was published to Pennsieve Discover under embargo with DOI 10.26275/abcd.`},
+		{models.EventTypeDatasetEmbargoReleased, "Dataset embargo released: Sleep EEG",
+			`The embargo on "Sleep EEG" (version 3) has ended, and it is now public on Pennsieve Discover with DOI 10.26275/abcd.`},
+		{models.EventTypeDatasetUnpublished, "Dataset unpublished: Sleep EEG",
+			`"Sleep EEG" (DOI 10.26275/abcd) was removed from Pennsieve Discover.`},
+		{models.EventTypeDatasetRevised, "Dataset revised: Sleep EEG",
+			`The published metadata of "Sleep EEG" (version 3, DOI 10.26275/abcd) was revised on Pennsieve Discover.`},
+	}
+	detail := `{"datasetId":123,"datasetName":"Sleep EEG","publishedVersion":3,"doi":"10.26275/abcd"}`
+	for _, c := range cases {
+		t.Run(c.eventType, func(t *testing.T) {
+			r := rendererFor(c.eventType)
+			assert.Equal(t, models.EventCategoryPublishing, r.category)
+			content, err := r.render(models.EventMessage{OrgID: "45", Category: models.EventCategoryPublishing,
+				Type: c.eventType, Detail: json.RawMessage(detail)})
+			require.NoError(t, err)
+			assert.Equal(t, c.title, content.Title)
+			assert.Equal(t, c.message, content.Message, "omits the owner when the detail doesn't name one")
+			assert.JSONEq(t, `{"datasetId":123,"datasetNodeId":"","datasetName":"Sleep EEG","publishedVersion":3,
+				"doi":"10.26275/abcd","ownerUserId":0,"ownerName":""}`, string(content.Metadata))
+		})
+	}
+}
+
+func TestPublicationRenderer_AddsOwnerAndStoresDetail(t *testing.T) {
+	content, err := rendererFor(models.EventTypeDatasetPublished).render(
+		publishedEvent(t, "45", models.EventCategoryPublishing, publishedDetail))
 	require.NoError(t, err)
-	assert.Equal(t, "Dataset published: Sleep EEG", content.Title)
-	assert.Equal(t, `"Sleep EEG" was published to Pennsieve Discover with DOI 10.26275/abcd. Dataset owner: Ada Lovelace.`, content.Message)
+	assert.Equal(t, `"Sleep EEG" (version 1) was published to Pennsieve Discover with DOI 10.26275/abcd. Dataset owner: Ada Lovelace.`, content.Message)
 	assert.JSONEq(t, publishedDetail, string(content.Metadata))
 }
 
-func TestRenderDatasetPublishedInWorkspace_Revision(t *testing.T) {
-	detail := `{"datasetId":123,"datasetName":"Sleep EEG","publishedVersion":3,"doi":"10.26275/abcd"}`
-	content, err := renderDatasetPublishedInWorkspace(publishedEvent(t, "45", models.EventCategoryOrganization, detail))
-	require.NoError(t, err)
-	assert.Equal(t, `Version 3 of "Sleep EEG" was published to Pennsieve Discover with DOI 10.26275/abcd.`, content.Message,
-		"names the version, and omits the owner when it isn't given")
-}
-
-func TestRenderDatasetPublishedInWorkspace_BadDetail(t *testing.T) {
+func TestPublicationRenderer_BadDetail(t *testing.T) {
+	render := rendererFor(models.EventTypeDatasetPublished).render
 	for name, detail := range map[string]string{
 		"not an object":    `"oops"`,
 		"no datasetId":     `{"datasetName":"x","publishedVersion":1,"doi":"d"}`,
@@ -252,7 +277,7 @@ func TestRenderDatasetPublishedInWorkspace_BadDetail(t *testing.T) {
 		"string datasetId": `{"datasetId":"1","datasetName":"x","publishedVersion":1,"doi":"d"}`,
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := renderDatasetPublishedInWorkspace(publishedEvent(t, "45", models.EventCategoryOrganization, detail))
+			_, err := render(publishedEvent(t, "45", models.EventCategoryPublishing, detail))
 			assert.ErrorIs(t, err, errBadDetail)
 		})
 	}

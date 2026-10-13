@@ -26,9 +26,9 @@ queue that triggers the event consumer (batches of up to 50). Each message carri
 }
 ```
 
-Ids may arrive as strings or numbers. `datasetId` is absent on organization-level events
-(`eventCategory: "ORGANIZATION"`), which describe something that happened in a workspace rather
-than to one dataset's subscribers.
+Ids may arrive as strings or numbers. Organization-level events describe something that happened
+in a workspace rather than to one dataset, so they carry no `datasetId`. Those about one user
+(added to a team, removed from a dataset, ...) name that user in `subjectUserId`.
 
 For each batch the consumer:
 
@@ -50,27 +50,54 @@ redeliver (and re-send) the rest of the batch.
 
 ### Notification events
 
-Each notification's title, message and metadata come from its event type's renderer. Event types
-without one use the default renderer: the title is the `eventType`, and the message and metadata
-are the event body (`organizationId`, `datasetId`, `eventCategory`, `eventType`, `eventDetail`) as
-single-line JSON. Event types with their own renderer:
+Migrations seed one topic per event type that the workspace Settings / Notifications page offers.
+Each topic's context decides what a subscription is scoped to:
 
-| Event type | Category | Topic context | Notifies |
-| --- | --- | --- | --- |
-| `DATASET_PUBLISHED_IN_WORKSPACE` | `ORGANIZATION` | `{"organizationId": <int>}`, no dataset scope | Members of the organization who subscribed, whenever any dataset in it is published to Discover. |
+- **Workspace:** `{"organizationId"}`. Every such event in the organization; the caller must be a
+  member of it.
+- **Personal:** `{"organizationId", "subjectUserId"}`. Only events about the caller, who must be
+  both the subject and a member of the organization.
+- **Dataset:** `{"organizationId", "datasetId"}`. Events for one dataset, which must exist.
 
-`DATASET_PUBLISHED_IN_WORKSPACE` is emitted alongside the dataset-scoped `COMPLETE_PUBLICATION`
-changelog event, once Discover confirms the publication (first version or revision) is live. It
-is deliberately separate from the `PUBLISHING` events (`REQUEST_*`, `ACCEPT_*`, `COMPLETE_*`,
-... for publication, embargo, release, revision and unpublish), which stay dataset-scoped: an
-event of this type that arrives with any other category is skipped. Its `eventDetail` is:
+| Topic (event type) | Settings label | Category | Scope | Renderer |
+| --- | --- | --- | --- | --- |
+| `DATASET_PUBLISHED` | Dataset Published in Workspace | `PUBLISHING` | Workspace | Publication |
+| `DATASET_EMBARGOED` | Dataset Embargoed in Workspace | `PUBLISHING` | Workspace | Publication |
+| `DATASET_EMBARGO_RELEASED` | Dataset Embargo Released in Workspace | `PUBLISHING` | Workspace | Publication |
+| `DATASET_UNPUBLISHED` | Dataset Unpublished in Workspace | `PUBLISHING` | Workspace | Publication |
+| `DATASET_REVISED` | Dataset Revised in Workspace | `PUBLISHING` | Workspace | Publication |
+| `ADDED_TO_DATASET` | Organization Member Added to a Dataset | `ORGANIZATION` | Personal | Default |
+| `UPDATE_ORGANIZATION_PERMISSION` | Change in Organization-level Role | `ORGANIZATION` | Personal | Default |
+| `ADD_TEAM_USER` | User Added to a Team | `ORGANIZATION` | Personal | Default |
+| `DATASET_DELETED` | Dataset Deleted from Workspace | `ORGANIZATION` | Workspace | Default |
+| `REMOVED_FROM_DATASET` | Organization Member Removed from a Dataset | `ORGANIZATION` | Personal | Default |
+| `REMOVE_TEAM_USER` | User Removed from a Team | `ORGANIZATION` | Personal | Default |
+| `CREATE_PACKAGE` | New files are being uploaded to a dataset | `FILES` | Dataset | Default |
+| `DELETE_PACKAGE` | Files are being deleted from a dataset | `FILES` | Dataset | Default |
+
+The label is the topic's `description`, and topic ids follow the table's order (1–13). The two file
+topics are meant to appear as one setting that subscribes to both.
+
+**Default renderer:** the title is the `eventType`, and the message and metadata are the event
+body (`organizationId`, `datasetId`, `subjectUserId`, `eventCategory`, `eventType`, `eventDetail`)
+as single-line JSON.
+
+**Publication renderers:** the five workspace-wide publishing broadcasts are one per successful
+outcome of the publishing workflow, each mirroring a dataset-scoped event: `DATASET_PUBLISHED`
+mirrors `COMPLETE_PUBLICATION`, `DATASET_EMBARGOED` mirrors `COMPLETE_EMBARGO`,
+`DATASET_EMBARGO_RELEASED` mirrors `RELEASE_EMBARGO`, `DATASET_UNPUBLISHED` mirrors `COMPLETE_REMOVAL`,
+and `DATASET_REVISED` mirrors `COMPLETE_REVISION`. A later version published through the ordinary
+publication flow is still `DATASET_PUBLISHED`; only the revision flow produces `DATASET_REVISED`.
+They share the `PUBLISHING` category with the dataset-scoped events and are told apart by event
+type. One arriving in another category is skipped. Each has its own title and message, built
+from a shared `eventDetail`:
 
 | Field | Type | Used for |
 | --- | --- | --- |
-| `datasetId` | int | Metadata |
+| `datasetId` | int | Metadata (required) |
 | `datasetNodeId` | string | Metadata |
 | `datasetName` | string | Title and message (required) |
-| `publishedVersion` | int | Message names the version when it is > 1 (required) |
+| `publishedVersion` | int | Message (required) |
 | `doi` | string | Message (required) |
 | `ownerUserId` | int | Metadata |
 | `ownerName` | string | Message, when present |
@@ -100,7 +127,9 @@ The service owns two Postgres schemas, each migrated independently (see Migratio
 | `messages` | Direct messages between users, optionally tied to a notification. Not yet written by the service. |
 | `notification_audit` | Audit trail of events against a notification. Not yet written by the service. |
 
-Migrations seed the `DATASET_PUBLISHED_IN_WORKSPACE` topic; other topics are maintained by hand.
+Migrations seed every topic (see Notification events above). Migration
+`20261013120000_reset_and_seed_notification_topics` deleted all earlier topics and subscriptions,
+along with the notifications posted to them, before seeding the current set.
 
 Topics and subscriptions are switched off with `enabled = false`, never deleted: `notifications`
 cascade-delete with their subscription (and subscriptions with their topic), so deleting would
@@ -132,7 +161,7 @@ full request/response schemas are in `terraform/notification-service.yml`, which
 | --- | --- | --- |
 | `GET` | `/notification/topics` | List every topic, including disabled ones, with its context schema. |
 | `GET` | `/notification/subscriptions` | List the caller's subscriptions, enabled and disabled. |
-| `POST` | `/notification/topic/{topicId}/subscription` | Subscribe the caller to a topic. The body is the subscription context: it must match the topic's context schema, a referenced dataset must exist, and an organization-only context requires the caller to be a member (`403` otherwise). Re-subscribing with the same context returns and re-enables the existing subscription. `409` if the topic is disabled. |
+| `POST` | `/notification/topic/{topicId}/subscription` | Subscribe the caller to a topic. The body is the subscription context: it must match the topic's context schema, a referenced dataset must exist, a `subjectUserId` must be the caller's own id, and an organization-scoped context requires the caller to be a member of the organization (`403` otherwise). Re-subscribing with the same context returns and re-enables the existing subscription. `409` if the topic is disabled. |
 | `PATCH` | `/notification/subscription/{subscriptionId}` | Enable or disable one of the caller's subscriptions with `{"enabled": boolean}`. |
 | `GET` | `/notification/messages` | Page through the notifications on all of the caller's subscriptions. Query params: `limit` (default 50, max 200), `offset` (default 0), `orderDirection` (`desc`, the default, or `asc`). Returns `{limit, offset, totalCount, messages}`. |
 | `GET` | `/notification/user/{userId}` | Get the caller's `emailEnabled`, `pushEnabled`, and `notificationsLastSeen`. |

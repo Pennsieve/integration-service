@@ -5,8 +5,8 @@
 // against that topic's subscriptions (notification_matcher), and recorded
 // once per matched subscription. An event type with no topic generates
 // nothing. The notification's content comes from the event type's renderer
-// in renderers, or from defaultRenderer when it has none. Rows are written regardless of the topic's and
-// subscriptions' enabled flags, which gate sending rather than recording
+// in renderers, or from defaultRenderer when it has none. Rows are written
+// regardless of the topic's and subscriptions' enabled flags, which gate sending rather than recording
 // (docs/notification-status-flags-scope.md); there is no send step yet.
 package notification_generator
 
@@ -46,15 +46,36 @@ type renderer struct {
 // also the name of the topic the event notifies). Event types missing here
 // use defaultRenderer.
 //
-// DATASET_PUBLISHED_IN_WORKSPACE is checked against the ORGANIZATION
-// category so it can't be confused with the dataset-scoped PUBLISHING
-// changelog events (REQUEST_PUBLICATION, COMPLETE_PUBLICATION, ...), which
-// notify per-dataset subscribers, not the whole workspace.
+// The workspace-wide publishing broadcasts each get their own renderer, one
+// per lifecycle outcome; none stands in for another. They share the
+// PUBLISHING category with the dataset-scoped changelog events
+// (COMPLETE_PUBLICATION, ...), which are told apart by event type, not
+// category.
 var renderers = map[string]renderer{
-	models.EventTypeDatasetPublishedInWorkspace: {
-		category: models.EventCategoryOrganization,
-		render:   renderDatasetPublishedInWorkspace,
-	},
+	models.EventTypeDatasetPublished: publicationRenderer("Dataset published",
+		func(d models.DatasetPublicationDetail) string {
+			return fmt.Sprintf("%q (version %d) was published to Pennsieve Discover with DOI %s.",
+				d.DatasetName, d.PublishedVersion, d.DOI)
+		}),
+	models.EventTypeDatasetEmbargoed: publicationRenderer("Dataset embargoed",
+		func(d models.DatasetPublicationDetail) string {
+			return fmt.Sprintf("%q (version %d) was published to Pennsieve Discover under embargo with DOI %s.",
+				d.DatasetName, d.PublishedVersion, d.DOI)
+		}),
+	models.EventTypeDatasetEmbargoReleased: publicationRenderer("Dataset embargo released",
+		func(d models.DatasetPublicationDetail) string {
+			return fmt.Sprintf("The embargo on %q (version %d) has ended, and it is now public on Pennsieve Discover with DOI %s.",
+				d.DatasetName, d.PublishedVersion, d.DOI)
+		}),
+	models.EventTypeDatasetUnpublished: publicationRenderer("Dataset unpublished",
+		func(d models.DatasetPublicationDetail) string {
+			return fmt.Sprintf("%q (DOI %s) was removed from Pennsieve Discover.", d.DatasetName, d.DOI)
+		}),
+	models.EventTypeDatasetRevised: publicationRenderer("Dataset revised",
+		func(d models.DatasetPublicationDetail) string {
+			return fmt.Sprintf("The published metadata of %q (version %d, DOI %s) was revised on Pennsieve Discover.",
+				d.DatasetName, d.PublishedVersion, d.DOI)
+		}),
 }
 
 // defaultRenderer renders any event type without a type-specific renderer,
@@ -143,48 +164,54 @@ func generate(ctx context.Context, topics map[string]*models.Topic, event models
 	return db.CreateNotifications(ctx, ids, content.Title, content.Message, content.Metadata)
 }
 
-// renderDatasetPublishedInWorkspace renders a DATASET_PUBLISHED_IN_WORKSPACE
-// event. It fires for revisions as well as first publications, so the copy
-// names the version when it isn't the first. The decoded detail is stored as
-// the notification's metadata, giving clients the ids, node id and DOI to
-// link to.
-func renderDatasetPublishedInWorkspace(event models.EventMessage) (rendered, error) {
-	if len(event.Detail) == 0 {
-		return rendered{}, fmt.Errorf("%w: eventDetail missing", errBadDetail)
+// publicationRenderer renders one of the workspace-wide publishing
+// broadcasts, which all carry a models.DatasetPublicationDetail and must
+// arrive in the PUBLISHING category. The title is titlePrefix and the
+// dataset name; the body is message's sentence, plus the dataset owner when
+// the detail names one. The decoded detail is stored as the notification's
+// metadata, giving clients the ids, node id and DOI to link to.
+func publicationRenderer(titlePrefix string, message func(models.DatasetPublicationDetail) string) renderer {
+	return renderer{
+		category: models.EventCategoryPublishing,
+		render: func(event models.EventMessage) (rendered, error) {
+			d, err := decodePublicationDetail(event)
+			if err != nil {
+				return rendered{}, err
+			}
+			body := message(d)
+			if d.OwnerName != "" {
+				body += fmt.Sprintf(" Dataset owner: %s.", d.OwnerName)
+			}
+			metadata, err := json.Marshal(d)
+			if err != nil {
+				return rendered{}, fmt.Errorf("encode metadata: %w", err)
+			}
+			return rendered{Title: titlePrefix + ": " + d.DatasetName, Message: body, Metadata: metadata}, nil
+		},
 	}
-	var d models.DatasetPublishedInWorkspaceDetail
+}
+
+// decodePublicationDetail decodes and validates a publishing broadcast's
+// eventDetail.
+func decodePublicationDetail(event models.EventMessage) (models.DatasetPublicationDetail, error) {
+	var d models.DatasetPublicationDetail
+	if len(event.Detail) == 0 {
+		return d, fmt.Errorf("%w: eventDetail missing", errBadDetail)
+	}
 	if err := json.Unmarshal(event.Detail, &d); err != nil {
-		return rendered{}, fmt.Errorf("%w: %v", errBadDetail, err)
+		return d, fmt.Errorf("%w: %v", errBadDetail, err)
 	}
 	switch {
 	case d.DatasetID <= 0:
-		return rendered{}, fmt.Errorf("%w: datasetId %d, want a positive integer", errBadDetail, d.DatasetID)
+		return d, fmt.Errorf("%w: datasetId %d, want a positive integer", errBadDetail, d.DatasetID)
 	case d.DatasetName == "":
-		return rendered{}, fmt.Errorf("%w: datasetName missing", errBadDetail)
+		return d, fmt.Errorf("%w: datasetName missing", errBadDetail)
 	case d.PublishedVersion <= 0:
-		return rendered{}, fmt.Errorf("%w: publishedVersion %d, want a positive integer", errBadDetail, d.PublishedVersion)
+		return d, fmt.Errorf("%w: publishedVersion %d, want a positive integer", errBadDetail, d.PublishedVersion)
 	case d.DOI == "":
-		return rendered{}, fmt.Errorf("%w: doi missing", errBadDetail)
+		return d, fmt.Errorf("%w: doi missing", errBadDetail)
 	}
-
-	message := fmt.Sprintf("%q was published to Pennsieve Discover with DOI %s.", d.DatasetName, d.DOI)
-	if d.PublishedVersion > 1 {
-		message = fmt.Sprintf("Version %d of %q was published to Pennsieve Discover with DOI %s.",
-			d.PublishedVersion, d.DatasetName, d.DOI)
-	}
-	if d.OwnerName != "" {
-		message += fmt.Sprintf(" Dataset owner: %s.", d.OwnerName)
-	}
-
-	metadata, err := json.Marshal(d)
-	if err != nil {
-		return rendered{}, fmt.Errorf("encode metadata: %w", err)
-	}
-	return rendered{
-		Title:    "Dataset published: " + d.DatasetName,
-		Message:  message,
-		Metadata: metadata,
-	}, nil
+	return d, nil
 }
 
 // renderDefault renders an event that has no type-specific renderer. The
@@ -196,10 +223,11 @@ func renderDefault(event models.EventMessage) (rendered, error) {
 	body, err := json.Marshal(struct {
 		OrgID     string          `json:"organizationId,omitempty"`
 		DatasetID *int            `json:"datasetId,omitempty"`
+		SubjectID *int            `json:"subjectUserId,omitempty"`
 		Category  string          `json:"eventCategory,omitempty"`
 		Type      string          `json:"eventType"`
 		Detail    json.RawMessage `json:"eventDetail,omitempty"`
-	}{event.OrgID, event.DatasetID, event.Category, event.Type, event.Detail})
+	}{event.OrgID, event.DatasetID, event.SubjectUserID, event.Category, event.Type, event.Detail})
 	if err != nil {
 		return rendered{}, fmt.Errorf("%w: %v", errBadDetail, err)
 	}

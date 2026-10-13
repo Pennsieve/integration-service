@@ -151,3 +151,26 @@ func TestMatch_BadFieldSkipsTheQuery(t *testing.T) {
 	assert.ErrorIs(t, err, ErrBadField)
 	require.NoError(t, mock.ExpectationsWereMet(), "no query should run for an event that can't match")
 }
+
+// personalContext is the context JSON Schema of the personal topics
+// (ADDED_TO_DATASET, ADD_TEAM_USER, ...).
+const personalContext = `{
+	"type": "object",
+	"properties": {"organizationId": {"type": "integer"}, "subjectUserId": {"type": "integer"}},
+	"required": ["organizationId", "subjectUserId"],
+	"additionalProperties": false
+}`
+
+func TestExtractContext_SubjectUserID(t *testing.T) {
+	topic := models.Topic{TopicID: 8, Name: "ADD_TEAM_USER", Context: json.RawMessage(personalContext)}
+
+	extracted, err := ExtractContext(topic, decodeEvent(t, `{"organizationId":"45","subjectUserId":"7","eventType":"ADD_TEAM_USER"}`))
+	require.NoError(t, err)
+	assert.Equal(t, map[string]any{"organizationId": int64(45), "subjectUserId": int64(7)}, extracted)
+
+	_, err = ExtractContext(topic, decodeEvent(t, `{"organizationId":"45","eventType":"ADD_TEAM_USER"}`))
+	assert.ErrorIs(t, err, ErrBadField, "a personal topic needs the event's subject")
+
+	_, err = ExtractContext(topic, models.EventMessage{OrgID: "45", SubjectUserID: new(-1)})
+	assert.ErrorIs(t, err, ErrBadField)
+}

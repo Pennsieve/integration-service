@@ -119,8 +119,8 @@ func TestMapEvents_RejectsMalformedEnvelope(t *testing.T) {
 func TestMapEvents_OrganizationEventWithoutDatasetID(t *testing.T) {
 	events := sqsEvent(map[string]interface{}{
 		"organizationId": "45",
-		"eventCategory":  "ORGANIZATION",
-		"eventType":      "DATASET_PUBLISHED_IN_WORKSPACE",
+		"eventCategory":  "PUBLISHING",
+		"eventType":      "DATASET_PUBLISHED",
 		"eventDetail":    map[string]interface{}{"datasetId": 123, "doi": "10.26275/abcd"},
 	})
 

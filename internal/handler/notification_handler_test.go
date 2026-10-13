@@ -1289,11 +1289,11 @@ func TestPathSegmentForParam(t *testing.T) {
 	}
 }
 
-// datasetPublishedContext is the context JSON Schema the
-// DATASET_PUBLISHED_IN_WORKSPACE topic is seeded with.
+// datasetPublishedContext is the context JSON Schema the workspace-wide
+// topics (DATASET_PUBLISHED, ...) are seeded with.
 const datasetPublishedContext = `{
 	"$schema": "http://json-schema.org",
-	"title": "DatasetPublishedInWorkspaceTopicConfiguration",
+	"title": "WorkspaceTopicConfiguration",
 	"type": "object",
 	"properties": {"organizationId": {"type": "integer"}},
 	"required": ["organizationId"],
@@ -1361,4 +1361,56 @@ func TestNotificationHandler_Subscribe_OrganizationLevelTopic_RejectsDatasetScop
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 	assert.NoError(t, mock.ExpectationsWereMet(), "no dataset or membership lookup should run")
+}
+
+// personalContext is the context JSON Schema the personal topics
+// (ADDED_TO_DATASET, ADD_TEAM_USER, ...) are seeded with.
+const personalContext = `{
+	"$schema": "http://json-schema.org",
+	"title": "PersonalTopicConfiguration",
+	"type": "object",
+	"properties": {"organizationId": {"type": "integer"}, "subjectUserId": {"type": "integer"}},
+	"required": ["organizationId", "subjectUserId"],
+	"additionalProperties": false
+}`
+
+func TestNotificationHandler_Subscribe_PersonalTopic(t *testing.T) {
+	mock := newSubscribeMock(t)
+	expectGetTopic(mock, 8, []byte(personalContext))
+	expectOrganizationMember(mock, 45, 42, true)
+	expectCreateSubscription(mock, 42, 8, []byte(`{"organizationId": 45, "subjectUserId": 42}`), true)
+
+	req := authedNotifReq(routeSubscribe, map[string]string{"topicId": "8"}, 42)
+	req.Body = `{"organizationId": 45, "subjectUserId": 42}`
+	resp, err := NotificationHandler(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusCreated, resp.StatusCode)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestNotificationHandler_Subscribe_PersonalTopic_OtherSubject checks that a
+// caller can't follow another user's dataset grants, role changes or team
+// changes by naming them as the subject.
+func TestNotificationHandler_Subscribe_PersonalTopic_OtherSubject(t *testing.T) {
+	mock := newSubscribeMock(t)
+	expectGetTopic(mock, 8, []byte(personalContext))
+
+	req := authedNotifReq(routeSubscribe, map[string]string{"topicId": "8"}, 42)
+	req.Body = `{"organizationId": 45, "subjectUserId": 7}`
+	resp, err := NotificationHandler(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+	assert.NoError(t, mock.ExpectationsWereMet(), "no membership lookup or subscription should run")
+}
+
+func TestNotificationHandler_Subscribe_PersonalTopic_RequiresSubject(t *testing.T) {
+	mock := newSubscribeMock(t)
+	expectGetTopic(mock, 8, []byte(personalContext))
+
+	req := authedNotifReq(routeSubscribe, map[string]string{"topicId": "8"}, 42)
+	req.Body = `{"organizationId": 45}`
+	resp, err := NotificationHandler(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode, "the topic schema requires subjectUserId")
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
