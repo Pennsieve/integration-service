@@ -1,6 +1,6 @@
 # Organization-Level Events & HEAL Dataset Publication Notification
 
-Oct 2, 2026 · @Yi Chen
+Oct 2, 2026 · @Yi Chen · Revised Oct 13, 2026: `DATASET_PUBLISHED_IN_WORKSPACE` renamed to `DATASET_PUBLISHED` and split into one event per publishing outcome, to match the changelog-events spec and integration-service#148.
 
 ## Problem & Background
 
@@ -41,20 +41,37 @@ All actions confirmed silent today, traced against actual manager/controller cod
 | `REMOVED_FROM_DATASET` | `DataSetsController.deleteUserCollaborator` | Removed user |
 | `DATASET_OWNERSHIP_TRANSFERRED` | `DataSetsController.switchOwner` | New owner |
 | `DATASET_CREATED` | `POST /datasets` | — (Publishers-gated) |
-| **`DATASET_PUBLISHED_IN_WORKSPACE`** | `DataSetsController` at `COMPLETE_PUBLICATION` | — |
+| `DATASET_DELETED` | Dataset deletion (call site to be identified) | — |
+| **`DATASET_PUBLISHED`** | `PUT /:id/publication/complete`, `(Completed, Publication)` | — |
+| `DATASET_EMBARGOED` | same callback, `(Completed, Embargo)` | — |
+| `DATASET_EMBARGO_RELEASED` | same callback, `(Completed, Release)` | — |
+| `DATASET_UNPUBLISHED` | removal-accept call site | — |
+| `DATASET_REVISED` | revision-accept call site | — |
 
-The last three are organization-scoped events describing dataset-level actions. They live in `organization_events` (keyed by `organization_id`); their detail payloads reference dataset fields, but no `dataset_id` column is added to the table.
+`ADDED_TO_DATASET` through `DATASET_REVISED` are organization-scoped events describing dataset-level actions. They live in `organization_events` (keyed by `organization_id`); their detail payloads reference dataset fields, but no `dataset_id` column is added to the table.
 
-## HEAL Requirement: `DATASET_PUBLISHED_IN_WORKSPACE`
+## HEAL Requirement: `DATASET_PUBLISHED`
 
 ### Event definition
 
-**Name:** `DATASET_PUBLISHED_IN_WORKSPACE` in `OrganizationEventName`.
+**Name:** `DATASET_PUBLISHED` in `OrganizationEventName`, with `eventCategory: "PUBLISHING"`. An earlier draft called it `DATASET_PUBLISHED_IN_WORKSPACE`. The suffix was dropped because workspace scope is already implied by the event being organization-level (subscriptions to it can't carry a `datasetId`), so the name only needs to say what happened.
 
-**Detail payload:**
+**One event per publishing outcome.** `DATASET_PUBLISHED` is one of five workspace-wide broadcasts, each mirroring one dataset-scoped success event. No outcome reuses another's event, so subscribers can pick exactly the outcomes they care about:
+
+| Event | Mirrors | Fires from |
+| --- | --- | --- |
+| `DATASET_PUBLISHED` | `COMPLETE_PUBLICATION` | `PUT /:id/publication/complete`, `(Completed, Publication)` |
+| `DATASET_EMBARGOED` | `COMPLETE_EMBARGO` | same callback, `(Completed, Embargo)` |
+| `DATASET_EMBARGO_RELEASED` | `RELEASE_EMBARGO` | same callback, `(Completed, Release)` |
+| `DATASET_UNPUBLISHED` | `COMPLETE_REMOVAL` | removal-accept call site |
+| `DATASET_REVISED` | `COMPLETE_REVISION` | revision-accept call site |
+
+There are no failure siblings: a failed publish concerns the owner and the publisher, who already get the dataset-scoped `FAIL_*` events.
+
+**Detail payload** (all five share these fields, one case class per event):
 
 ```scala
-case class DatasetPublishedInWorkspace(
+case class DatasetPublished(      // DatasetEmbargoed / DatasetEmbargoReleased / DatasetUnpublished / DatasetRevised: same shape
   datasetId:        Int,
   datasetNodeId:    String,
   datasetName:      String,
@@ -63,7 +80,7 @@ case class DatasetPublishedInWorkspace(
   ownerUserId:      Int,
   ownerName:        String   // denormalized — avoids lookup at render time
 ) extends OrganizationEventDetail {
-  val eventType = DATASET_PUBLISHED_IN_WORKSPACE
+  val eventType = DATASET_PUBLISHED
 }
 ```
 
@@ -71,7 +88,7 @@ All fields are present to allow notification rendering without a follow-up API c
 
 ### Where and when
 
-**Call site:** `DataSetsController.scala`, at the same point `COMPLETE_PUBLICATION` `ChangelogEvent` is logged — **not** at `ACCEPT_PUBLICATION`.
+**Call site:** `DataSetsController.scala`, at the same point the `COMPLETE_PUBLICATION` `ChangelogEvent` is logged — **not** at `ACCEPT_PUBLICATION`.
 
 - `ACCEPT_PUBLICATION` = a publisher approved the request; the dataset is not yet publicly visible on Discover.
 - `COMPLETE_PUBLICATION` = Discover has confirmed the dataset is live. This is the moment the HEAL requirement is satisfied and the notification is meaningful.
@@ -83,7 +100,7 @@ changelogManager.logEvent(dataset, CompletePublication(...))
 // New call — alongside it
 organizationEventManager.logEvent(
   subjectUserId = None,
-  detail = DatasetPublishedInWorkspace(
+  detail = DatasetPublished(
     datasetId        = dataset.id,
     datasetNodeId    = dataset.nodeId,
     datasetName      = dataset.name,
@@ -99,9 +116,12 @@ organizationEventManager.logEvent(
 
 No special gate required to subscribe. Publication is already a public act; the dataset is visible on Discover the moment this event fires. Any workspace member who opts in is eligible. This differs from `DATASET_CREATED`, which is gated on Publishers-team membership.
 
-### Open flag
+### Revisions (resolved)
 
-`COMPLETE_PUBLICATION` fires for revisions as well as first publication. Confirm with the HEAL stakeholder whether the requirement means first publication only (`publishedVersion == 1`) or any publication including revisions. This affects both call-site logic and email copy.
+An earlier draft reused this one event for revisions and asked whether to guard on `publishedVersion == 1`. Neither is needed now:
+
+- Revisions are their own workflow (`REQUEST_REVISION`/`ACCEPT_REVISION`) and get their own event, `DATASET_REVISED`.
+- A later version published through the ordinary publication flow is still `DATASET_PUBLISHED`. That path has no code-level difference between a first publish and a new version.
 
 ## Wire Format
 
@@ -112,23 +132,25 @@ Reuses the existing `{env}-integration-events-sns-topic` → SQS → integration
   "organizationId": "<int>",
   "actorUserId": "<int>",
   "subjectUserId": "<int, nullable>",
-  "eventCategory": "ORGANIZATION",
-  "eventType": "<e.g. DATASET_PUBLISHED_IN_WORKSPACE>",
+  "eventCategory": "<ORGANIZATION or PUBLISHING>",
+  "eventType": "<e.g. ADD_TEAM_USER or DATASET_PUBLISHED>",
   "eventDetail": { }
 }
 ```
 
+`eventCategory` is `PUBLISHING` for the five publishing broadcasts and `ORGANIZATION` for every other organization event. The broadcasts share `PUBLISHING` with the dataset-scoped publishing events but are told apart by event type. Events about one user must carry `subjectUserId` on the envelope, not only in `eventDetail`: integration-service matches personal subscriptions on it.
+
 Required fields are the true lowest common denominator (`eventCategory`, `eventType`, `eventDetail`). `organizationId`, `actorUserId`, and `subjectUserId` are category-specific optional fields — not universal — so the topic can serve non-org, non-dataset emitters (e.g. github-service releasing to Discover) without forcing every message to carry fields that have no meaning for them.
 
-**Pre-implementation audit required:** integration-service's `event_parser`/`EventMessage` currently assumes every SNS message on this topic carries a `datasetId`. Organization events carry no `datasetId`. This assumption must be found and removed before the first organization event can flow through without error. (Relevant: the `datasetId`-as-quoted-string parsing bug fixed in integration-service#138 was in this same path.)
+**Pre-implementation audit required:** integration-service's `event_parser`/`EventMessage` currently assumes every SNS message on this topic carries a `datasetId`. Organization events carry no `datasetId`. This assumption must be found and removed before the first organization event can flow through without error. (Relevant: the `datasetId`-as-quoted-string parsing bug fixed in integration-service#138 was in this same path.) *Addressed in integration-service#148, which also decodes `subjectUserId` and `eventDetail`.*
 
 ## Open Questions
 
 1. **Publishers gate check (cross-service call vs. denormalized flag)** — for `DATASET_CREATED` and workspace-wide `DATASET_OWNERSHIP_TRANSFERRED` subscriptions, integration-service must verify Publishers-team membership at subscription-creation time. The leading option is a synchronous call to a new/extended pennsieve-api endpoint. The alternative — pennsieve-api pushes a denormalized `isPublisher` flag that integration-service caches locally — avoids the cross-service call but introduces staleness risk. **Must be decided before implementation begins.**
 2. **`ADD_ORGANIZATION_USER` double-fire risk** — the event is listed as firing from both `OrganizationManager.addUser` and `inviteMember`. `inviteMember` already sends an `addedToOrganization` email. Confirm these code paths are mutually exclusive or add a guard to prevent two `ADD_ORGANIZATION_USER` events from a single invite flow.
-3. **`DATASET_PUBLISHED_IN_WORKSPACE`: first publication only vs. all publications** — `COMPLETE_PUBLICATION` fires on revisions too. Confirm with the HEAL stakeholder whether revisions also trigger the notification. Answer determines whether the call site needs a `publishedVersion == 1` guard.
+3. ~~**First publication only vs. all publications**~~ — *Resolved: revisions get their own `DATASET_REVISED` event (see "Revisions" above), so `DATASET_PUBLISHED` needs no version guard.*
 4. **`OrganizationEventDetail` field shapes** — the case classes above are a first pass. Each must be validated against what the relevant manager/controller method actually has in scope at its call site (e.g. does `removeUser` have the user's prior permission level available to include in the detail?).
-5. **Category system** — whether `OrganizationEventName` carries a `category` field (as `ChangelogEventName` does) or is a flat enum. Recommendation: flat enum until a second category (`BILLING`, etc.) actually materializes.
+5. **Category system** — *Partly resolved: organization events now use two wire categories, `PUBLISHING` for the five publishing broadcasts and `ORGANIZATION` for everything else.* Category-level subscriptions (one setting covering every topic in a category) are still deferred.
 6. **Generalizing the workspace-wide visibility gate** — the Publishers-team-membership gate will likely recur for other events (e.g. `DBPermission.Administer`-gated visibility into `REMOVE_ORGANIZATION_USER`). Defer generalization until the second real case arrives; ship Publishers as a one-off.
 
 ## Out of Scope
