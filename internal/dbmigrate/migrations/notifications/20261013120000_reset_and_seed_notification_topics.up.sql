@@ -6,7 +6,7 @@
 DELETE FROM subscriptions;
 DELETE FROM topics;
 
--- Restart topic ids so every environment numbers the seeded topics 1-13 in
+-- Restart topic ids so every environment numbers the seeded topics 1-5 in
 -- the order below, the same ids the subscribe route takes as {topicId}.
 SELECT setval(pg_get_serial_sequence('topics', 'topic_id'), 1, false);
 

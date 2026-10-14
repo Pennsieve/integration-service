@@ -184,24 +184,14 @@ func TestMigrations(t *testing.T) {
 		require.True(t, written.Equal(lastSeen.Time))
 	})
 
-	t.Run("notifications.topics is seeded with the Settings / Notifications topics", func(t *testing.T) {
+	t.Run("notifications.topics is seeded with the workspace publishing topics", func(t *testing.T) {
 		workspace := `["organizationId"]`
-		personal := `["organizationId", "subjectUserId"]`
-		dataset := `["organizationId", "datasetId"]`
 		want := []struct{ name, required string }{
 			{"DATASET_PUBLISHED", workspace},
 			{"DATASET_EMBARGOED", workspace},
 			{"DATASET_EMBARGO_RELEASED", workspace},
 			{"DATASET_UNPUBLISHED", workspace},
 			{"DATASET_REVISED", workspace},
-			{"ADDED_TO_DATASET", personal},
-			{"UPDATE_ORGANIZATION_PERMISSION", personal},
-			{"ADD_TEAM_USER", personal},
-			{"DATASET_DELETED", workspace},
-			{"REMOVED_FROM_DATASET", personal},
-			{"REMOVE_TEAM_USER", personal},
-			{"CREATE_PACKAGE", dataset},
-			{"DELETE_PACKAGE", dataset},
 		}
 		for i, w := range want {
 			var topicID int
