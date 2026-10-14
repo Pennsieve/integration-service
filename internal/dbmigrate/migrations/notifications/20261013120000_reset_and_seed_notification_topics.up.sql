@@ -65,18 +65,7 @@ FROM (
         (2,  'DATASET_EMBARGOED',             'Dataset Embargoed in Workspace',                 'workspace'),
         (3,  'DATASET_EMBARGO_RELEASED',      'Dataset Embargo Released in Workspace',          'workspace'),
         (4,  'DATASET_UNPUBLISHED',           'Dataset Unpublished in Workspace',               'workspace'),
-        (5,  'DATASET_REVISED',               'Dataset Revised in Workspace',                   'workspace'),
-        -- Organization events (eventCategory ORGANIZATION).
-        (6,  'ADDED_TO_DATASET',              'Organization Member Added to a Dataset',         'personal'),
-        (7,  'UPDATE_ORGANIZATION_PERMISSION','Change in Organization-level Role',              'personal'),
-        (8,  'ADD_TEAM_USER',                 'User Added to a Team',                           'personal'),
-        (9,  'DATASET_DELETED',               'Dataset Deleted from Workspace',                 'workspace'),
-        (10, 'REMOVED_FROM_DATASET',          'Organization Member Removed from a Dataset',     'personal'),
-        (11, 'REMOVE_TEAM_USER',              'User Removed from a Team',                       'personal'),
-        -- Dataset-scoped file events (eventCategory FILES), shown together
-        -- as one setting that subscribes to both for a dataset.
-        (12, 'CREATE_PACKAGE',                'New files are being uploaded to a dataset',      'dataset'),
-        (13, 'DELETE_PACKAGE',                'Files are being deleted from a dataset',         'dataset')
+        (5,  'DATASET_REVISED',               'Dataset Revised in Workspace',                   'workspace')
 ) AS t (position, name, description, kind)
 JOIN scope USING (kind)
 ORDER BY t.position;
