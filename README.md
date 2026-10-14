@@ -50,8 +50,9 @@ redeliver (and re-send) the rest of the batch.
 
 ### Notification events
 
-Migrations seed one topic per event type that the workspace Settings / Notifications page offers.
-Each topic's context decides what a subscription is scoped to:
+Migrations seed the five workspace publishing topics below. A topic's context decides what a
+subscription to it is scoped to, and the service supports three scopes, though only the first has
+seeded topics so far:
 
 - **Workspace:** `{"organizationId"}`. Every such event in the organization; the caller must be a
   member of it.
@@ -66,17 +67,9 @@ Each topic's context decides what a subscription is scoped to:
 | `DATASET_EMBARGO_RELEASED` | Dataset Embargo Released in Workspace | `PUBLISHING` | Workspace | Publication |
 | `DATASET_UNPUBLISHED` | Dataset Unpublished in Workspace | `PUBLISHING` | Workspace | Publication |
 | `DATASET_REVISED` | Dataset Revised in Workspace | `PUBLISHING` | Workspace | Publication |
-| `ADDED_TO_DATASET` | Organization Member Added to a Dataset | `ORGANIZATION` | Personal | Default |
-| `UPDATE_ORGANIZATION_PERMISSION` | Change in Organization-level Role | `ORGANIZATION` | Personal | Default |
-| `ADD_TEAM_USER` | User Added to a Team | `ORGANIZATION` | Personal | Default |
-| `DATASET_DELETED` | Dataset Deleted from Workspace | `ORGANIZATION` | Workspace | Default |
-| `REMOVED_FROM_DATASET` | Organization Member Removed from a Dataset | `ORGANIZATION` | Personal | Default |
-| `REMOVE_TEAM_USER` | User Removed from a Team | `ORGANIZATION` | Personal | Default |
-| `CREATE_PACKAGE` | New files are being uploaded to a dataset | `FILES` | Dataset | Default |
-| `DELETE_PACKAGE` | Files are being deleted from a dataset | `FILES` | Dataset | Default |
 
-The label is the topic's `description`, and topic ids follow the table's order (1–13). The two file
-topics are meant to appear as one setting that subscribes to both.
+The label is the topic's `description`, and topic ids follow the table's order (1–5). Any other
+event type whose name matches a topic would use the default renderer.
 
 **Default renderer:** the title is the `eventType`, and the message and metadata are the event
 body (`organizationId`, `datasetId`, `subjectUserId`, `eventCategory`, `eventType`, `eventDetail`)
