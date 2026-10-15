@@ -113,6 +113,11 @@ func handleGetSubscriptions(ctx context.Context, userID int64) (events.APIGatewa
 // referenced dataset (if any) must exist. A context scoped to a whole
 // organization requires the caller to be a member of it (403 otherwise).
 // See validateSubscriptionContext.
+// The body may also carry an optional notification_channels object
+// ({"email": bool, "push": bool, "sms": bool}) choosing how this
+// subscription's notifications are delivered, in place of the user's
+// preferences. It is split off before validation (splitNotificationChannels)
+// and stored in its own column, so it is never part of the context.
 // An empty or JSON null body is treated as {}, so it reaches the topic's
 // context schema like any other object: a topic with no context accepts it,
 // and one whose context has required properties rejects it. A disabled
@@ -150,11 +155,17 @@ func handleSubscribe(ctx context.Context, userID int64, req events.APIGatewayV2H
 		return notifErrorResponse(http.StatusConflict, "topic is disabled"), nil
 	}
 
+	body, channels, err := splitNotificationChannels(body)
+	if err != nil {
+		log.Printf("ERROR subscription validation for topic %d (%s): %v", topic.TopicID, topic.Name, err)
+		return notifErrorResponse(http.StatusBadRequest, err.Error()), nil
+	}
+
 	if errResp := validateSubscriptionContext(ctx, userID, topic, body); errResp != nil {
 		return *errResp, nil
 	}
 
-	sub, created, err := db.CreateSubscription(ctx, userID, topicID, body)
+	sub, created, err := db.CreateSubscription(ctx, userID, topicID, body, channels)
 	if err != nil {
 		if errors.Is(err, db.ErrTopicNotFound) {
 			return notifErrorResponse(http.StatusNotFound, "topic not found"), nil

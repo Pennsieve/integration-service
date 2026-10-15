@@ -157,7 +157,7 @@ const updateReadmeContext = `{
 
 var (
 	topicColumns        = []string{"topic_id", "name", "description", "enabled", "created_at", "context"}
-	subscriptionColumns = []string{"subscription_id", "user_id", "topic_id", "context", "enabled", "created_at"}
+	subscriptionColumns = []string{"subscription_id", "user_id", "topic_id", "context", "notification_channels", "enabled", "created_at"}
 )
 
 // expectGetTopic registers the topic lookup handleSubscribe performs before
@@ -181,9 +181,9 @@ func expectCreateSubscription(mock sqlmock.Sqlmock, userID, topicID int64, store
 		WithArgs(topicID).
 		WillReturnRows(sqlmock.NewRows([]string{"enabled"}).AddRow(true))
 	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.subscriptions")).
-		WithArgs(userID, topicID, storedContext).
+		WithArgs(userID, topicID, storedContext, nil).
 		WillReturnRows(sqlmock.NewRows(append(subscriptionColumns, "inserted")).
-			AddRow(int64(9), userID, topicID, storedContext, true, time.Now(), inserted))
+			AddRow(int64(9), userID, topicID, storedContext, nil, true, time.Now(), inserted))
 	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO notifications.preferences")).
 		WithArgs(userID).
 		WillReturnResult(sqlmock.NewResult(0, 1))
@@ -271,9 +271,9 @@ func TestNotificationHandler_Subscribe_UpsertReEnables(t *testing.T) {
 		WithArgs(int64(7)).
 		WillReturnRows(sqlmock.NewRows([]string{"enabled"}).AddRow(true))
 	mock.ExpectQuery(regexp.QuoteMeta("ON CONFLICT (user_id, topic_id, context) DO UPDATE SET enabled = true")).
-		WithArgs(int64(42), int64(7), []byte("{}")).
+		WithArgs(int64(42), int64(7), []byte("{}"), nil).
 		WillReturnRows(sqlmock.NewRows(append(subscriptionColumns, "inserted")).
-			AddRow(int64(9), int64(42), int64(7), []byte("{}"), true, time.Now(), false))
+			AddRow(int64(9), int64(42), int64(7), []byte("{}"), nil, true, time.Now(), false))
 	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO notifications.preferences")).
 		WithArgs(int64(42)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
@@ -463,7 +463,7 @@ func TestNotificationHandler_Subscribe_DBError(t *testing.T) {
 		WithArgs(int64(7)).
 		WillReturnRows(sqlmock.NewRows([]string{"enabled"}).AddRow(true))
 	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.subscriptions")).
-		WithArgs(int64(42), int64(7), []byte("{}")).
+		WithArgs(int64(42), int64(7), []byte("{}"), nil).
 		WillReturnError(errors.New("connection reset"))
 	mock.ExpectRollback()
 
@@ -498,7 +498,7 @@ func TestNotificationHandler_Subscribe_TopicDeletedBeforeInsert(t *testing.T) {
 		WithArgs(int64(7)).
 		WillReturnRows(sqlmock.NewRows([]string{"enabled"}).AddRow(true))
 	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.subscriptions")).
-		WithArgs(int64(42), int64(7), []byte("{}")).
+		WithArgs(int64(42), int64(7), []byte("{}"), nil).
 		WillReturnError(&pq.Error{Code: "23503"})
 	mock.ExpectRollback()
 
@@ -580,7 +580,7 @@ func TestNotificationHandler_UpdateSubscription(t *testing.T) {
 			mock := newSubscribeMock(t)
 			expectSetSubscriptionEnabled(mock, 9, 42, enabled).
 				WillReturnRows(sqlmock.NewRows(subscriptionColumns).
-					AddRow(int64(9), int64(42), int64(7), []byte("{}"), enabled, time.Now()))
+					AddRow(int64(9), int64(42), int64(7), []byte("{}"), nil, enabled, time.Now()))
 
 			resp, err := NotificationHandler(context.Background(),
 				notifReqWithBody(routeUpdateSubscription, map[string]string{"subscriptionId": "9"}, 42,
@@ -601,7 +601,7 @@ func TestNotificationHandler_UpdateSubscription_Base64Body(t *testing.T) {
 	mock := newSubscribeMock(t)
 	expectSetSubscriptionEnabled(mock, 9, 42, false).
 		WillReturnRows(sqlmock.NewRows(subscriptionColumns).
-			AddRow(int64(9), int64(42), int64(7), []byte("{}"), false, time.Now()))
+			AddRow(int64(9), int64(42), int64(7), []byte("{}"), nil, false, time.Now()))
 
 	req := notifReqWithBody(routeUpdateSubscription, map[string]string{"subscriptionId": "9"}, 42,
 		base64.StdEncoding.EncodeToString([]byte(`{"enabled":false}`)))
@@ -1413,4 +1413,120 @@ func TestNotificationHandler_Subscribe_PersonalTopic_RequiresSubject(t *testing.
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode, "the topic schema requires subjectUserId")
 	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// expectCreateSubscriptionWithChannels is expectCreateSubscription for a
+// request carrying notification_channels, stored as storedChannels.
+func expectCreateSubscriptionWithChannels(mock sqlmock.Sqlmock, userID, topicID int64, storedContext, storedChannels []byte) {
+	mock.ExpectBegin()
+	mock.ExpectQuery(regexp.QuoteMeta("FOR SHARE")).
+		WithArgs(topicID).
+		WillReturnRows(sqlmock.NewRows([]string{"enabled"}).AddRow(true))
+	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.subscriptions")).
+		WithArgs(userID, topicID, storedContext, storedChannels).
+		WillReturnRows(sqlmock.NewRows(append(subscriptionColumns, "inserted")).
+			AddRow(int64(9), userID, topicID, storedContext, storedChannels, true, time.Now(), true))
+	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO notifications.preferences")).
+		WithArgs(userID).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+}
+
+// TestNotificationHandler_Subscribe_NotificationChannels checks that
+// notification_channels is split off the body before it is validated against
+// the topic's context schema (which forbids additional properties), stored
+// in its own column, and returned on the subscription.
+func TestNotificationHandler_Subscribe_NotificationChannels(t *testing.T) {
+	mock := newSubscribeMock(t)
+	expectGetTopic(mock, 11, []byte(datasetPublishedContext))
+	expectOrganizationMember(mock, 45, 42, true)
+	expectCreateSubscriptionWithChannels(mock, 42, 11,
+		[]byte(`{"organizationId":45}`), []byte(`{"email":false,"push":true,"sms":false}`))
+
+	req := authedNotifReq(routeSubscribe, map[string]string{"topicId": "11"}, 42)
+	req.Body = `{"organizationId": 45, "notification_channels": {"email": false, "push": true, "sms": false}}`
+	resp, err := NotificationHandler(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusCreated, resp.StatusCode, resp.Body)
+
+	var sub models.Subscription
+	require.NoError(t, json.Unmarshal([]byte(resp.Body), &sub))
+	assert.JSONEq(t, `{"organizationId":45}`, string(sub.Context))
+	require.NotNil(t, sub.NotificationChannels)
+	assert.Equal(t, models.NotificationChannels{Push: true}, *sub.NotificationChannels)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// TestNotificationHandler_Subscribe_NullNotificationChannels checks that an
+// explicit null is the same as leaving the field out: no override.
+func TestNotificationHandler_Subscribe_NullNotificationChannels(t *testing.T) {
+	mock := newSubscribeMock(t)
+	expectGetTopic(mock, 7, nil)
+	expectCreateSubscription(mock, 42, 7, []byte(`{}`), true)
+
+	req := authedNotifReq(routeSubscribe, map[string]string{"topicId": "7"}, 42)
+	req.Body = `{"notification_channels": null}`
+	resp, err := NotificationHandler(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusCreated, resp.StatusCode, resp.Body)
+	assert.NotContains(t, resp.Body, "notification_channels")
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestNotificationHandler_Subscribe_InvalidNotificationChannels(t *testing.T) {
+	for name, channels := range map[string]string{
+		"missing channel": `{"email": true, "push": false}`,
+		"null channel":    `{"email": true, "push": false, "sms": null}`,
+		"not a boolean":   `{"email": "yes", "push": false, "sms": false}`,
+		"unknown channel": `{"email": true, "push": false, "sms": false, "fax": true}`,
+		"not an object":   `[true, false, false]`,
+		"scalar":          `true`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			mock := newSubscribeMock(t)
+			expectGetTopic(mock, 7, nil)
+
+			req := authedNotifReq(routeSubscribe, map[string]string{"topicId": "7"}, 42)
+			req.Body = `{"notification_channels": ` + channels + `}`
+			resp, err := NotificationHandler(context.Background(), req)
+			require.NoError(t, err)
+			assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+			assert.Contains(t, resp.Body, "notification_channels must be an object with boolean email, push and sms fields")
+			assert.NoError(t, mock.ExpectationsWereMet(), "no subscription should be stored")
+		})
+	}
+}
+
+func TestNotificationHandler_GetSubscriptions_NotificationChannels(t *testing.T) {
+	aws.AwsOnce.Do(func() {})
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	db.SetPoolForTest(mockDB)
+
+	now := time.Now()
+	mock.ExpectQuery(regexp.QuoteMeta("FROM notifications.subscriptions")).
+		WithArgs(int64(42)).
+		WillReturnRows(sqlmock.NewRows(subscriptionColumns).
+			AddRow(int64(1), int64(42), int64(2), []byte(`{}`), []byte(`{"email":true,"push":false,"sms":true}`), true, now).
+			AddRow(int64(2), int64(42), int64(3), []byte(`{}`), nil, true, now))
+
+	resp, err := NotificationHandler(context.Background(), authedNotifReq(routeGetSubscriptions, nil, 42))
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var subs []map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal([]byte(resp.Body), &subs))
+	require.Len(t, subs, 2)
+	assert.JSONEq(t, `{"email":true,"push":false,"sms":true}`, string(subs[0]["notification_channels"]))
+	assert.NotContains(t, subs[1], "notification_channels", "omitted when the subscription has no override")
+}
+
+func TestSplitNotificationChannels_LeavesContextUntouchedWhenAbsent(t *testing.T) {
+	for _, body := range []string{`{"organizationId": 45}`, `[1, 2]`, `"text"`, `not json`} {
+		contextBody, channels, err := splitNotificationChannels([]byte(body))
+		require.NoError(t, err, body)
+		assert.Equal(t, body, string(contextBody), "the body is passed on byte-for-byte")
+		assert.Nil(t, channels, body)
+	}
 }

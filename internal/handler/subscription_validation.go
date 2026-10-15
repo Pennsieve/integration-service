@@ -26,6 +26,71 @@ const topicContextSchemaURL = "urn:pennsieve:topic-context"
 // not a problem with the caller's request.
 var errInvalidTopicSchema = errors.New("invalid topic context schema")
 
+// notificationChannelsField is the one key of a create-subscription body
+// that is not part of the subscription's context: the optional
+// per-subscription delivery channels. It is snake_case like the
+// notification_channels field of the Subscription the route returns, so
+// clients send and read back the same name.
+const notificationChannelsField = "notification_channels"
+
+// errInvalidNotificationChannels is the message returned for a
+// notification_channels value that isn't exactly the three boolean flags.
+var errInvalidNotificationChannels = errors.New(
+	notificationChannelsField + " must be an object with boolean email, push and sms fields")
+
+// splitNotificationChannels removes the optional notification_channels field
+// from a create-subscription body, returning the rest of the body as the
+// subscription's context together with the parsed channels. The channels
+// are nil when the field is absent or JSON null, meaning the subscription
+// follows the user's preferences.
+//
+// The context is returned byte-for-byte unchanged when the field is absent,
+// and also when the body isn't a JSON object at all, which is left for
+// validateSubscriptionContext to reject with its usual error.
+//
+// When present, the value must be an object with exactly the email, push
+// and sms keys, each a boolean, matching the column's CHECK constraint; a
+// partial object is rejected rather than having its missing channels
+// guessed.
+func splitNotificationChannels(body []byte) ([]byte, *models.NotificationChannels, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(body, &fields); err != nil || fields == nil {
+		return body, nil, nil
+	}
+	raw, ok := fields[notificationChannelsField]
+	if !ok {
+		return body, nil, nil
+	}
+	delete(fields, notificationChannelsField)
+	contextBody, err := json.Marshal(fields)
+	if err != nil {
+		return nil, nil, fmt.Errorf("re-encode subscription context: %w", err)
+	}
+
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return contextBody, nil, nil
+	}
+
+	var parsed struct {
+		Email *bool `json:"email"`
+		Push  *bool `json:"push"`
+		SMS   *bool `json:"sms"`
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&parsed); err != nil {
+		return nil, nil, errInvalidNotificationChannels
+	}
+	if parsed.Email == nil || parsed.Push == nil || parsed.SMS == nil {
+		return nil, nil, errInvalidNotificationChannels
+	}
+	return contextBody, &models.NotificationChannels{
+		Email: *parsed.Email,
+		Push:  *parsed.Push,
+		SMS:   *parsed.SMS,
+	}, nil
+}
+
 // validateSubscriptionContext checks a create-subscription request body
 // against the topic being subscribed to, in order:
 //

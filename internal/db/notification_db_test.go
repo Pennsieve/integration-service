@@ -9,6 +9,7 @@ import (
 	"time"
 
 	sqlmock "github.com/DATA-DOG/go-sqlmock"
+	"github.com/Pennsieve/integration-service/internal/models"
 	"github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -46,17 +47,20 @@ func TestGetUserSubscriptions(t *testing.T) {
 	SetPoolForTest(mockDB)
 
 	now := time.Now()
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT subscription_id, user_id, topic_id, context, enabled, created_at FROM notifications.subscriptions")).
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT subscription_id, user_id, topic_id, context, notification_channels, enabled, created_at FROM notifications.subscriptions")).
 		WithArgs(int64(42)).
 		WillReturnRows(sqlmock.NewRows(subscriptionColumns).
-			AddRow(int64(1), int64(42), int64(2), []byte(`{"filter":"critical"}`), true, now).
-			AddRow(int64(2), int64(42), int64(3), nil, false, now))
+			AddRow(int64(1), int64(42), int64(2), []byte(`{"filter":"critical"}`), nil, true, now).
+			AddRow(int64(2), int64(42), int64(3), nil, []byte(`{"email":false,"push":true,"sms":false}`), false, now))
 
 	subs, err := GetUserSubscriptions(context.Background(), 42)
 	require.NoError(t, err)
 	require.Len(t, subs, 2)
 	assert.JSONEq(t, `{"filter":"critical"}`, string(subs[0].Context))
 	assert.Nil(t, subs[1].Context)
+	assert.Nil(t, subs[0].NotificationChannels, "a NULL column means no override")
+	require.NotNil(t, subs[1].NotificationChannels)
+	assert.Equal(t, models.NotificationChannels{Push: true}, *subs[1].NotificationChannels)
 	assert.True(t, subs[0].Enabled)
 	assert.False(t, subs[1].Enabled, "disabled subscriptions are still listed")
 	require.NoError(t, mock.ExpectationsWereMet())
@@ -72,15 +76,15 @@ func TestCreateSubscription_Success(t *testing.T) {
 	mock.ExpectBegin()
 	expectLockTopic(mock, 7, true)
 	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.subscriptions")).
-		WithArgs(int64(42), int64(7), []byte("{}")).
+		WithArgs(int64(42), int64(7), []byte("{}"), nil).
 		WillReturnRows(sqlmock.NewRows(append(subscriptionColumns, "inserted")).
-			AddRow(int64(9), int64(42), int64(7), []byte("{}"), true, now, true))
+			AddRow(int64(9), int64(42), int64(7), []byte("{}"), nil, true, now, true))
 	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO notifications.preferences")).
 		WithArgs(int64(42)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectCommit()
 
-	sub, created, err := CreateSubscription(context.Background(), 42, 7, nil)
+	sub, created, err := CreateSubscription(context.Background(), 42, 7, nil, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(9), sub.SubscriptionID)
 	assert.Equal(t, int64(42), sub.UserID)
@@ -101,15 +105,15 @@ func TestCreateSubscription_Upsert_UpdatesExisting(t *testing.T) {
 	// The conflict action must re-enable the row, so a user who disabled
 	// this subscription gets it back by subscribing again.
 	mock.ExpectQuery(regexp.QuoteMeta("ON CONFLICT (user_id, topic_id, context) DO UPDATE SET enabled = true")).
-		WithArgs(int64(42), int64(7), []byte(`{"filter":"critical"}`)).
+		WithArgs(int64(42), int64(7), []byte(`{"filter":"critical"}`), nil).
 		WillReturnRows(sqlmock.NewRows(append(subscriptionColumns, "inserted")).
-			AddRow(int64(9), int64(42), int64(7), []byte(`{"filter":"critical"}`), true, now, false))
+			AddRow(int64(9), int64(42), int64(7), []byte(`{"filter":"critical"}`), nil, true, now, false))
 	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO notifications.preferences")).
 		WithArgs(int64(42)).
 		WillReturnResult(sqlmock.NewResult(0, 0))
 	mock.ExpectCommit()
 
-	sub, created, err := CreateSubscription(context.Background(), 42, 7, []byte(`{"filter":"critical"}`))
+	sub, created, err := CreateSubscription(context.Background(), 42, 7, []byte(`{"filter":"critical"}`), nil)
 	require.NoError(t, err)
 	assert.Equal(t, int64(9), sub.SubscriptionID)
 	assert.JSONEq(t, `{"filter":"critical"}`, string(sub.Context))
@@ -130,7 +134,7 @@ func TestCreateSubscription_TopicNotFound(t *testing.T) {
 		WillReturnError(sql.ErrNoRows)
 	mock.ExpectRollback()
 
-	_, _, err = CreateSubscription(context.Background(), 42, 999, nil)
+	_, _, err = CreateSubscription(context.Background(), 42, 999, nil, nil)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrTopicNotFound))
 	require.NoError(t, mock.ExpectationsWereMet())
@@ -147,11 +151,11 @@ func TestCreateSubscription_TopicNotFound_ForeignKey(t *testing.T) {
 	mock.ExpectBegin()
 	expectLockTopic(mock, 999, true)
 	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.subscriptions")).
-		WithArgs(int64(42), int64(999), []byte("{}")).
+		WithArgs(int64(42), int64(999), []byte("{}"), nil).
 		WillReturnError(&pq.Error{Code: pqForeignKeyViolation})
 	mock.ExpectRollback()
 
-	_, _, err = CreateSubscription(context.Background(), 42, 999, nil)
+	_, _, err = CreateSubscription(context.Background(), 42, 999, nil, nil)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrTopicNotFound))
 	require.NoError(t, mock.ExpectationsWereMet())
@@ -169,7 +173,7 @@ func TestCreateSubscription_TopicDisabled(t *testing.T) {
 	expectLockTopic(mock, 7, false)
 	mock.ExpectRollback()
 
-	_, _, err = CreateSubscription(context.Background(), 42, 7, nil)
+	_, _, err = CreateSubscription(context.Background(), 42, 7, nil, nil)
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrTopicDisabled))
 	require.NoError(t, mock.ExpectationsWereMet())
@@ -187,7 +191,7 @@ func TestCreateSubscription_LockTopicDBError(t *testing.T) {
 		WillReturnError(errors.New("connection reset"))
 	mock.ExpectRollback()
 
-	_, _, err = CreateSubscription(context.Background(), 42, 7, nil)
+	_, _, err = CreateSubscription(context.Background(), 42, 7, nil, nil)
 	require.Error(t, err)
 	assert.False(t, errors.Is(err, ErrTopicNotFound))
 	assert.False(t, errors.Is(err, ErrTopicDisabled))
@@ -203,7 +207,7 @@ func expectLockTopic(mock sqlmock.Sqlmock, topicID int64, enabled bool) {
 		WillReturnRows(sqlmock.NewRows([]string{"enabled"}).AddRow(enabled))
 }
 
-var subscriptionColumns = []string{"subscription_id", "user_id", "topic_id", "context", "enabled", "created_at"}
+var subscriptionColumns = []string{"subscription_id", "user_id", "topic_id", "context", "notification_channels", "enabled", "created_at"}
 
 // setSubscriptionEnabledQuery pins the full WHERE clause (not just the
 // UPDATE prefix) so a regression that drops the "AND user_id = $2" scope
@@ -219,7 +223,7 @@ func TestSetSubscriptionEnabled(t *testing.T) {
 		mock.ExpectQuery(regexp.QuoteMeta(setSubscriptionEnabledQuery)).
 			WithArgs(int64(9), int64(42), enabled).
 			WillReturnRows(sqlmock.NewRows(subscriptionColumns).
-				AddRow(int64(9), int64(42), int64(7), []byte(`{"filter":"critical"}`), enabled, time.Now()))
+				AddRow(int64(9), int64(42), int64(7), []byte(`{"filter":"critical"}`), nil, enabled, time.Now()))
 
 		sub, err := SetSubscriptionEnabled(context.Background(), 9, 42, enabled)
 		require.NoError(t, err)
@@ -687,4 +691,78 @@ func TestIsOrganizationMember(t *testing.T) {
 		require.NoError(t, mock.ExpectationsWereMet())
 		mockDB.Close()
 	}
+}
+
+func TestCreateSubscription_WithNotificationChannels(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	SetPoolForTest(mockDB)
+
+	stored := []byte(`{"email":false,"push":true,"sms":true}`)
+	mock.ExpectBegin()
+	expectLockTopic(mock, 7, true)
+	// An existing row keeps its override when none is supplied (COALESCE),
+	// and takes the new one when one is.
+	mock.ExpectQuery(regexp.QuoteMeta("notification_channels = COALESCE(EXCLUDED.notification_channels, subscriptions.notification_channels)")).
+		WithArgs(int64(42), int64(7), []byte("{}"), stored).
+		WillReturnRows(sqlmock.NewRows(append(subscriptionColumns, "inserted")).
+			AddRow(int64(9), int64(42), int64(7), []byte("{}"), stored, true, time.Now(), true))
+	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO notifications.preferences")).
+		WithArgs(int64(42)).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectCommit()
+
+	sub, created, err := CreateSubscription(context.Background(), 42, 7, nil,
+		&models.NotificationChannels{Push: true, SMS: true})
+	require.NoError(t, err)
+	assert.True(t, created)
+	require.NotNil(t, sub.NotificationChannels)
+	assert.Equal(t, models.NotificationChannels{Push: true, SMS: true}, *sub.NotificationChannels)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestGetUserNotificationChannels(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	SetPoolForTest(mockDB)
+
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT user_id, email_enabled, push_enabled, sms_enabled FROM notifications.preferences WHERE user_id = ANY($1::integer[])")).
+		WithArgs(pq.Array([]int64{1, 2})).
+		WillReturnRows(sqlmock.NewRows([]string{"user_id", "email_enabled", "push_enabled", "sms_enabled"}).
+			AddRow(int64(1), false, true, true))
+
+	channels, err := GetUserNotificationChannels(context.Background(), []int64{1, 2})
+	require.NoError(t, err)
+	assert.Equal(t, map[int64]models.NotificationChannels{
+		1: {Push: true, SMS: true},
+		2: {Email: defaultEmailEnabled, Push: defaultPushEnabled, SMS: defaultSMSEnabled},
+	}, channels, "a user with no preferences row gets the column defaults")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestGetUserNotificationChannels_NoUsersSkipsQuery(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	SetPoolForTest(mockDB)
+
+	channels, err := GetUserNotificationChannels(context.Background(), nil)
+	require.NoError(t, err)
+	assert.Empty(t, channels)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestGetUserNotificationChannels_DBError(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	SetPoolForTest(mockDB)
+
+	mock.ExpectQuery(regexp.QuoteMeta("FROM notifications.preferences")).
+		WillReturnError(errors.New("connection reset"))
+
+	_, err = GetUserNotificationChannels(context.Background(), []int64{1})
+	require.Error(t, err)
 }

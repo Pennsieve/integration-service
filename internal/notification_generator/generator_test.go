@@ -36,7 +36,7 @@ const publishedDetail = `{
 
 var (
 	topicColumns        = []string{"topic_id", "name", "description", "enabled", "created_at", "context"}
-	subscriptionColumns = []string{"subscription_id", "user_id", "topic_id", "context", "enabled", "created_at"}
+	subscriptionColumns = []string{"subscription_id", "user_id", "topic_id", "context", "notification_channels", "enabled", "created_at"}
 )
 
 func publishedEvent(t *testing.T, orgID, category, detail string) models.EventMessage {
@@ -72,12 +72,20 @@ func expectTopic(mock sqlmock.Sqlmock, enabled bool) {
 func expectMatch(mock sqlmock.Sqlmock, orgID int, subscriptionIDs ...int64) {
 	rows := sqlmock.NewRows(subscriptionColumns)
 	for _, id := range subscriptionIDs {
-		rows.AddRow(id, id+100, int64(11), []byte(`{"organizationId":45}`), true, time.Now())
+		rows.AddRow(id, id+100, int64(11), []byte(`{"organizationId":45}`), nil, true, time.Now())
 	}
 	ctx, _ := json.Marshal(map[string]int{"organizationId": orgID})
 	mock.ExpectQuery(regexp.QuoteMeta("WHERE topic_id = $1 AND context @> $2::jsonb")).
 		WithArgs(int64(11), ctx).
 		WillReturnRows(rows)
+}
+
+// expectPreferences registers the preferences read planDeliveries makes for
+// userIDs, returning no rows so every user gets the column defaults.
+func expectPreferences(mock sqlmock.Sqlmock, userIDs []int64) {
+	mock.ExpectQuery(regexp.QuoteMeta("FROM notifications.preferences")).
+		WithArgs(pq.Array(userIDs)).
+		WillReturnRows(sqlmock.NewRows([]string{"user_id", "email_enabled", "push_enabled", "sms_enabled"}))
 }
 
 func TestGenerate_RecordsOneNotificationPerMatchedSubscription(t *testing.T) {
@@ -90,6 +98,9 @@ func TestGenerate_RecordsOneNotificationPerMatchedSubscription(t *testing.T) {
 			`"Sleep EEG" (version 1) was published to Pennsieve Discover with DOI 10.26275/abcd. Dataset owner: Ada Lovelace.`,
 			sqlmock.AnyArg()).
 		WillReturnResult(sqlmock.NewResult(0, 2))
+	// Neither subscription overrides its channels, so both owners'
+	// preferences are read to plan the deliveries.
+	expectPreferences(mock, []int64{101, 102})
 
 	Generate(context.Background(), map[string][]models.EventMessage{
 		"45": {publishedEvent(t, "45", models.EventCategoryPublishing, publishedDetail)},
@@ -156,11 +167,12 @@ func TestGenerate_DefaultRendererForTypeWithoutOne(t *testing.T) {
 	mock.ExpectQuery(regexp.QuoteMeta("WHERE topic_id = $1 AND context @> $2::jsonb")).
 		WithArgs(int64(4), []byte(`{"datasetId":123,"organizationId":45}`)).
 		WillReturnRows(sqlmock.NewRows(subscriptionColumns).
-			AddRow(int64(3), int64(7), int64(4), []byte(`{"organizationId":45,"datasetId":123}`), true, time.Now()))
+			AddRow(int64(3), int64(7), int64(4), []byte(`{"organizationId":45,"datasetId":123}`), nil, true, time.Now()))
 	body := `{"organizationId":"45","datasetId":123,"eventCategory":"METADATA","eventType":"UPDATE_README","eventDetail":{"readme":"new"}}`
 	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO notifications.notifications")).
 		WithArgs(pq.Array([]int64{3}), "UPDATE_README", body, []byte(body)).
 		WillReturnResult(sqlmock.NewResult(0, 1))
+	expectPreferences(mock, []int64{7})
 
 	var event models.EventMessage
 	require.NoError(t, json.Unmarshal([]byte(body), &event))
@@ -281,4 +293,77 @@ func TestPublicationRenderer_BadDetail(t *testing.T) {
 			assert.ErrorIs(t, err, errBadDetail)
 		})
 	}
+}
+
+func channels(email, push, sms bool) *models.NotificationChannels {
+	return &models.NotificationChannels{Email: email, Push: push, SMS: sms}
+}
+
+func TestPlanDeliveries_SubscriptionChannelsOverridePreferences(t *testing.T) {
+	mock := newMock(t)
+	// Only user 2's subscription lacks an override, so only user 2's
+	// preferences are read; user 1's push-only preferences never apply.
+	mock.ExpectQuery(regexp.QuoteMeta("FROM notifications.preferences")).
+		WithArgs(pq.Array([]int64{2})).
+		WillReturnRows(sqlmock.NewRows([]string{"user_id", "email_enabled", "push_enabled", "sms_enabled"}).
+			AddRow(int64(2), false, true, false))
+
+	topic := models.Topic{TopicID: 11, Enabled: true}
+	deliveries, err := planDeliveries(context.Background(), topic, []models.Subscription{
+		{SubscriptionID: 10, UserID: 1, Enabled: true, NotificationChannels: channels(false, false, true)},
+		{SubscriptionID: 20, UserID: 2, Enabled: true},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []delivery{
+		{SubscriptionID: 10, UserID: 1, Channels: models.NotificationChannels{SMS: true}},
+		{SubscriptionID: 20, UserID: 2, Channels: models.NotificationChannels{Push: true}},
+	}, deliveries)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPlanDeliveries_FallsBackToPreferenceDefaults(t *testing.T) {
+	mock := newMock(t)
+	// A user with no preferences row gets the column defaults (email only).
+	// Two subscriptions of the same user read their preferences once.
+	expectPreferences(mock, []int64{5})
+
+	topic := models.Topic{TopicID: 11, Enabled: true}
+	deliveries, err := planDeliveries(context.Background(), topic, []models.Subscription{
+		{SubscriptionID: 1, UserID: 5, Enabled: true},
+		{SubscriptionID: 2, UserID: 5, Enabled: true},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []delivery{
+		{SubscriptionID: 1, UserID: 5, Channels: models.NotificationChannels{Email: true}},
+		{SubscriptionID: 2, UserID: 5, Channels: models.NotificationChannels{Email: true}},
+	}, deliveries)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPlanDeliveries_SkipsWhatShouldNotBeSent(t *testing.T) {
+	mock := newMock(t)
+	// Every subscription is overridden or disabled: no preferences read.
+
+	topic := models.Topic{TopicID: 11, Enabled: true}
+	deliveries, err := planDeliveries(context.Background(), topic, []models.Subscription{
+		{SubscriptionID: 1, UserID: 1, Enabled: false},
+		{SubscriptionID: 2, UserID: 2, Enabled: false, NotificationChannels: channels(true, true, true)},
+		{SubscriptionID: 3, UserID: 3, Enabled: true, NotificationChannels: channels(false, false, false)},
+	})
+	require.NoError(t, err)
+	assert.Empty(t, deliveries, "disabled subscriptions and all-off overrides send nothing")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPlanDeliveries_DisabledTopicSendsNothing(t *testing.T) {
+	mock := newMock(t)
+
+	topic := models.Topic{TopicID: 11, Enabled: false}
+	deliveries, err := planDeliveries(context.Background(), topic, []models.Subscription{
+		{SubscriptionID: 1, UserID: 1, Enabled: true},
+		{SubscriptionID: 2, UserID: 2, Enabled: true, NotificationChannels: channels(true, false, false)},
+	})
+	require.NoError(t, err)
+	assert.Empty(t, deliveries)
+	require.NoError(t, mock.ExpectationsWereMet(), "no preferences are read for a disabled topic")
 }

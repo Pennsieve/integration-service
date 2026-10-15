@@ -184,6 +184,48 @@ func TestMigrations(t *testing.T) {
 		require.True(t, written.Equal(lastSeen.Time))
 	})
 
+	t.Run("notifications.subscriptions carries an optional, well-formed notification_channels", func(t *testing.T) {
+		var topicID int
+		err := db.QueryRow(
+			`INSERT INTO notifications.topics (name) VALUES ($1) RETURNING topic_id`,
+			"test-topic-channels",
+		).Scan(&topicID)
+		require.NoError(t, err)
+
+		// No override by default: deliveries fall back to the user's preferences.
+		var channels sql.NullString
+		err = db.QueryRow(
+			`INSERT INTO notifications.subscriptions (user_id, topic_id, context) VALUES ($1, $2, '{"n":1}')
+			 RETURNING notification_channels`,
+			seededUserID, topicID,
+		).Scan(&channels)
+		require.NoError(t, err)
+		require.False(t, channels.Valid, "notification_channels must default to NULL")
+
+		err = db.QueryRow(
+			`INSERT INTO notifications.subscriptions (user_id, topic_id, context, notification_channels)
+			 VALUES ($1, $2, '{"n":2}', '{"email":false,"push":true,"sms":false}')
+			 RETURNING notification_channels`,
+			seededUserID, topicID,
+		).Scan(&channels)
+		require.NoError(t, err)
+		require.JSONEq(t, `{"email":false,"push":true,"sms":false}`, channels.String)
+
+		for i, bad := range []string{
+			`{"email":true,"push":false}`,                        // missing sms
+			`{"email":true,"push":false,"sms":"yes"}`,            // not a boolean
+			`{"email":true,"push":false,"sms":false,"fax":true}`, // unknown channel
+			`[true,false,false]`,                                 // not an object
+		} {
+			_, err = db.Exec(
+				`INSERT INTO notifications.subscriptions (user_id, topic_id, context, notification_channels)
+				 VALUES ($1, $2, $3, $4)`,
+				seededUserID, topicID, fmt.Sprintf(`{"bad":%d}`, i), bad,
+			)
+			require.Error(t, err, "CHECK constraint must reject %s", bad)
+		}
+	})
+
 	t.Run("notifications.topics is seeded with the workspace publishing topics", func(t *testing.T) {
 		workspace := `["organizationId"]`
 		want := []struct{ name, required string }{
