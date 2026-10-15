@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Pennsieve/integration-service/internal/models"
@@ -292,28 +293,82 @@ func GetTopicByName(ctx context.Context, name string) (models.Topic, error) {
 // CreateNotifications posts one notification, with the same title, message
 // and metadata, to each of subscriptionIDs in a single statement, so an
 // event is recorded against either all of its matched subscriptions or none.
-// It returns the number of rows written.
+// It returns the id of the notification written for each subscription, keyed
+// by subscription id; the delivery path uses those ids to give each email a
+// stable dedupe id.
 //
 // Rows are written whatever the topic's and subscriptions' enabled flags:
 // notifications are the durable history, and the flags only gate sending
 // (see docs/notification-status-flags-scope.md).
-func CreateNotifications(ctx context.Context, subscriptionIDs []int64, title, message string, metadata []byte) (int64, error) {
+func CreateNotifications(ctx context.Context, subscriptionIDs []int64, title, message string, metadata []byte) (map[int64]int64, error) {
+	notificationIDs := make(map[int64]int64, len(subscriptionIDs))
 	if len(subscriptionIDs) == 0 {
-		return 0, nil
+		return notificationIDs, nil
 	}
 	const q = `
 		INSERT INTO notifications.notifications (subscription_id, title, message, metadata)
-		SELECT unnest($1::integer[]), $2, $3, $4::jsonb`
+		SELECT unnest($1::integer[]), $2, $3, $4::jsonb
+		RETURNING subscription_id, notification_id`
 
 	var meta interface{}
 	if len(metadata) > 0 {
 		meta = metadata
 	}
-	res, err := dbPool.ExecContext(ctx, q, pq.Array(subscriptionIDs), title, message, meta)
+	rows, err := dbPool.QueryContext(ctx, q, pq.Array(subscriptionIDs), title, message, meta)
 	if err != nil {
-		return 0, fmt.Errorf("create notifications: %w", err)
+		return nil, fmt.Errorf("create notifications: %w", err)
 	}
-	return res.RowsAffected()
+	defer rows.Close()
+
+	for rows.Next() {
+		var subscriptionID, notificationID int64
+		if err := rows.Scan(&subscriptionID, &notificationID); err != nil {
+			return nil, fmt.Errorf("create notifications: %w", err)
+		}
+		notificationIDs[subscriptionID] = notificationID
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("create notifications: %w", err)
+	}
+	return notificationIDs, nil
+}
+
+// GetEmailRecipients returns the email address and display name of each of
+// userIDs that has an email address on pennsieve.users, keyed by user id.
+// Users that don't exist, or have an empty email address, are left out, so
+// the caller can tell them apart from deliverable ones.
+func GetEmailRecipients(ctx context.Context, userIDs []int64) (map[int64]models.EmailRecipient, error) {
+	recipients := make(map[int64]models.EmailRecipient, len(userIDs))
+	if len(userIDs) == 0 {
+		return recipients, nil
+	}
+	const q = `
+		SELECT id, email, first_name, last_name
+		FROM pennsieve.users
+		WHERE id = ANY($1::integer[]) AND email <> ''`
+
+	rows, err := dbPool.QueryContext(ctx, q, pq.Array(userIDs))
+	if err != nil {
+		return nil, fmt.Errorf("get email recipients: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var userID int64
+		var email string
+		var firstName, lastName sql.NullString
+		if err := rows.Scan(&userID, &email, &firstName, &lastName); err != nil {
+			return nil, fmt.Errorf("get email recipients: %w", err)
+		}
+		recipients[userID] = models.EmailRecipient{
+			Name:  strings.TrimSpace(firstName.String + " " + lastName.String),
+			Email: email,
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("get email recipients: %w", err)
+	}
+	return recipients, nil
 }
 
 // IsOrganizationMember reports whether userID belongs to organizationID, at

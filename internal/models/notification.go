@@ -50,6 +50,13 @@ func (c NotificationChannels) Any() bool {
 	return c.Email || c.Push || c.SMS
 }
 
+// EmailRecipient is where a user's notification emails go: their address
+// and display name from pennsieve.users.
+type EmailRecipient struct {
+	Name  string
+	Email string
+}
+
 // UpdateSubscriptionRequest is the JSON body accepted by
 // PATCH /notification/subscription/{subscriptionId}.
 //

@@ -98,6 +98,25 @@ data "aws_iam_policy_document" "event_integration_consumer_lambda_iam_policy_doc
     ]
   }
 
+  # Notification emails are enqueued on the email-service queue, which is
+  # KMS-encrypted: sending needs the key as well as sqs:SendMessage.
+  statement {
+    sid       = "SendToEmailServiceQueue"
+    effect    = "Allow"
+    actions   = ["sqs:SendMessage"]
+    resources = [data.terraform_remote_state.email_service.outputs.email_service_queue_arn]
+  }
+
+  statement {
+    sid    = "AllowAccessToEmailServiceQueueKMSKey"
+    effect = "Allow"
+    actions = [
+      "kms:Decrypt",
+      "kms:GenerateDataKey"
+    ]
+    resources = [data.terraform_remote_state.email_service.outputs.email_service_queue_kms_key_arn]
+  }
+
   statement {
     sid    = "EventIntegrationConsumerRDSPermissions"
     effect = "Allow"

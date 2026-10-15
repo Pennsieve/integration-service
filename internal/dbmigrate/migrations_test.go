@@ -44,6 +44,17 @@ func TestMigrations(t *testing.T) {
 	err = db.QueryRow(`SELECT id FROM pennsieve.users ORDER BY id LIMIT 1`).Scan(&seededUserID)
 	require.NoError(t, err, "expected the seed image to already contain at least one pennsieve.users row")
 
+	t.Run("pennsieve.users carries the columns notification emails are addressed from", func(t *testing.T) {
+		// db.GetEmailRecipients reads these; the table belongs to the
+		// Pennsieve API, so this catches it drifting from what we query.
+		var email string
+		var firstName, lastName sql.NullString
+		err := db.QueryRow(
+			`SELECT email, first_name, last_name FROM pennsieve.users WHERE id = $1`, seededUserID,
+		).Scan(&email, &firstName, &lastName)
+		require.NoError(t, err)
+	})
+
 	t.Run("notifications.subscriptions enforces the topics FK and unique constraint", func(t *testing.T) {
 		var topicID int
 		err := db.QueryRow(

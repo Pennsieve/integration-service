@@ -653,13 +653,15 @@ func TestCreateNotifications(t *testing.T) {
 	defer mockDB.Close()
 	SetPoolForTest(mockDB)
 
-	mock.ExpectExec(regexp.QuoteMeta("SELECT unnest($1::integer[]), $2, $3, $4::jsonb")).
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT unnest($1::integer[]), $2, $3, $4::jsonb RETURNING subscription_id, notification_id")).
 		WithArgs(pq.Array([]int64{3, 4}), "title", "message", []byte(`{"doi":"d"}`)).
-		WillReturnResult(sqlmock.NewResult(0, 2))
+		WillReturnRows(sqlmock.NewRows([]string{"subscription_id", "notification_id"}).
+			AddRow(int64(3), int64(70)).
+			AddRow(int64(4), int64(71)))
 
-	n, err := CreateNotifications(context.Background(), []int64{3, 4}, "title", "message", []byte(`{"doi":"d"}`))
+	ids, err := CreateNotifications(context.Background(), []int64{3, 4}, "title", "message", []byte(`{"doi":"d"}`))
 	require.NoError(t, err)
-	assert.Equal(t, int64(2), n)
+	assert.Equal(t, map[int64]int64{3: 70, 4: 71}, ids)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -669,9 +671,9 @@ func TestCreateNotifications_NoSubscriptionsSkipsTheInsert(t *testing.T) {
 	defer mockDB.Close()
 	SetPoolForTest(mockDB)
 
-	n, err := CreateNotifications(context.Background(), nil, "title", "message", nil)
+	ids, err := CreateNotifications(context.Background(), nil, "title", "message", nil)
 	require.NoError(t, err)
-	assert.Zero(t, n)
+	assert.Empty(t, ids)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -765,4 +767,37 @@ func TestGetUserNotificationChannels_DBError(t *testing.T) {
 
 	_, err = GetUserNotificationChannels(context.Background(), []int64{1})
 	require.Error(t, err)
+}
+
+func TestGetEmailRecipients(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	SetPoolForTest(mockDB)
+
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT id, email, first_name, last_name FROM pennsieve.users WHERE id = ANY($1::integer[]) AND email <> ''")).
+		WithArgs(pq.Array([]int64{1, 2, 3})).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "email", "first_name", "last_name"}).
+			AddRow(int64(1), "ada@example.com", "Ada", "Lovelace").
+			AddRow(int64(2), "grace@example.com", nil, "Hopper"))
+
+	recipients, err := GetEmailRecipients(context.Background(), []int64{1, 2, 3})
+	require.NoError(t, err)
+	assert.Equal(t, map[int64]models.EmailRecipient{
+		1: {Name: "Ada Lovelace", Email: "ada@example.com"},
+		2: {Name: "Hopper", Email: "grace@example.com"},
+	}, recipients, "user 3 has no deliverable address and is left out")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestGetEmailRecipients_NoUsersSkipsQuery(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	SetPoolForTest(mockDB)
+
+	recipients, err := GetEmailRecipients(context.Background(), nil)
+	require.NoError(t, err)
+	assert.Empty(t, recipients)
+	require.NoError(t, mock.ExpectationsWereMet())
 }
