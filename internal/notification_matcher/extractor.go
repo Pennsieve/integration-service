@@ -35,8 +35,8 @@ var ErrBadField = errors.New("bad event field")
 
 // fieldExtractors maps each context field an event can supply to how it is
 // read from the event. Each returns the value in the type subscription
-// context stores it as: organizationId and datasetId are validated as
-// positive integers when a subscription is created.
+// context stores it as: organizationId, datasetId and subjectUserId are
+// validated as positive integers when a subscription is created.
 var fieldExtractors = map[string]func(models.EventMessage) (any, error){
 	"organizationId": func(e models.EventMessage) (any, error) {
 		if e.OrgID == "" {
@@ -52,6 +52,17 @@ var fieldExtractors = map[string]func(models.EventMessage) (any, error){
 			return nil, fmt.Errorf("got %d, want a positive integer", *e.DatasetID)
 		}
 		return int64(*e.DatasetID), nil
+	},
+	// subjectUserId scopes personal organization-level topics (added to a
+	// team, removed from a dataset, ...) to the user the event is about.
+	"subjectUserId": func(e models.EventMessage) (any, error) {
+		if e.SubjectUserID == nil {
+			return nil, errors.New("missing")
+		}
+		if *e.SubjectUserID <= 0 {
+			return nil, fmt.Errorf("got %d, want a positive integer", *e.SubjectUserID)
+		}
+		return int64(*e.SubjectUserID), nil
 	},
 }
 

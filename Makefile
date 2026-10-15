@@ -158,9 +158,11 @@ test: local-services
 test-docker: docker-clean
 	docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from test test
 
-# Run tests in CI against the pre-seeded pennsievedb-integration image (no dbmigrate step)
+# Run tests in CI against the pre-seeded pennsievedb-integration image (no dbmigrate step).
+# --build is required: the ci-tests image keeps the same name across runs on an executor and
+# docker-clean doesn't remove it, so without it a later run tests an earlier commit's code.
 test-ci: docker-clean
-	@IMAGE_TAG=$(IMAGE_TAG) docker compose -f docker-compose.test.yml up --exit-code-from=ci-tests ci-tests
+	@IMAGE_TAG=$(IMAGE_TAG) docker compose -f docker-compose.test.yml up --build --exit-code-from=ci-tests ci-tests
 
 # Build pennsievedb-integration seed image from this branch's migrations and push to ECR.
 # Run this whenever new migration files are added, then update the image tag in

@@ -110,7 +110,9 @@ func handleGetSubscriptions(ctx context.Context, userID int64) (events.APIGatewa
 // handleSubscribe serves POST /notification/topic/{topicId}/subscription. The
 // request body is the subscription's context: a free-form JSON object that
 // must satisfy the JSON Schema stored as the topic's context, and whose
-// referenced dataset (if any) must exist. See validateSubscriptionContext.
+// referenced dataset (if any) must exist. A context scoped to a whole
+// organization requires the caller to be a member of it (403 otherwise).
+// See validateSubscriptionContext.
 // An empty or JSON null body is treated as {}, so it reaches the topic's
 // context schema like any other object: a topic with no context accepts it,
 // and one whose context has required properties rejects it. A disabled
@@ -148,7 +150,7 @@ func handleSubscribe(ctx context.Context, userID int64, req events.APIGatewayV2H
 		return notifErrorResponse(http.StatusConflict, "topic is disabled"), nil
 	}
 
-	if errResp := validateSubscriptionContext(ctx, topic, body); errResp != nil {
+	if errResp := validateSubscriptionContext(ctx, userID, topic, body); errResp != nil {
 		return *errResp, nil
 	}
 

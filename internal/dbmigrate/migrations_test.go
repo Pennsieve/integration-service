@@ -183,6 +183,31 @@ func TestMigrations(t *testing.T) {
 		require.True(t, lastSeen.Valid)
 		require.True(t, written.Equal(lastSeen.Time))
 	})
+
+	t.Run("notifications.topics is seeded with the workspace publishing topics", func(t *testing.T) {
+		workspace := `["organizationId"]`
+		want := []struct{ name, required string }{
+			{"DATASET_PUBLISHED", workspace},
+			{"DATASET_EMBARGOED", workspace},
+			{"DATASET_EMBARGO_RELEASED", workspace},
+			{"DATASET_UNPUBLISHED", workspace},
+			{"DATASET_REVISED", workspace},
+		}
+		for i, w := range want {
+			var topicID int
+			var enabled bool
+			var required, additional string
+			err := db.QueryRow(
+				`SELECT topic_id, enabled, context->'required', context->'additionalProperties'
+				 FROM notifications.topics WHERE name = $1`, w.name,
+			).Scan(&topicID, &enabled, &required, &additional)
+			require.NoError(t, err, w.name)
+			require.Equal(t, i+1, topicID, "%s keeps its seeded position", w.name)
+			require.True(t, enabled, w.name)
+			require.JSONEq(t, w.required, required, w.name)
+			require.Equal(t, "false", additional, w.name)
+		}
+	})
 }
 
 func datasourceName() string {

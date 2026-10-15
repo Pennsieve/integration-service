@@ -33,11 +33,15 @@ var errInvalidTopicSchema = errors.New("invalid topic context schema")
 //     or null body into {}),
 //  2. it satisfies the JSON Schema stored as the topic's context (skipped
 //     for a topic with no context), and
-//  3. any dataset it references (organizationId + datasetId) exists.
+//  3. any dataset it references (organizationId + datasetId) exists,
+//  4. a subjectUserId, which scopes personal topics, is the caller's own id,
+//     and
+//  5. a body scoped to an organization alone (organizationId, no datasetId)
+//     names an organization the caller is a member of.
 //
 // It returns nil when the body is valid, or the error response to send.
 // Every failure is logged along with the validation error that caused it.
-func validateSubscriptionContext(ctx context.Context, topic models.Topic, body []byte) *events.APIGatewayV2HTTPResponse {
+func validateSubscriptionContext(ctx context.Context, userID int64, topic models.Topic, body []byte) *events.APIGatewayV2HTTPResponse {
 	fail := func(statusCode int, message string, cause error) *events.APIGatewayV2HTTPResponse {
 		log.Printf("ERROR subscription validation for topic %d (%s): %s: %v", topic.TopicID, topic.Name, message, cause)
 		resp := notifErrorResponse(statusCode, message)
@@ -61,6 +65,12 @@ func validateSubscriptionContext(ctx context.Context, topic models.Topic, body [
 	}
 
 	if resp := validateDatasetReference(ctx, fields, fail); resp != nil {
+		return resp
+	}
+	if resp := validateSubjectUser(userID, fields, fail); resp != nil {
+		return resp
+	}
+	if resp := validateOrganizationMembership(ctx, userID, fields, fail); resp != nil {
 		return resp
 	}
 	return nil
@@ -155,6 +165,58 @@ func validateDatasetReference(ctx context.Context, fields map[string]any, fail f
 	if !exists {
 		return fail(http.StatusBadRequest, "dataset not found",
 			fmt.Errorf("no dataset %d in organization %d", datasetID, orgID))
+	}
+	return nil
+}
+
+// validateSubjectUser confirms that a body carrying subjectUserId, as
+// personal organization-level topics (added to a dataset, role changed, ...)
+// require, names the caller. Those events are about one user, so a
+// subscription to someone else's would deliver their notifications to the
+// caller. A body without subjectUserId passes.
+func validateSubjectUser(userID int64, fields map[string]any, fail func(int, string, error) *events.APIGatewayV2HTTPResponse) *events.APIGatewayV2HTTPResponse {
+	rawSubject, ok := fields["subjectUserId"]
+	if !ok {
+		return nil
+	}
+	subjectID, err := positiveInt64(rawSubject)
+	if err != nil {
+		return fail(http.StatusBadRequest, "subjectUserId must be a positive integer", err)
+	}
+	if subjectID != userID {
+		return fail(http.StatusForbidden, "subjectUserId must be the caller's own user id",
+			fmt.Errorf("user %d asked for subject %d", userID, subjectID))
+	}
+	return nil
+}
+
+// validateOrganizationMembership confirms that a body scoped to a whole
+// organization (organizationId without datasetId), as organization-level
+// topics such as DATASET_PUBLISHED require, names an
+// organization the caller belongs to: workspace-wide notifications are for
+// that workspace's members. Bodies that reference a dataset are left to
+// validateDatasetReference, and bodies with neither field pass.
+//
+// A non-member gets 403 whether or not the organization exists, so the
+// route can't be used to probe which organization ids are real.
+func validateOrganizationMembership(ctx context.Context, userID int64, fields map[string]any, fail func(int, string, error) *events.APIGatewayV2HTTPResponse) *events.APIGatewayV2HTTPResponse {
+	rawOrgID, hasOrg := fields["organizationId"]
+	if _, hasDataset := fields["datasetId"]; !hasOrg || hasDataset {
+		return nil
+	}
+
+	orgID, err := positiveInt64(rawOrgID)
+	if err != nil {
+		return fail(http.StatusBadRequest, "organizationId must be a positive integer", err)
+	}
+
+	member, err := db.IsOrganizationMember(ctx, orgID, userID)
+	if err != nil {
+		return fail(http.StatusInternalServerError, "failed to validate organization", err)
+	}
+	if !member {
+		return fail(http.StatusForbidden, "not a member of this organization",
+			fmt.Errorf("user %d is not a member of organization %d", userID, orgID))
 	}
 	return nil
 }
