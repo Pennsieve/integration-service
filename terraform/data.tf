@@ -84,3 +84,16 @@ data "terraform_remote_state" "app_deploy_service" {
     profile = var.aws_account
   }
 }
+
+# Import email-service: its send queue, which notification emails are
+# enqueued on, and the KMS key that queue is encrypted with.
+data "terraform_remote_state" "email_service" {
+  backend = "s3"
+
+  config = {
+    bucket  = "${var.aws_account}-terraform-state"
+    key     = "aws/${data.aws_region.current_region.name}/${var.vpc_name}/${var.environment_name}/email-service/terraform.tfstate"
+    region  = "us-east-1"
+    profile = var.aws_account
+  }
+}

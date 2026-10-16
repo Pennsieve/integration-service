@@ -20,13 +20,41 @@ type Topic struct {
 // Subscription represents a user's interest in a topic. Users turn a
 // subscription off by disabling it rather than deleting it, since deleting
 // it would cascade to the notifications already posted to it.
+//
+// NotificationChannels, when set, overrides the user's preferences for how
+// this one subscription's notifications are delivered; nil means it has no
+// override and follows the user's preferences.
 type Subscription struct {
-	SubscriptionID int64           `json:"subscription_id"`
-	UserID         int64           `json:"user_id"`
-	TopicID        int64           `json:"topic_id"`
-	Context        json.RawMessage `json:"context,omitempty"`
-	Enabled        bool            `json:"enabled"`
-	CreatedAt      time.Time       `json:"created_at"`
+	SubscriptionID       int64                 `json:"subscription_id"`
+	UserID               int64                 `json:"user_id"`
+	TopicID              int64                 `json:"topic_id"`
+	Context              json.RawMessage       `json:"context,omitempty"`
+	NotificationChannels *NotificationChannels `json:"notification_channels,omitempty"`
+	Enabled              bool                  `json:"enabled"`
+	CreatedAt            time.Time             `json:"created_at"`
+}
+
+// NotificationChannels says which delivery mechanisms a notification goes
+// out on. It is stored as the subscriptions.notification_channels JSONB
+// column, whose CHECK constraint requires exactly these three boolean keys,
+// and is also the shape the delivery path resolves a user's preferences
+// into when a subscription carries no override.
+type NotificationChannels struct {
+	Email bool `json:"email"`
+	Push  bool `json:"push"`
+	SMS   bool `json:"sms"`
+}
+
+// Any reports whether at least one channel is on.
+func (c NotificationChannels) Any() bool {
+	return c.Email || c.Push || c.SMS
+}
+
+// EmailRecipient is where a user's notification emails go: their address
+// and display name from pennsieve.users.
+type EmailRecipient struct {
+	Name  string
+	Email string
 }
 
 // UpdateSubscriptionRequest is the JSON body accepted by
