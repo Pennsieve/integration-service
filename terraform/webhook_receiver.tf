@@ -1,5 +1,5 @@
 resource "aws_lambda_function" "webhook_receiver_lambda" {
-  description   = "Webhook receiver Lambda — stores incoming webhook payloads in webhooks.messages for integration testing"
+  description   = "Webhook receiver Lambda — stores incoming webhook payloads in webhooks.messages for integration testing (image_tag: ${var.image_tag})"
   function_name = "${var.environment_name}-${var.service_name}-webhook-receiver-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
   handler       = "bootstrap"
   runtime       = "provided.al2023"
@@ -8,6 +8,10 @@ resource "aws_lambda_function" "webhook_receiver_lambda" {
   memory_size   = 128
   s3_bucket     = var.lambda_bucket
   s3_key        = "${var.service_name}/webhook_handler/${var.service_name}-webhook-${var.image_tag}.zip"
+
+  tags = merge(local.common_tags, {
+    ImageTag = var.image_tag
+  })
 
   # Caps concurrent invocations so a burst of public, unauthenticated requests
   # can't exhaust account-wide Lambda concurrency (starving the SQS-buffered
@@ -21,6 +25,7 @@ resource "aws_lambda_function" "webhook_receiver_lambda" {
 
   environment {
     variables = {
+      IMAGE_TAG        = var.image_tag
       ENV              = var.environment_name
       PENNSIEVE_DOMAIN = data.terraform_remote_state.account.outputs.domain_name
     }

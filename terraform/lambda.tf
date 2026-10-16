@@ -1,15 +1,19 @@
 ##
 ## Lambda Function which consumes messages from the SQS queue which contains all events.
 resource "aws_lambda_function" "event_integration_consumer_lambda" {
-  description      = "Lambda Function which consumes messages from the SQS queue which contains all events"
-  function_name    = "${var.environment_name}-${var.service_name}-event-consumer-lambda-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
-  handler          = "bootstrap"
-  runtime          = "provided.al2023"
-  role             = aws_iam_role.event_integration_consumer_lambda_role.arn
-  timeout          = 60
-  memory_size      = 128
-  s3_bucket         = var.lambda_bucket
-  s3_key            = "${var.service_name}/event_handler/${var.service_name}-${var.image_tag}.zip"
+  description   = "Lambda Function which consumes messages from the SQS queue which contains all events (image_tag: ${var.image_tag})"
+  function_name = "${var.environment_name}-${var.service_name}-event-consumer-lambda-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
+  handler       = "bootstrap"
+  runtime       = "provided.al2023"
+  role          = aws_iam_role.event_integration_consumer_lambda_role.arn
+  timeout       = 60
+  memory_size   = 128
+  s3_bucket     = var.lambda_bucket
+  s3_key        = "${var.service_name}/event_handler/${var.service_name}-${var.image_tag}.zip"
+
+  tags = merge(local.common_tags, {
+    ImageTag = var.image_tag
+  })
 
   vpc_config {
     subnet_ids         = tolist(data.terraform_remote_state.vpc.outputs.private_subnet_ids)
@@ -18,7 +22,8 @@ resource "aws_lambda_function" "event_integration_consumer_lambda" {
 
   environment {
     variables = {
-      ENV = var.environment_name
+      IMAGE_TAG        = var.image_tag
+      ENV              = var.environment_name
       PENNSIEVE_DOMAIN = data.terraform_remote_state.account.outputs.domain_name,
 #      WEBHOOK_SQS_QUEUE_NAME = aws_sqs_queue.webhook_integration_queue.name
     }
