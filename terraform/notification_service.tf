@@ -1,5 +1,5 @@
 resource "aws_lambda_function" "notification_lambda" {
-  description   = "Notification API Lambda — serves the user subscription and notification retrieval API described in terraform/notification-service.yml"
+  description   = "Notification API Lambda — serves the user subscription and notification retrieval API described in terraform/notification-service.yml (image_tag: ${var.image_tag})"
   function_name = "${var.environment_name}-${var.service_name}-notification-${data.terraform_remote_state.region.outputs.aws_region_shortname}"
   handler       = "bootstrap"
   runtime       = "provided.al2023"
@@ -9,6 +9,10 @@ resource "aws_lambda_function" "notification_lambda" {
   s3_bucket     = var.lambda_bucket
   s3_key        = "${var.service_name}/notification_handler/${var.service_name}-notification-${var.image_tag}.zip"
 
+  tags = merge(local.common_tags, {
+    ImageTag = var.image_tag
+  })
+
   vpc_config {
     subnet_ids         = tolist(data.terraform_remote_state.vpc.outputs.private_subnet_ids)
     security_group_ids = [data.terraform_remote_state.platform_infrastructure.outputs.integration_service_security_group_id]
@@ -16,6 +20,7 @@ resource "aws_lambda_function" "notification_lambda" {
 
   environment {
     variables = {
+      IMAGE_TAG        = var.image_tag
       ENV              = var.environment_name
       PENNSIEVE_DOMAIN = data.terraform_remote_state.account.outputs.domain_name
     }
