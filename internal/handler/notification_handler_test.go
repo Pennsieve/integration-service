@@ -1475,12 +1475,17 @@ func TestNotificationHandler_Subscribe_NullNotificationChannels(t *testing.T) {
 
 func TestNotificationHandler_Subscribe_InvalidNotificationChannels(t *testing.T) {
 	for name, channels := range map[string]string{
-		"missing channel": `{"email": true, "push": false}`,
-		"null channel":    `{"email": true, "push": false, "sms": null}`,
-		"not a boolean":   `{"email": "yes", "push": false, "sms": false}`,
-		"unknown channel": `{"email": true, "push": false, "sms": false, "fax": true}`,
-		"not an object":   `[true, false, false]`,
-		"scalar":          `true`,
+		"missing channel":             `{"email": true, "push": false}`,
+		"null channel":                `{"email": true, "push": false, "sms": null}`,
+		"not a boolean":               `{"email": "yes", "push": false, "sms": false}`,
+		"unknown channel":             `{"email": true, "push": false, "sms": false, "fax": true}`,
+		"differently-cased duplicate": `{"email": true, "push": false, "sms": false, "EMAIL": false}`,
+		"differently-cased key":       `{"Email": true, "push": false, "sms": false}`,
+		"exact duplicate":             `{"email": true, "push": false, "sms": false, "email": false}`,
+		"nested object":               `{"email": {"on": true}, "push": false, "sms": false}`,
+		"empty object":                `{}`,
+		"not an object":               `[true, false, false]`,
+		"scalar":                      `true`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			mock := newSubscribeMock(t)

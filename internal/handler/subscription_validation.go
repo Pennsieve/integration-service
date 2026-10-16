@@ -71,24 +71,62 @@ func splitNotificationChannels(body []byte) ([]byte, *models.NotificationChannel
 		return contextBody, nil, nil
 	}
 
-	var parsed struct {
-		Email *bool `json:"email"`
-		Push  *bool `json:"push"`
-		SMS   *bool `json:"sms"`
+	channels, ok := parseNotificationChannels(raw)
+	if !ok {
+		return nil, nil, errInvalidNotificationChannels
 	}
+	return contextBody, channels, nil
+}
+
+// parseNotificationChannels parses a notification_channels value, which must
+// be an object with exactly the keys email, push and sms, each appearing
+// once with a boolean value.
+//
+// It walks the object's tokens rather than decoding into a struct because
+// encoding/json matches struct fields case-insensitively, even with
+// DisallowUnknownFields, and lets a repeated key overwrite an earlier one: a
+// body like {"email":true,"push":false,"sms":false,"EMAIL":false} would
+// otherwise be accepted with email silently turned off.
+func parseNotificationChannels(raw []byte) (*models.NotificationChannels, bool) {
 	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&parsed); err != nil {
-		return nil, nil, errInvalidNotificationChannels
+	if tok, err := dec.Token(); err != nil || tok != json.Delim('{') {
+		return nil, false
 	}
-	if parsed.Email == nil || parsed.Push == nil || parsed.SMS == nil {
-		return nil, nil, errInvalidNotificationChannels
+	var channels models.NotificationChannels
+	flags := map[string]*bool{
+		"email": &channels.Email,
+		"push":  &channels.Push,
+		"sms":   &channels.SMS,
 	}
-	return contextBody, &models.NotificationChannels{
-		Email: *parsed.Email,
-		Push:  *parsed.Push,
-		SMS:   *parsed.SMS,
-	}, nil
+	seen := make(map[string]bool, len(flags))
+	for dec.More() {
+		tok, err := dec.Token()
+		if err != nil {
+			return nil, false
+		}
+		key, _ := tok.(string)
+		flag, known := flags[key]
+		if !known || seen[key] {
+			return nil, false
+		}
+		seen[key] = true
+		tok, err = dec.Token()
+		if err != nil {
+			return nil, false
+		}
+		value, isBool := tok.(bool)
+		if !isBool {
+			return nil, false
+		}
+		*flag = value
+	}
+	if tok, err := dec.Token(); err != nil || tok != json.Delim('}') {
+		return nil, false
+	}
+	if len(seen) != len(flags) {
+		return nil, false
+	}
+	return &channels, true
 }
 
 // validateSubscriptionContext checks a create-subscription request body
