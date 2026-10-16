@@ -136,6 +136,10 @@ func TestGenerate_RecordsEvenWhenTopicDisabled(t *testing.T) {
 
 func TestGenerate_LooksUpTopicOncePerBatch(t *testing.T) {
 	mock := newMock(t)
+	// Generate ranges over the map of organizations, so the two match
+	// queries run in random order. A second topic lookup would still fail,
+	// as only one is expected.
+	mock.MatchExpectationsInOrder(false)
 	expectTopic(mock, true)
 	expectMatch(mock, 45)
 	expectMatch(mock, 46)
