@@ -26,6 +26,109 @@ const topicContextSchemaURL = "urn:pennsieve:topic-context"
 // not a problem with the caller's request.
 var errInvalidTopicSchema = errors.New("invalid topic context schema")
 
+// notificationChannelsField is the one key of a create-subscription body
+// that is not part of the subscription's context: the optional
+// per-subscription delivery channels. It is snake_case like the
+// notification_channels field of the Subscription the route returns, so
+// clients send and read back the same name.
+const notificationChannelsField = "notification_channels"
+
+// errInvalidNotificationChannels is the message returned for a
+// notification_channels value that isn't exactly the three boolean flags.
+var errInvalidNotificationChannels = errors.New(
+	notificationChannelsField + " must be an object with boolean email, push and sms fields")
+
+// splitNotificationChannels removes the optional notification_channels field
+// from a create-subscription body, returning the rest of the body as the
+// subscription's context together with the parsed channels. The channels
+// are nil when the field is absent or JSON null, meaning the subscription
+// follows the user's preferences.
+//
+// The context is returned byte-for-byte unchanged when the field is absent,
+// and also when the body isn't a JSON object at all, which is left for
+// validateSubscriptionContext to reject with its usual error.
+//
+// When present, the value must be an object with exactly the email, push
+// and sms keys, each a boolean, matching the column's CHECK constraint; a
+// partial object is rejected rather than having its missing channels
+// guessed.
+func splitNotificationChannels(body []byte) ([]byte, *models.NotificationChannels, error) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(body, &fields); err != nil || fields == nil {
+		return body, nil, nil
+	}
+	raw, ok := fields[notificationChannelsField]
+	if !ok {
+		return body, nil, nil
+	}
+	delete(fields, notificationChannelsField)
+	contextBody, err := json.Marshal(fields)
+	if err != nil {
+		return nil, nil, fmt.Errorf("re-encode subscription context: %w", err)
+	}
+
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+		return contextBody, nil, nil
+	}
+
+	channels, ok := parseNotificationChannels(raw)
+	if !ok {
+		return nil, nil, errInvalidNotificationChannels
+	}
+	return contextBody, channels, nil
+}
+
+// parseNotificationChannels parses a notification_channels value, which must
+// be an object with exactly the keys email, push and sms, each appearing
+// once with a boolean value.
+//
+// It walks the object's tokens rather than decoding into a struct because
+// encoding/json matches struct fields case-insensitively, even with
+// DisallowUnknownFields, and lets a repeated key overwrite an earlier one: a
+// body like {"email":true,"push":false,"sms":false,"EMAIL":false} would
+// otherwise be accepted with email silently turned off.
+func parseNotificationChannels(raw []byte) (*models.NotificationChannels, bool) {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	if tok, err := dec.Token(); err != nil || tok != json.Delim('{') {
+		return nil, false
+	}
+	var channels models.NotificationChannels
+	flags := map[string]*bool{
+		"email": &channels.Email,
+		"push":  &channels.Push,
+		"sms":   &channels.SMS,
+	}
+	seen := make(map[string]bool, len(flags))
+	for dec.More() {
+		tok, err := dec.Token()
+		if err != nil {
+			return nil, false
+		}
+		key, _ := tok.(string)
+		flag, known := flags[key]
+		if !known || seen[key] {
+			return nil, false
+		}
+		seen[key] = true
+		tok, err = dec.Token()
+		if err != nil {
+			return nil, false
+		}
+		value, isBool := tok.(bool)
+		if !isBool {
+			return nil, false
+		}
+		*flag = value
+	}
+	if tok, err := dec.Token(); err != nil || tok != json.Delim('}') {
+		return nil, false
+	}
+	if len(seen) != len(flags) {
+		return nil, false
+	}
+	return &channels, true
+}
+
 // validateSubscriptionContext checks a create-subscription request body
 // against the topic being subscribed to, in order:
 //

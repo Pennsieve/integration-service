@@ -129,8 +129,8 @@ func TestMatch_QueriesContainmentWithIntegerContext(t *testing.T) {
 
 	mock.ExpectQuery(regexp.QuoteMeta("WHERE topic_id = $1 AND context @> $2::jsonb")).
 		WithArgs(int64(4), []byte(`{"datasetId":123,"organizationId":45}`)).
-		WillReturnRows(sqlmock.NewRows([]string{"subscription_id", "user_id", "topic_id", "context", "enabled", "created_at"}).
-			AddRow(int64(10), int64(7), int64(4), []byte(`{"organizationId":45,"datasetId":123}`), true, time.Now()))
+		WillReturnRows(sqlmock.NewRows([]string{"subscription_id", "user_id", "topic_id", "context", "notification_channels", "enabled", "created_at"}).
+			AddRow(int64(10), int64(7), int64(4), []byte(`{"organizationId":45,"datasetId":123}`), nil, true, time.Now()))
 
 	event := decodeEvent(t, `{"organizationId":"45","datasetId":"123","eventType":"UPDATE_README"}`)
 	subs, err := Match(context.Background(), updateReadme, event)

@@ -7,7 +7,14 @@
 // nothing. The notification's content comes from the event type's renderer
 // in renderers, or from defaultRenderer when it has none. Rows are written
 // regardless of the topic's and subscriptions' enabled flags, which gate sending rather than recording
-// (docs/notification-status-flags-scope.md); there is no send step yet.
+// (docs/notification-status-flags-scope.md).
+//
+// After recording, each event's deliveries are planned (planDeliveries):
+// which matched subscriptions are to be sent to, and on which channels. A
+// subscription's own notification_channels decide that when it has them,
+// and its owner's preferences otherwise. Email deliveries are then sent
+// (sendEmails) through the email-service; push and SMS have no sender yet,
+// so those deliveries are only counted in the logs.
 package notification_generator
 
 import (
@@ -18,6 +25,7 @@ import (
 	"log"
 
 	"github.com/Pennsieve/integration-service/internal/db"
+	"github.com/Pennsieve/integration-service/internal/email"
 	"github.com/Pennsieve/integration-service/internal/event_parser"
 	"github.com/Pennsieve/integration-service/internal/models"
 	"github.com/Pennsieve/integration-service/internal/notification_matcher"
@@ -91,17 +99,20 @@ func rendererFor(eventType string) renderer {
 }
 
 // Generate records a notification for every subscription each event in
-// mapped (as grouped by event_parser.MapEvents) matches.
+// mapped (as grouped by event_parser.MapEvents) matches, and emails those
+// whose delivery channels include email through emails. A nil emails means
+// email isn't configured for this environment, and no email is sent.
 //
 // It never fails the batch. An event that can't be rendered or matched is
 // logged with event_parser.SkippedRecordMarker, which alerting counts, and
 // skipped. A database error is logged and that event dropped too: returning
 // it would make Lambda retry the whole batch, re-sending every webhook in it.
-func Generate(ctx context.Context, mapped map[string][]models.EventMessage) {
+// For the same reason a failed email is logged and the rest still sent.
+func Generate(ctx context.Context, mapped map[string][]models.EventMessage, emails email.Sender) {
 	topics := map[string]*models.Topic{}
 	for _, events := range mapped {
 		for _, event := range events {
-			n, err := generate(ctx, topics, event, rendererFor(event.Type))
+			n, err := generate(ctx, topics, event, rendererFor(event.Type), emails)
 			switch {
 			case errors.Is(err, errBadDetail), errors.Is(err, notification_matcher.ErrBadField):
 				log.Printf("WARN %s %s event for organization %q: %v",
@@ -117,11 +128,12 @@ func Generate(ctx context.Context, mapped map[string][]models.EventMessage) {
 	}
 }
 
-// generate records the notifications for one event, rendered by r, and
-// returns how many were written. The caller resolves r (see rendererFor) so
+// generate records the notifications for one event, rendered by r, sends
+// their emails through emails, and returns how many notifications were
+// written. The caller resolves r (see rendererFor) so
 // it isn't looked up again here. topics caches topic lookups for the batch;
 // a nil entry records a topic that doesn't exist.
-func generate(ctx context.Context, topics map[string]*models.Topic, event models.EventMessage, r renderer) (int64, error) {
+func generate(ctx context.Context, topics map[string]*models.Topic, event models.EventMessage, r renderer, emails email.Sender) (int64, error) {
 	if r.category != "" && event.Category != r.category {
 		return 0, fmt.Errorf("%w: eventCategory %q, want %q", errBadDetail, event.Category, r.category)
 	}
@@ -161,7 +173,97 @@ func generate(ctx context.Context, topics map[string]*models.Topic, event models
 	for i, s := range subs {
 		ids[i] = s.SubscriptionID
 	}
-	return db.CreateNotifications(ctx, ids, content.Title, content.Message, content.Metadata)
+	notificationIDs, err := db.CreateNotifications(ctx, ids, content.Title, content.Message, content.Metadata)
+	if err != nil {
+		return 0, err
+	}
+	n := int64(len(notificationIDs))
+
+	deliveries, err := planDeliveries(ctx, *topic, subs)
+	if err != nil {
+		return n, fmt.Errorf("plan deliveries: %w", err)
+	}
+	logDeliveries(event, deliveries)
+	if err := sendEmails(ctx, emails, *topic, event, content, deliveries, notificationIDs); err != nil {
+		return n, fmt.Errorf("send emails: %w", err)
+	}
+	return n, nil
+}
+
+// delivery is one subscription's notification as it is to be sent: the
+// channels it goes out on, already resolved from the subscription's own
+// override or its owner's preferences.
+type delivery struct {
+	SubscriptionID int64
+	UserID         int64
+	Channels       models.NotificationChannels
+}
+
+// planDeliveries decides which of subs, all matched to topic by one event,
+// are sent to and on which channels.
+//
+// A subscription is sent to only while it is effectively enabled, i.e.
+// topic.Enabled AND its own Enabled (docs/notification-status-flags-scope.md).
+// Its channels are its NotificationChannels when set, overriding the user's
+// preferences entirely, and otherwise its owner's preferences, read in one
+// query for every owner that needs them. A subscription whose resolved
+// channels are all off has nothing to send and is left out.
+func planDeliveries(ctx context.Context, topic models.Topic, subs []models.Subscription) ([]delivery, error) {
+	if !topic.Enabled {
+		return nil, nil
+	}
+
+	var fallbackUsers []int64
+	seen := map[int64]bool{}
+	for _, s := range subs {
+		if s.Enabled && s.NotificationChannels == nil && !seen[s.UserID] {
+			seen[s.UserID] = true
+			fallbackUsers = append(fallbackUsers, s.UserID)
+		}
+	}
+	preferences, err := db.GetUserNotificationChannels(ctx, fallbackUsers)
+	if err != nil {
+		return nil, err
+	}
+
+	var deliveries []delivery
+	for _, s := range subs {
+		if !s.Enabled {
+			continue
+		}
+		channels := preferences[s.UserID]
+		if s.NotificationChannels != nil {
+			channels = *s.NotificationChannels
+		}
+		if !channels.Any() {
+			continue
+		}
+		deliveries = append(deliveries, delivery{SubscriptionID: s.SubscriptionID, UserID: s.UserID, Channels: channels})
+	}
+	return deliveries, nil
+}
+
+// logDeliveries logs how many of an event's deliveries go out on each
+// channel. Only email has a sender (sendEmails); push and SMS deliveries are
+// counted here so their volume is visible before they get one.
+func logDeliveries(event models.EventMessage, deliveries []delivery) {
+	if len(deliveries) == 0 {
+		return
+	}
+	var email, push, sms int
+	for _, d := range deliveries {
+		if d.Channels.Email {
+			email++
+		}
+		if d.Channels.Push {
+			push++
+		}
+		if d.Channels.SMS {
+			sms++
+		}
+	}
+	log.Printf("Planned %d delivery(ies) for %s event for organization %s: email=%d push=%d sms=%d",
+		len(deliveries), event.Type, event.OrgID, email, push, sms)
 }
 
 // publicationRenderer renders one of the workspace-wide publishing
@@ -232,4 +334,68 @@ func renderDefault(event models.EventMessage) (rendered, error) {
 		return rendered{}, fmt.Errorf("%w: %v", errBadDetail, err)
 	}
 	return rendered{Title: event.Type, Message: string(body), Metadata: body}, nil
+}
+
+// sendEmails emails every delivery whose channels include email, through
+// emails, as the email-service "user-notification" email (see
+// email.NewRequest). Each email's dedupe id comes from the notification row
+// written for its subscription (notificationIDs), so enqueuing it again can't
+// send it twice.
+//
+// A user gets one email per event however many of their subscriptions the
+// event matched: the first such delivery (subs come ordered by
+// subscription_id) is the one sent. A user with no email address on
+// pennsieve.users is skipped with a warning, and a failed send is logged and
+// the rest still sent; only failing to look the recipients up at all is
+// returned.
+func sendEmails(ctx context.Context, emails email.Sender, topic models.Topic, event models.EventMessage, content rendered, deliveries []delivery, notificationIDs map[int64]int64) error {
+	var toSend []delivery
+	seen := map[int64]bool{}
+	for _, d := range deliveries {
+		if d.Channels.Email && !seen[d.UserID] {
+			seen[d.UserID] = true
+			toSend = append(toSend, d)
+		}
+	}
+	if len(toSend) == 0 {
+		return nil
+	}
+	if emails == nil {
+		log.Printf("WARN email is not configured (%s unset); skipping %d email(s) for %s event for organization %s",
+			email.QueueURLEnv, len(toSend), event.Type, event.OrgID)
+		return nil
+	}
+
+	userIDs := make([]int64, len(toSend))
+	for i, d := range toSend {
+		userIDs[i] = d.UserID
+	}
+	recipients, err := db.GetEmailRecipients(ctx, userIDs)
+	if err != nil {
+		return err
+	}
+
+	var sent int
+	for _, d := range toSend {
+		to, ok := recipients[d.UserID]
+		if !ok {
+			log.Printf("WARN no email address for user %d; skipping email for subscription %d", d.UserID, d.SubscriptionID)
+			continue
+		}
+		req := email.NewRequest(to, email.Notification{
+			NotificationID: notificationIDs[d.SubscriptionID],
+			OrganizationID: event.OrgID,
+			Topic:          topic,
+			Title:          content.Title,
+			Message:        content.Message,
+		})
+		if err := emails.Send(ctx, req); err != nil {
+			log.Printf("ERROR send notification email for subscription %d to user %d: %v", d.SubscriptionID, d.UserID, err)
+			continue
+		}
+		sent++
+	}
+	log.Printf("Sent %d of %d notification email(s) for %s event for organization %s",
+		sent, len(toSend), event.Type, event.OrgID)
+	return nil
 }

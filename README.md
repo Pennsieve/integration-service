@@ -40,8 +40,18 @@ For each batch the consumer:
    subscriptions whose context contains the topic's required fields read from the event
    (`internal/notification_matcher`), and one `notifications` row is written per matched
    subscription. Rows are written whatever the topic's and subscription's `enabled` flags are,
-   since those gate sending, not history. Email and push delivery are not implemented yet.
-3. **Delivers webhooks** (`internal/webhook_mapper`, `internal/webhook_sender`) for events with a
+   since those gate sending, not history.
+3. **Emails notifications** (`internal/notification_generator`, `internal/email`). For each
+   subscription that is effectively enabled (topic and subscription both `enabled`), the
+   delivery channels are its own `notification_channels` when set, or else its owner's
+   `preferences`. Where those include email, the event is enqueued on the email-service queue
+   with the [email-service client](https://github.com/Pennsieve/email-service/tree/main/client)
+   as a `user-notification` email: the notification's title as the subject, its message as
+   `Detail`, the topic's description as `TopicDescription`, and the event's organization for
+   branding. Each user gets one email per event, deduped on the notification id. The queue
+   URL comes from `EMAIL_SERVICE_QUEUE_URL`; when it is unset, no email is sent. Push and SMS
+   delivery are not implemented yet.
+4. **Delivers webhooks** (`internal/webhook_mapper`, `internal/webhook_sender`) for events with a
    `datasetId`, POSTing the event (without `eventDetail`) to every webhook registered in the
    organization for that dataset and `eventCategory`, with up to three attempts each.
 
@@ -113,7 +123,7 @@ The service owns two Postgres schemas, each migrated independently (see Migratio
 | Table | Purpose |
 | --- | --- |
 | `topics` | Event types users may subscribe to, named after the `eventType` they notify on. `context` is the JSON Schema a subscription's context must satisfy. `enabled` controls whether the topic accepts new subscriptions. |
-| `subscriptions` | A user's subscription to a topic, scoped by a JSON `context` (e.g. an organization or dataset id). Unique on `(user_id, topic_id, context)`. `enabled` controls whether notifications are delivered to it. |
+| `subscriptions` | A user's subscription to a topic, scoped by a JSON `context` (e.g. an organization or dataset id). Unique on `(user_id, topic_id, context)`. `enabled` controls whether notifications are delivered to it, and the optional `notification_channels` (`{"email","push","sms"}` booleans) overrides the user's preferences for it. |
 | `notifications` | Notifications recorded for a subscription: `title`, `message`, and JSON `metadata`. |
 | `preferences` | One row per user: `email_enabled`, `sms_enabled`, `push_enabled`, and `notifications_last_seen` (`NULL` means never viewed). |
 | `user_notifications` | Per-user read state (`READ`/`UNREAD`) for a notification. Not yet written by the service. |

@@ -3,6 +3,7 @@ package notification_generator
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"regexp"
 	"testing"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/Pennsieve/integration-service/internal/db"
 	"github.com/Pennsieve/integration-service/internal/models"
 	"github.com/lib/pq"
+	emailclient "github.com/pennsieve/email-service/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -36,7 +38,7 @@ const publishedDetail = `{
 
 var (
 	topicColumns        = []string{"topic_id", "name", "description", "enabled", "created_at", "context"}
-	subscriptionColumns = []string{"subscription_id", "user_id", "topic_id", "context", "enabled", "created_at"}
+	subscriptionColumns = []string{"subscription_id", "user_id", "topic_id", "context", "notification_channels", "enabled", "created_at"}
 )
 
 func publishedEvent(t *testing.T, orgID, category, detail string) models.EventMessage {
@@ -72,7 +74,7 @@ func expectTopic(mock sqlmock.Sqlmock, enabled bool) {
 func expectMatch(mock sqlmock.Sqlmock, orgID int, subscriptionIDs ...int64) {
 	rows := sqlmock.NewRows(subscriptionColumns)
 	for _, id := range subscriptionIDs {
-		rows.AddRow(id, id+100, int64(11), []byte(`{"organizationId":45}`), true, time.Now())
+		rows.AddRow(id, id+100, int64(11), []byte(`{"organizationId":45}`), nil, true, time.Now())
 	}
 	ctx, _ := json.Marshal(map[string]int{"organizationId": orgID})
 	mock.ExpectQuery(regexp.QuoteMeta("WHERE topic_id = $1 AND context @> $2::jsonb")).
@@ -80,20 +82,41 @@ func expectMatch(mock sqlmock.Sqlmock, orgID int, subscriptionIDs ...int64) {
 		WillReturnRows(rows)
 }
 
+// notificationRows is what CreateNotifications' insert returns for
+// subscriptionIDs: notification id 1000+subscription id for each.
+func notificationRows(subscriptionIDs ...int64) *sqlmock.Rows {
+	rows := sqlmock.NewRows([]string{"subscription_id", "notification_id"})
+	for _, id := range subscriptionIDs {
+		rows.AddRow(id, 1000+id)
+	}
+	return rows
+}
+
+// expectPreferences registers the preferences read planDeliveries makes for
+// userIDs, returning no rows so every user gets the column defaults.
+func expectPreferences(mock sqlmock.Sqlmock, userIDs []int64) {
+	mock.ExpectQuery(regexp.QuoteMeta("FROM notifications.preferences")).
+		WithArgs(pq.Array(userIDs)).
+		WillReturnRows(sqlmock.NewRows([]string{"user_id", "email_enabled", "push_enabled", "sms_enabled"}))
+}
+
 func TestGenerate_RecordsOneNotificationPerMatchedSubscription(t *testing.T) {
 	mock := newMock(t)
 	expectTopic(mock, true)
 	expectMatch(mock, 45, 1, 2)
-	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO notifications.notifications")).
+	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.notifications")).
 		WithArgs(pq.Array([]int64{1, 2}),
 			"Dataset published: Sleep EEG",
 			`"Sleep EEG" (version 1) was published to Pennsieve Discover with DOI 10.26275/abcd. Dataset owner: Ada Lovelace.`,
 			sqlmock.AnyArg()).
-		WillReturnResult(sqlmock.NewResult(0, 2))
+		WillReturnRows(notificationRows(1, 2))
+	// Neither subscription overrides its channels, so both owners'
+	// preferences are read to plan the deliveries.
+	expectPreferences(mock, []int64{101, 102})
 
 	Generate(context.Background(), map[string][]models.EventMessage{
 		"45": {publishedEvent(t, "45", models.EventCategoryPublishing, publishedDetail)},
-	})
+	}, nil)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -102,17 +125,21 @@ func TestGenerate_RecordsEvenWhenTopicDisabled(t *testing.T) {
 	mock := newMock(t)
 	expectTopic(mock, false)
 	expectMatch(mock, 45, 1)
-	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO notifications.notifications")).
-		WillReturnResult(sqlmock.NewResult(0, 1))
+	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.notifications")).
+		WillReturnRows(notificationRows(1))
 
 	Generate(context.Background(), map[string][]models.EventMessage{
 		"45": {publishedEvent(t, "45", models.EventCategoryPublishing, publishedDetail)},
-	})
+	}, nil)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
 func TestGenerate_LooksUpTopicOncePerBatch(t *testing.T) {
 	mock := newMock(t)
+	// Generate ranges over the map of organizations, so the two match
+	// queries run in random order. A second topic lookup would still fail,
+	// as only one is expected.
+	mock.MatchExpectationsInOrder(false)
 	expectTopic(mock, true)
 	expectMatch(mock, 45)
 	expectMatch(mock, 46)
@@ -120,7 +147,7 @@ func TestGenerate_LooksUpTopicOncePerBatch(t *testing.T) {
 	Generate(context.Background(), map[string][]models.EventMessage{
 		"45": {publishedEvent(t, "45", models.EventCategoryPublishing, publishedDetail)},
 		"46": {publishedEvent(t, "46", models.EventCategoryPublishing, publishedDetail)},
-	})
+	}, nil)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -133,7 +160,7 @@ func TestGenerate_SkipsWithoutQuerying(t *testing.T) {
 	for name, event := range cases {
 		t.Run(name, func(t *testing.T) {
 			mock := newMock(t)
-			Generate(context.Background(), map[string][]models.EventMessage{"45": {event}})
+			Generate(context.Background(), map[string][]models.EventMessage{"45": {event}}, nil)
 			require.NoError(t, mock.ExpectationsWereMet(), "no query should run")
 		})
 	}
@@ -156,15 +183,16 @@ func TestGenerate_DefaultRendererForTypeWithoutOne(t *testing.T) {
 	mock.ExpectQuery(regexp.QuoteMeta("WHERE topic_id = $1 AND context @> $2::jsonb")).
 		WithArgs(int64(4), []byte(`{"datasetId":123,"organizationId":45}`)).
 		WillReturnRows(sqlmock.NewRows(subscriptionColumns).
-			AddRow(int64(3), int64(7), int64(4), []byte(`{"organizationId":45,"datasetId":123}`), true, time.Now()))
+			AddRow(int64(3), int64(7), int64(4), []byte(`{"organizationId":45,"datasetId":123}`), nil, true, time.Now()))
 	body := `{"organizationId":"45","datasetId":123,"eventCategory":"METADATA","eventType":"UPDATE_README","eventDetail":{"readme":"new"}}`
-	mock.ExpectExec(regexp.QuoteMeta("INSERT INTO notifications.notifications")).
+	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.notifications")).
 		WithArgs(pq.Array([]int64{3}), "UPDATE_README", body, []byte(body)).
-		WillReturnResult(sqlmock.NewResult(0, 1))
+		WillReturnRows(notificationRows(3))
+	expectPreferences(mock, []int64{7})
 
 	var event models.EventMessage
 	require.NoError(t, json.Unmarshal([]byte(body), &event))
-	Generate(context.Background(), map[string][]models.EventMessage{"45": {event}})
+	Generate(context.Background(), map[string][]models.EventMessage{"45": {event}}, nil)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -178,7 +206,7 @@ func TestGenerate_DatasetScopedPublicationUsesItsOwnTopic(t *testing.T) {
 
 	Generate(context.Background(), map[string][]models.EventMessage{
 		"45": {{OrgID: "45", DatasetID: new(123), Category: "PUBLISHING", Type: "COMPLETE_PUBLICATION"}},
-	})
+	}, nil)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -213,7 +241,7 @@ func TestGenerate_MissingTopicIsNotAnError(t *testing.T) {
 			publishedEvent(t, "45", models.EventCategoryPublishing, publishedDetail),
 			publishedEvent(t, "45", models.EventCategoryPublishing, publishedDetail),
 		},
-	})
+	}, nil)
 	require.NoError(t, mock.ExpectationsWereMet(), "a missing topic is looked up once per batch")
 }
 
@@ -223,7 +251,7 @@ func TestGenerate_EventWithoutOrganizationSkipsMatching(t *testing.T) {
 
 	Generate(context.Background(), map[string][]models.EventMessage{
 		"": {publishedEvent(t, "", models.EventCategoryPublishing, publishedDetail)},
-	})
+	}, nil)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -281,4 +309,196 @@ func TestPublicationRenderer_BadDetail(t *testing.T) {
 			assert.ErrorIs(t, err, errBadDetail)
 		})
 	}
+}
+
+func channels(email, push, sms bool) *models.NotificationChannels {
+	return &models.NotificationChannels{Email: email, Push: push, SMS: sms}
+}
+
+func TestPlanDeliveries_SubscriptionChannelsOverridePreferences(t *testing.T) {
+	mock := newMock(t)
+	// Only user 2's subscription lacks an override, so only user 2's
+	// preferences are read; user 1's push-only preferences never apply.
+	mock.ExpectQuery(regexp.QuoteMeta("FROM notifications.preferences")).
+		WithArgs(pq.Array([]int64{2})).
+		WillReturnRows(sqlmock.NewRows([]string{"user_id", "email_enabled", "push_enabled", "sms_enabled"}).
+			AddRow(int64(2), false, true, false))
+
+	topic := models.Topic{TopicID: 11, Enabled: true}
+	deliveries, err := planDeliveries(context.Background(), topic, []models.Subscription{
+		{SubscriptionID: 10, UserID: 1, Enabled: true, NotificationChannels: channels(false, false, true)},
+		{SubscriptionID: 20, UserID: 2, Enabled: true},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []delivery{
+		{SubscriptionID: 10, UserID: 1, Channels: models.NotificationChannels{SMS: true}},
+		{SubscriptionID: 20, UserID: 2, Channels: models.NotificationChannels{Push: true}},
+	}, deliveries)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPlanDeliveries_FallsBackToPreferenceDefaults(t *testing.T) {
+	mock := newMock(t)
+	// A user with no preferences row gets the column defaults (email only).
+	// Two subscriptions of the same user read their preferences once.
+	expectPreferences(mock, []int64{5})
+
+	topic := models.Topic{TopicID: 11, Enabled: true}
+	deliveries, err := planDeliveries(context.Background(), topic, []models.Subscription{
+		{SubscriptionID: 1, UserID: 5, Enabled: true},
+		{SubscriptionID: 2, UserID: 5, Enabled: true},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []delivery{
+		{SubscriptionID: 1, UserID: 5, Channels: models.NotificationChannels{Email: true}},
+		{SubscriptionID: 2, UserID: 5, Channels: models.NotificationChannels{Email: true}},
+	}, deliveries)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPlanDeliveries_SkipsWhatShouldNotBeSent(t *testing.T) {
+	mock := newMock(t)
+	// Every subscription is overridden or disabled: no preferences read.
+
+	topic := models.Topic{TopicID: 11, Enabled: true}
+	deliveries, err := planDeliveries(context.Background(), topic, []models.Subscription{
+		{SubscriptionID: 1, UserID: 1, Enabled: false},
+		{SubscriptionID: 2, UserID: 2, Enabled: false, NotificationChannels: channels(true, true, true)},
+		{SubscriptionID: 3, UserID: 3, Enabled: true, NotificationChannels: channels(false, false, false)},
+	})
+	require.NoError(t, err)
+	assert.Empty(t, deliveries, "disabled subscriptions and all-off overrides send nothing")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestPlanDeliveries_DisabledTopicSendsNothing(t *testing.T) {
+	mock := newMock(t)
+
+	topic := models.Topic{TopicID: 11, Enabled: false}
+	deliveries, err := planDeliveries(context.Background(), topic, []models.Subscription{
+		{SubscriptionID: 1, UserID: 1, Enabled: true},
+		{SubscriptionID: 2, UserID: 2, Enabled: true, NotificationChannels: channels(true, false, false)},
+	})
+	require.NoError(t, err)
+	assert.Empty(t, deliveries)
+	require.NoError(t, mock.ExpectationsWereMet(), "no preferences are read for a disabled topic")
+}
+
+// fakeSender records the email requests it is asked to send, failing those
+// addressed to anyone in failFor.
+type fakeSender struct {
+	sent    []emailclient.EmailRequest
+	failFor map[string]bool
+}
+
+func (f *fakeSender) Send(_ context.Context, req emailclient.EmailRequest) error {
+	if f.failFor[req.Recipients[0].Email] {
+		return errors.New("queue unavailable")
+	}
+	f.sent = append(f.sent, req)
+	return nil
+}
+
+func expectRecipients(mock sqlmock.Sqlmock, userIDs []int64, rows *sqlmock.Rows) {
+	mock.ExpectQuery(regexp.QuoteMeta("FROM pennsieve.users")).
+		WithArgs(pq.Array(userIDs)).
+		WillReturnRows(rows)
+}
+
+func TestGenerate_SendsEmailToSubscribersWithEmailChannel(t *testing.T) {
+	mock := newMock(t)
+	expectTopic(mock, true)
+	expectMatch(mock, 45, 1, 2) // users 101 and 102
+	mock.ExpectQuery(regexp.QuoteMeta("INSERT INTO notifications.notifications")).
+		WillReturnRows(notificationRows(1, 2))
+	// User 101 has no preferences row (email on by default); user 102 has
+	// turned email off, so only 101 is emailed.
+	mock.ExpectQuery(regexp.QuoteMeta("FROM notifications.preferences")).
+		WithArgs(pq.Array([]int64{101, 102})).
+		WillReturnRows(sqlmock.NewRows([]string{"user_id", "email_enabled", "push_enabled", "sms_enabled"}).
+			AddRow(int64(102), false, true, false))
+	expectRecipients(mock, []int64{101}, sqlmock.NewRows([]string{"id", "email", "first_name", "last_name"}).
+		AddRow(int64(101), "ada@example.com", "Ada", "Lovelace"))
+
+	sender := &fakeSender{}
+	Generate(context.Background(), map[string][]models.EventMessage{
+		"45": {publishedEvent(t, "45", models.EventCategoryPublishing, publishedDetail)},
+	}, sender)
+	require.NoError(t, mock.ExpectationsWereMet())
+
+	require.Len(t, sender.sent, 1)
+	req := sender.sent[0]
+	assert.Equal(t, "user-notification", req.MessageId)
+	assert.Equal(t, "integration-service-notification-1001", req.DedupeId)
+	assert.Equal(t, "ada@example.com", req.Recipients[0].Email)
+	assert.Equal(t, "Dataset published: Sleep EEG", req.Context["subject"])
+	assert.Equal(t, "published", req.Context["TopicDescription"])
+	assert.Equal(t, int64(45), req.Context["organizationId"])
+	assert.Contains(t, req.Context["Detail"], `"Sleep EEG" (version 1) was published`)
+}
+
+func TestSendEmails_OneEmailPerUserPerEvent(t *testing.T) {
+	mock := newMock(t)
+	expectRecipients(mock, []int64{5}, sqlmock.NewRows([]string{"id", "email", "first_name", "last_name"}).
+		AddRow(int64(5), "ada@example.com", "Ada", "Lovelace"))
+
+	sender := &fakeSender{}
+	err := sendEmails(context.Background(), sender, models.Topic{Name: "T"}, models.EventMessage{OrgID: "45", Type: "T"},
+		rendered{Title: "t", Message: "m"},
+		[]delivery{
+			{SubscriptionID: 1, UserID: 5, Channels: models.NotificationChannels{Email: true}},
+			{SubscriptionID: 2, UserID: 5, Channels: models.NotificationChannels{Email: true}},
+		},
+		map[int64]int64{1: 11, 2: 12})
+	require.NoError(t, err)
+	require.Len(t, sender.sent, 1, "two matched subscriptions of one user send one email")
+	assert.Equal(t, "integration-service-notification-11", sender.sent[0].DedupeId)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSendEmails_SkipsWhatCannotBeSentAndKeepsGoing(t *testing.T) {
+	mock := newMock(t)
+	// User 2 has no deliverable address; user 3's send fails; user 4 still
+	// gets theirs. Push-only user 1 is never looked up.
+	expectRecipients(mock, []int64{2, 3, 4}, sqlmock.NewRows([]string{"id", "email", "first_name", "last_name"}).
+		AddRow(int64(3), "fails@example.com", "F", "S").
+		AddRow(int64(4), "ok@example.com", "O", "K"))
+
+	sender := &fakeSender{failFor: map[string]bool{"fails@example.com": true}}
+	err := sendEmails(context.Background(), sender, models.Topic{Name: "T"}, models.EventMessage{OrgID: "45", Type: "T"},
+		rendered{Title: "t", Message: "m"},
+		[]delivery{
+			{SubscriptionID: 1, UserID: 1, Channels: models.NotificationChannels{Push: true}},
+			{SubscriptionID: 2, UserID: 2, Channels: models.NotificationChannels{Email: true}},
+			{SubscriptionID: 3, UserID: 3, Channels: models.NotificationChannels{Email: true}},
+			{SubscriptionID: 4, UserID: 4, Channels: models.NotificationChannels{Email: true, SMS: true}},
+		},
+		map[int64]int64{1: 11, 2: 12, 3: 13, 4: 14})
+	require.NoError(t, err)
+	require.Len(t, sender.sent, 1)
+	assert.Equal(t, "ok@example.com", sender.sent[0].Recipients[0].Email)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSendEmails_UnconfiguredSenderSkipsLookup(t *testing.T) {
+	mock := newMock(t)
+	err := sendEmails(context.Background(), nil, models.Topic{Name: "T"}, models.EventMessage{Type: "T"},
+		rendered{Title: "t", Message: "m"},
+		[]delivery{{SubscriptionID: 1, UserID: 1, Channels: models.NotificationChannels{Email: true}}},
+		map[int64]int64{1: 11})
+	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet(), "no recipients are looked up when email isn't configured")
+}
+
+func TestSendEmails_RecipientLookupErrorIsReturned(t *testing.T) {
+	mock := newMock(t)
+	mock.ExpectQuery(regexp.QuoteMeta("FROM pennsieve.users")).WillReturnError(errors.New("connection reset"))
+
+	sender := &fakeSender{}
+	err := sendEmails(context.Background(), sender, models.Topic{Name: "T"}, models.EventMessage{Type: "T"},
+		rendered{Title: "t", Message: "m"},
+		[]delivery{{SubscriptionID: 1, UserID: 1, Channels: models.NotificationChannels{Email: true}}},
+		map[int64]int64{1: 11})
+	require.Error(t, err)
+	assert.Empty(t, sender.sent)
 }

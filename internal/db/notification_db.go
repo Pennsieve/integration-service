@@ -3,9 +3,11 @@ package db
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Pennsieve/integration-service/internal/models"
@@ -67,7 +69,7 @@ func GetTopics(ctx context.Context) ([]models.Topic, error) {
 // enabled and disabled.
 func GetUserSubscriptions(ctx context.Context, userID int64) ([]models.Subscription, error) {
 	const q = `
-		SELECT subscription_id, user_id, topic_id, context, enabled, created_at
+		SELECT subscription_id, user_id, topic_id, context, notification_channels, enabled, created_at
 		FROM notifications.subscriptions
 		WHERE user_id = $1
 		ORDER BY created_at DESC`
@@ -101,7 +103,7 @@ func GetUserSubscriptions(ctx context.Context, userID int64) ([]models.Subscript
 // the caller to apply.
 func MatchSubscriptions(ctx context.Context, topicID int64, eventContext []byte) ([]models.Subscription, error) {
 	const q = `
-		SELECT subscription_id, user_id, topic_id, context, enabled, created_at
+		SELECT subscription_id, user_id, topic_id, context, notification_channels, enabled, created_at
 		FROM notifications.subscriptions
 		WHERE topic_id = $1 AND context @> $2::jsonb
 		ORDER BY subscription_id`
@@ -134,6 +136,12 @@ func MatchSubscriptions(ctx context.Context, topicID int64, eventContext []byte)
 // versus an existing row being updated (false), so callers can distinguish
 // 201 Created from 200 OK.
 //
+// channels, when non-nil, is stored as the subscription's
+// notification_channels override. A nil channels leaves the column as it
+// was: NULL on a new row, and whatever override an existing row already
+// carried when the call matches one, so re-subscribing just to re-enable a
+// subscription doesn't silently drop its override.
+//
 // It also seeds a default notifications.preferences row for userID
 // (email_enabled = true) if one doesn't already exist, so the delivery path
 // always has a preferences row to read.
@@ -146,7 +154,16 @@ func MatchSubscriptions(ctx context.Context, topicID int64, eventContext []byte)
 //
 // Returns ErrTopicNotFound if topicID doesn't exist, and ErrTopicDisabled if
 // it is disabled.
-func CreateSubscription(ctx context.Context, userID, topicID int64, subscriptionContext []byte) (models.Subscription, bool, error) {
+func CreateSubscription(ctx context.Context, userID, topicID int64, subscriptionContext []byte, channels *models.NotificationChannels) (models.Subscription, bool, error) {
+	var channelsJSON interface{}
+	if channels != nil {
+		b, err := json.Marshal(channels)
+		if err != nil {
+			return models.Subscription{}, false, fmt.Errorf("create subscription: encode notification channels: %w", err)
+		}
+		channelsJSON = b
+	}
+
 	tx, err := dbPool.BeginTx(ctx, nil)
 	if err != nil {
 		return models.Subscription{}, false, fmt.Errorf("create subscription: %w", err)
@@ -170,12 +187,14 @@ func CreateSubscription(ctx context.Context, userID, topicID int64, subscription
 	}
 
 	const subQ = `
-		INSERT INTO notifications.subscriptions (user_id, topic_id, context)
-		VALUES ($1, $2, $3)
-		ON CONFLICT (user_id, topic_id, context) DO UPDATE SET enabled = true
-		RETURNING subscription_id, user_id, topic_id, context, enabled, created_at, (xmax = 0) AS inserted`
+		INSERT INTO notifications.subscriptions (user_id, topic_id, context, notification_channels)
+		VALUES ($1, $2, $3, $4::jsonb)
+		ON CONFLICT (user_id, topic_id, context) DO UPDATE
+			SET enabled = true,
+			    notification_channels = COALESCE(EXCLUDED.notification_channels, subscriptions.notification_channels)
+		RETURNING subscription_id, user_id, topic_id, context, notification_channels, enabled, created_at, (xmax = 0) AS inserted`
 
-	row := tx.QueryRowContext(ctx, subQ, userID, topicID, defaultJSON(subscriptionContext))
+	row := tx.QueryRowContext(ctx, subQ, userID, topicID, defaultJSON(subscriptionContext), channelsJSON)
 	s, inserted, err := scanSubscriptionWithInserted(row)
 	if err != nil {
 		var pqErr *pq.Error
@@ -211,7 +230,7 @@ func SetSubscriptionEnabled(ctx context.Context, subscriptionID, userID int64, e
 		UPDATE notifications.subscriptions
 		SET enabled = $3
 		WHERE subscription_id = $1 AND user_id = $2
-		RETURNING subscription_id, user_id, topic_id, context, enabled, created_at`
+		RETURNING subscription_id, user_id, topic_id, context, notification_channels, enabled, created_at`
 
 	s, err := scanSubscription(dbPool.QueryRowContext(ctx, q, subscriptionID, userID, enabled))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -274,28 +293,82 @@ func GetTopicByName(ctx context.Context, name string) (models.Topic, error) {
 // CreateNotifications posts one notification, with the same title, message
 // and metadata, to each of subscriptionIDs in a single statement, so an
 // event is recorded against either all of its matched subscriptions or none.
-// It returns the number of rows written.
+// It returns the id of the notification written for each subscription, keyed
+// by subscription id; the delivery path uses those ids to give each email a
+// stable dedupe id.
 //
 // Rows are written whatever the topic's and subscriptions' enabled flags:
 // notifications are the durable history, and the flags only gate sending
 // (see docs/notification-status-flags-scope.md).
-func CreateNotifications(ctx context.Context, subscriptionIDs []int64, title, message string, metadata []byte) (int64, error) {
+func CreateNotifications(ctx context.Context, subscriptionIDs []int64, title, message string, metadata []byte) (map[int64]int64, error) {
+	notificationIDs := make(map[int64]int64, len(subscriptionIDs))
 	if len(subscriptionIDs) == 0 {
-		return 0, nil
+		return notificationIDs, nil
 	}
 	const q = `
 		INSERT INTO notifications.notifications (subscription_id, title, message, metadata)
-		SELECT unnest($1::integer[]), $2, $3, $4::jsonb`
+		SELECT unnest($1::integer[]), $2, $3, $4::jsonb
+		RETURNING subscription_id, notification_id`
 
 	var meta interface{}
 	if len(metadata) > 0 {
 		meta = metadata
 	}
-	res, err := dbPool.ExecContext(ctx, q, pq.Array(subscriptionIDs), title, message, meta)
+	rows, err := dbPool.QueryContext(ctx, q, pq.Array(subscriptionIDs), title, message, meta)
 	if err != nil {
-		return 0, fmt.Errorf("create notifications: %w", err)
+		return nil, fmt.Errorf("create notifications: %w", err)
 	}
-	return res.RowsAffected()
+	defer rows.Close()
+
+	for rows.Next() {
+		var subscriptionID, notificationID int64
+		if err := rows.Scan(&subscriptionID, &notificationID); err != nil {
+			return nil, fmt.Errorf("create notifications: %w", err)
+		}
+		notificationIDs[subscriptionID] = notificationID
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("create notifications: %w", err)
+	}
+	return notificationIDs, nil
+}
+
+// GetEmailRecipients returns the email address and display name of each of
+// userIDs that has an email address on pennsieve.users, keyed by user id.
+// Users that don't exist, or have an empty email address, are left out, so
+// the caller can tell them apart from deliverable ones.
+func GetEmailRecipients(ctx context.Context, userIDs []int64) (map[int64]models.EmailRecipient, error) {
+	recipients := make(map[int64]models.EmailRecipient, len(userIDs))
+	if len(userIDs) == 0 {
+		return recipients, nil
+	}
+	const q = `
+		SELECT id, email, first_name, last_name
+		FROM pennsieve.users
+		WHERE id = ANY($1::integer[]) AND email <> ''`
+
+	rows, err := dbPool.QueryContext(ctx, q, pq.Array(userIDs))
+	if err != nil {
+		return nil, fmt.Errorf("get email recipients: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var userID int64
+		var email string
+		var firstName, lastName sql.NullString
+		if err := rows.Scan(&userID, &email, &firstName, &lastName); err != nil {
+			return nil, fmt.Errorf("get email recipients: %w", err)
+		}
+		recipients[userID] = models.EmailRecipient{
+			Name:  strings.TrimSpace(firstName.String + " " + lastName.String),
+			Email: email,
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("get email recipients: %w", err)
+	}
+	return recipients, nil
 }
 
 // IsOrganizationMember reports whether userID belongs to organizationID, at
@@ -413,12 +486,30 @@ type subscriptionScanner interface {
 
 func scanSubscription(row subscriptionScanner) (models.Subscription, error) {
 	var s models.Subscription
-	var context []byte
-	if err := row.Scan(&s.SubscriptionID, &s.UserID, &s.TopicID, &context, &s.Enabled, &s.CreatedAt); err != nil {
+	var context, channels []byte
+	if err := row.Scan(&s.SubscriptionID, &s.UserID, &s.TopicID, &context, &channels, &s.Enabled, &s.CreatedAt); err != nil {
 		return models.Subscription{}, err
 	}
 	s.Context = context
+	if err := decodeNotificationChannels(channels, &s); err != nil {
+		return models.Subscription{}, err
+	}
 	return s, nil
+}
+
+// decodeNotificationChannels sets s.NotificationChannels from the
+// notification_channels column, leaving it nil when the column is NULL (no
+// override).
+func decodeNotificationChannels(raw []byte, s *models.Subscription) error {
+	if len(raw) == 0 {
+		return nil
+	}
+	var c models.NotificationChannels
+	if err := json.Unmarshal(raw, &c); err != nil {
+		return fmt.Errorf("decode notification channels of subscription %d: %w", s.SubscriptionID, err)
+	}
+	s.NotificationChannels = &c
+	return nil
 }
 
 // scanSubscriptionWithInserted is like scanSubscription but also reads the
@@ -428,12 +519,15 @@ func scanSubscription(row subscriptionScanner) (models.Subscription, error) {
 // was updated via ON CONFLICT DO UPDATE.
 func scanSubscriptionWithInserted(row subscriptionScanner) (models.Subscription, bool, error) {
 	var s models.Subscription
-	var context []byte
+	var context, channels []byte
 	var inserted bool
-	if err := row.Scan(&s.SubscriptionID, &s.UserID, &s.TopicID, &context, &s.Enabled, &s.CreatedAt, &inserted); err != nil {
+	if err := row.Scan(&s.SubscriptionID, &s.UserID, &s.TopicID, &context, &channels, &s.Enabled, &s.CreatedAt, &inserted); err != nil {
 		return models.Subscription{}, false, err
 	}
 	s.Context = context
+	if err := decodeNotificationChannels(channels, &s); err != nil {
+		return models.Subscription{}, false, err
+	}
 	return s, inserted, nil
 }
 
@@ -446,19 +540,20 @@ func defaultJSON(b []byte) []byte {
 	return b
 }
 
-// defaultEmailEnabled and defaultPushEnabled mirror the email_enabled and
-// push_enabled column defaults in migration
-// 20260917090937_add_notifications_last_seen (DEFAULT true and DEFAULT
-// false respectively). GetNotificationPreferences uses them for a user with
-// no notifications.preferences row yet, since CreateSubscription's
+// defaultEmailEnabled, defaultPushEnabled and defaultSMSEnabled mirror the
+// email_enabled, push_enabled and sms_enabled column defaults on
+// notifications.preferences (DEFAULT true, false and false respectively).
+// GetNotificationPreferences and GetUserNotificationChannels use them for a
+// user with no notifications.preferences row yet, since CreateSubscription's
 // lazy-seed insert relies on those column defaults directly rather than on
-// a value passed from Go. If a future migration changes either column
-// default without updating these constants too, a user with no row would
+// a value passed from Go. If a future migration changes any of these column
+// defaults without updating these constants too, a user with no row would
 // read back a stale default here while CreateSubscription would pick up the
 // new one the moment they subscribe.
 const (
 	defaultEmailEnabled = true
 	defaultPushEnabled  = false
+	defaultSMSEnabled   = false
 )
 
 // GetNotificationPreferences returns userID's email/push channel opt-ins and
@@ -487,6 +582,46 @@ func GetNotificationPreferences(ctx context.Context, userID int64) (*models.Noti
 		prefs.NotificationsLastSeen = &lastSeen.Time
 	}
 	return prefs, nil
+}
+
+// GetUserNotificationChannels returns the email/push/sms channel opt-ins
+// stored on notifications.preferences for each of userIDs, keyed by user id.
+// It is the fallback the delivery path reads for subscriptions that carry no
+// notification_channels override of their own. Every requested user is in
+// the result: one with no preferences row yet gets the column defaults, the
+// same as GetNotificationPreferences.
+func GetUserNotificationChannels(ctx context.Context, userIDs []int64) (map[int64]models.NotificationChannels, error) {
+	channels := make(map[int64]models.NotificationChannels, len(userIDs))
+	if len(userIDs) == 0 {
+		return channels, nil
+	}
+	for _, id := range userIDs {
+		channels[id] = models.NotificationChannels{Email: defaultEmailEnabled, Push: defaultPushEnabled, SMS: defaultSMSEnabled}
+	}
+
+	const q = `
+		SELECT user_id, email_enabled, push_enabled, sms_enabled
+		FROM notifications.preferences
+		WHERE user_id = ANY($1::integer[])`
+
+	rows, err := dbPool.QueryContext(ctx, q, pq.Array(userIDs))
+	if err != nil {
+		return nil, fmt.Errorf("get user notification channels: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var userID int64
+		var c models.NotificationChannels
+		if err := rows.Scan(&userID, &c.Email, &c.Push, &c.SMS); err != nil {
+			return nil, fmt.Errorf("get user notification channels: %w", err)
+		}
+		channels[userID] = c
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("get user notification channels: %w", err)
+	}
+	return channels, nil
 }
 
 // SetNotificationPreferences upserts userID's email/push channel opt-ins and

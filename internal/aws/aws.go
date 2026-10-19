@@ -6,11 +6,13 @@ import (
 	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 )
 
 var (
 	ssmClient  *ssm.Client
+	sqsClient  *sqs.Client
 	AwsOnce    sync.Once
 	awsInitErr error
 )
@@ -22,6 +24,19 @@ func InitAWS(ctx context.Context) {
 		return
 	}
 	ssmClient = ssm.NewFromConfig(cfg)
+	sqsClient = sqs.NewFromConfig(cfg)
+}
+
+// SQSClient returns the SQS client InitAWS built, or the error that stopped
+// it from building one.
+func SQSClient() (*sqs.Client, error) {
+	if awsInitErr != nil {
+		return nil, awsInitErr
+	}
+	if sqsClient == nil {
+		return nil, fmt.Errorf("uninitialized SQS client")
+	}
+	return sqsClient, nil
 }
 
 func GetSSMParam(ctx context.Context, name string, decrypt bool) (string, error) {

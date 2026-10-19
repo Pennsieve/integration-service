@@ -174,6 +174,8 @@ components:
           type: object
           description: Free-form JSON context for the subscription (e.g. filters).
           nullable: true
+        notification_channels:
+          $ref: '#/components/schemas/NotificationChannels'
         enabled:
           type: boolean
           description: >-
@@ -183,6 +185,27 @@ components:
           type: string
           format: date-time
       required: [subscription_id, user_id, topic_id, enabled, created_at]
+    NotificationChannels:
+      type: object
+      description: >-
+        How this subscription's notifications are delivered, overriding the
+        user's email/push preferences for this one subscription. Present only
+        when the subscription carries an override; when it is absent, the
+        subscription follows the user's preferences
+        (GET /notification/user/{userId}). All three channels are required.
+      properties:
+        email:
+          type: boolean
+        push:
+          type: boolean
+        sms:
+          type: boolean
+      required: [email, push, sms]
+      additionalProperties: false
+      example:
+        email: false
+        push: true
+        sms: false
     UpdateSubscriptionRequest:
       type: object
       properties:
@@ -201,10 +224,24 @@ components:
         caller's own user id. When it carries organizationId without datasetId
         (workspace and personal topics such as DATASET_PUBLISHED), the caller
         must be a member of that organization.
+
+        The one exception is the optional notification_channels field, which
+        is not part of the context: it is removed before validation and
+        stored as the subscription's own delivery-channel override. Omitting
+        it (or sending null) leaves the subscription following the user's
+        preferences; re-subscribing to an existing subscription without it
+        keeps whatever override that subscription already had.
+      properties:
+        notification_channels:
+          $ref: '#/components/schemas/NotificationChannels'
       additionalProperties: true
       example:
         organizationId: 1
         datasetId: 42
+        notification_channels:
+          email: false
+          push: true
+          sms: false
     NotificationPreferences:
       type: object
       description: >-
@@ -338,7 +375,9 @@ paths:
       summary: Get the caller's subscriptions
       description: >-
         Returns every subscription belonging to the authenticated user, both
-        enabled and disabled.
+        enabled and disabled. Each carries its notification_channels override
+        when it has one; a subscription without one follows the user's
+        preferences.
       operationId: getUserSubscriptions
       tags: [Notifications]
       security:
@@ -369,6 +408,12 @@ paths:
         belongs to. An empty body is treated as {}. Calling this again with
         the same context returns that subscription rather than creating a
         duplicate, re-enabling it if the caller had disabled it.
+
+        The body may also carry notification_channels
+        ({"email": bool, "push": bool, "sms": bool}) to choose how this
+        subscription's notifications are delivered instead of the user's
+        preferences. It is not part of the context, so it is neither
+        validated against the topic's schema nor used to match events.
       operationId: subscribeToTopic
       tags: [Notifications]
       security:
@@ -397,8 +442,9 @@ paths:
         '400':
           description: >-
             Invalid topicId, malformed base64 body, body is not a JSON object,
-            body does not match the topic's context schema, or the referenced
-            dataset does not exist
+            body does not match the topic's context schema, the referenced
+            dataset does not exist, or notification_channels is not an object
+            with exactly the boolean email, push and sms fields
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }

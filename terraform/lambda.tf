@@ -25,6 +25,7 @@ resource "aws_lambda_function" "event_integration_consumer_lambda" {
       IMAGE_TAG        = var.image_tag
       ENV              = var.environment_name
       PENNSIEVE_DOMAIN = data.terraform_remote_state.account.outputs.domain_name,
+      EMAIL_SERVICE_QUEUE_URL = data.terraform_remote_state.email_service.outputs.email_service_queue_url,
 #      WEBHOOK_SQS_QUEUE_NAME = aws_sqs_queue.webhook_integration_queue.name
     }
   }
