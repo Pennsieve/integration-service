@@ -51,6 +51,10 @@ const (
 // Pennsieve Lambda REQUEST authorizer attached to the API Gateway route,
 // surfaced here as the "user_claim" context key on
 // req.RequestContext.Authorizer.Lambda.
+//
+// The subscribe route uses the workspace variant of that authorizer instead,
+// which also takes the organization_id query parameter and denies callers
+// who aren't members of that workspace; see requireWorkspace.
 func NotificationHandler(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	aws.AwsOnce.Do(func() {
 		aws.InitAWS(ctx)
@@ -73,7 +77,11 @@ func NotificationHandler(ctx context.Context, req events.APIGatewayV2HTTPRequest
 	case routeGetSubscriptions:
 		return handleGetSubscriptions(ctx, userID)
 	case routeSubscribe:
-		return handleSubscribe(ctx, userID, req)
+		workspaceOrgID, errResp := requireWorkspace(req)
+		if errResp != nil {
+			return *errResp, nil
+		}
+		return handleSubscribe(ctx, userID, workspaceOrgID, req)
 	case routeUpdateSubscription:
 		return handleUpdateSubscription(ctx, userID, req)
 	case routeGetMessages:
@@ -110,9 +118,9 @@ func handleGetSubscriptions(ctx context.Context, userID int64) (events.APIGatewa
 // handleSubscribe serves POST /notification/topic/{topicId}/subscription. The
 // request body is the subscription's context: a free-form JSON object that
 // must satisfy the JSON Schema stored as the topic's context, and whose
-// referenced dataset (if any) must exist. A context scoped to a whole
-// organization requires the caller to be a member of it (403 otherwise).
-// See validateSubscriptionContext.
+// referenced dataset (if any) must exist. An organizationId in the context
+// must be the organization_id workspace the request was authorized for (403
+// otherwise). See validateSubscriptionContext.
 // The body may also carry an optional notification_channels object
 // ({"email": bool, "push": bool, "sms": bool}) choosing how this
 // subscription's notifications are delivered, in place of the user's
@@ -123,7 +131,7 @@ func handleGetSubscriptions(ctx context.Context, userID int64) (events.APIGatewa
 // and one whose context has required properties rejects it. A disabled
 // topic accepts no new subscriptions (409), and subscribing again to one of
 // the caller's own disabled subscriptions re-enables it.
-func handleSubscribe(ctx context.Context, userID int64, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+func handleSubscribe(ctx context.Context, userID, workspaceOrgID int64, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	topicID, err := pathParamInt64(req, "topicId")
 	if err != nil {
 		log.Printf("ERROR subscription validation: invalid topic id: %v", err)
@@ -161,7 +169,7 @@ func handleSubscribe(ctx context.Context, userID int64, req events.APIGatewayV2H
 		return notifErrorResponse(http.StatusBadRequest, err.Error()), nil
 	}
 
-	if errResp := validateSubscriptionContext(ctx, userID, topic, body); errResp != nil {
+	if errResp := validateSubscriptionContext(ctx, userID, workspaceOrgID, topic, body); errResp != nil {
 		return *errResp, nil
 	}
 
@@ -341,6 +349,29 @@ func authorizedTargetUserID(callerID int64, req events.APIGatewayV2HTTPRequest) 
 		return 0, &resp
 	}
 	return targetID, nil
+}
+
+// requireWorkspace checks the organization_id query parameter on routes
+// behind the workspace authorizer. API Gateway already rejects a request
+// without it (it is one of that authorizer's identity sources) and the
+// authorizer denies callers who aren't members of the workspace it names,
+// attaching that workspace as the "org_claim" context key. This repeats
+// both checks so the handler never acts on a request that skipped them,
+// e.g. a route left on the plain user authorizer by mistake. It returns the
+// workspace's numeric organization id from the org_claim.
+func requireWorkspace(req events.APIGatewayV2HTTPRequest) (int64, *events.APIGatewayV2HTTPResponse) {
+	organizationID := req.QueryStringParameters["organization_id"]
+	if organizationID == "" {
+		resp := notifErrorResponse(http.StatusBadRequest, "organization_id query parameter is required")
+		return 0, &resp
+	}
+	claims := authorizer.ParseClaims(req.RequestContext.Authorizer.Lambda)
+	if claims == nil || claims.OrgClaim == nil || claims.OrgClaim.NodeId != organizationID {
+		log.Printf("ERROR workspace auth: no org_claim for organization_id %q", organizationID)
+		resp := notifErrorResponse(http.StatusForbidden, "not a member of this organization")
+		return 0, &resp
+	}
+	return claims.OrgClaim.IntId, nil
 }
 
 // authenticatedUserID extracts the caller's user id from the "user_claim"

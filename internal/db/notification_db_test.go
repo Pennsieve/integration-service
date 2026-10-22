@@ -677,24 +677,6 @@ func TestCreateNotifications_NoSubscriptionsSkipsTheInsert(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestIsOrganizationMember(t *testing.T) {
-	for _, member := range []bool{true, false} {
-		mockDB, mock, err := sqlmock.New()
-		require.NoError(t, err)
-		SetPoolForTest(mockDB)
-
-		mock.ExpectQuery(regexp.QuoteMeta("FROM pennsieve.organization_user WHERE organization_id = $1 AND user_id = $2")).
-			WithArgs(int64(45), int64(42)).
-			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(member))
-
-		got, err := IsOrganizationMember(context.Background(), 45, 42)
-		require.NoError(t, err)
-		assert.Equal(t, member, got)
-		require.NoError(t, mock.ExpectationsWereMet())
-		mockDB.Close()
-	}
-}
-
 func TestCreateSubscription_WithNotificationChannels(t *testing.T) {
 	mockDB, mock, err := sqlmock.New()
 	require.NoError(t, err)

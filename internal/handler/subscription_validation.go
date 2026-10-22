@@ -135,16 +135,15 @@ func parseNotificationChannels(raw []byte) (*models.NotificationChannels, bool) 
 //  1. the body is a JSON object (handleSubscribe has already turned an empty
 //     or null body into {}),
 //  2. it satisfies the JSON Schema stored as the topic's context (skipped
-//     for a topic with no context), and
-//  3. any dataset it references (organizationId + datasetId) exists,
-//  4. a subjectUserId, which scopes personal topics, is the caller's own id,
-//     and
-//  5. a body scoped to an organization alone (organizationId, no datasetId)
-//     names an organization the caller is a member of.
+//     for a topic with no context),
+//  3. an organizationId names workspaceOrgID, the workspace the request was
+//     authorized for,
+//  4. any dataset it references (organizationId + datasetId) exists, and
+//  5. a subjectUserId, which scopes personal topics, is the caller's own id.
 //
 // It returns nil when the body is valid, or the error response to send.
 // Every failure is logged along with the validation error that caused it.
-func validateSubscriptionContext(ctx context.Context, userID int64, topic models.Topic, body []byte) *events.APIGatewayV2HTTPResponse {
+func validateSubscriptionContext(ctx context.Context, userID, workspaceOrgID int64, topic models.Topic, body []byte) *events.APIGatewayV2HTTPResponse {
 	fail := func(statusCode int, message string, cause error) *events.APIGatewayV2HTTPResponse {
 		log.Printf("ERROR subscription validation for topic %d (%s): %s: %v", topic.TopicID, topic.Name, message, cause)
 		resp := notifErrorResponse(statusCode, message)
@@ -167,13 +166,13 @@ func validateSubscriptionContext(ctx context.Context, userID int64, topic models
 		return fail(http.StatusBadRequest, "payload does not match the topic context: "+validationMessage(err), err)
 	}
 
+	if resp := validateWorkspaceOrganization(workspaceOrgID, fields, fail); resp != nil {
+		return resp
+	}
 	if resp := validateDatasetReference(ctx, fields, fail); resp != nil {
 		return resp
 	}
 	if resp := validateSubjectUser(userID, fields, fail); resp != nil {
-		return resp
-	}
-	if resp := validateOrganizationMembership(ctx, userID, fields, fail); resp != nil {
 		return resp
 	}
 	return nil
@@ -293,33 +292,26 @@ func validateSubjectUser(userID int64, fields map[string]any, fail func(int, str
 	return nil
 }
 
-// validateOrganizationMembership confirms that a body scoped to a whole
-// organization (organizationId without datasetId), as organization-level
-// topics such as DATASET_PUBLISHED require, names an
-// organization the caller belongs to: workspace-wide notifications are for
-// that workspace's members. Bodies that reference a dataset are left to
-// validateDatasetReference, and bodies with neither field pass.
-//
-// A non-member gets 403 whether or not the organization exists, so the
-// route can't be used to probe which organization ids are real.
-func validateOrganizationMembership(ctx context.Context, userID int64, fields map[string]any, fail func(int, string, error) *events.APIGatewayV2HTTPResponse) *events.APIGatewayV2HTTPResponse {
-	rawOrgID, hasOrg := fields["organizationId"]
-	if _, hasDataset := fields["datasetId"]; !hasOrg || hasDataset {
+// validateWorkspaceOrganization confirms that a body carrying organizationId
+// names workspaceOrgID, the organization the workspace authorizer resolved
+// from the organization_id query parameter. The authorizer has already
+// denied callers who aren't members of that workspace, so this keeps every
+// organization-scoped subscription inside a workspace the caller belongs to
+// without a database lookup. It runs before validateDatasetReference so a
+// dataset in another organization is never looked up. Bodies without
+// organizationId pass.
+func validateWorkspaceOrganization(workspaceOrgID int64, fields map[string]any, fail func(int, string, error) *events.APIGatewayV2HTTPResponse) *events.APIGatewayV2HTTPResponse {
+	rawOrgID, ok := fields["organizationId"]
+	if !ok {
 		return nil
 	}
-
 	orgID, err := positiveInt64(rawOrgID)
 	if err != nil {
 		return fail(http.StatusBadRequest, "organizationId must be a positive integer", err)
 	}
-
-	member, err := db.IsOrganizationMember(ctx, orgID, userID)
-	if err != nil {
-		return fail(http.StatusInternalServerError, "failed to validate organization", err)
-	}
-	if !member {
-		return fail(http.StatusForbidden, "not a member of this organization",
-			fmt.Errorf("user %d is not a member of organization %d", userID, orgID))
+	if orgID != workspaceOrgID {
+		return fail(http.StatusForbidden, "organizationId must match the organization_id workspace",
+			fmt.Errorf("body names organization %d, request authorized for %d", orgID, workspaceOrgID))
 	}
 	return nil
 }
