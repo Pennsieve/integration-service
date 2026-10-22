@@ -55,7 +55,7 @@ resource "aws_apigatewayv2_api_mapping" "notification_service_api_map" {
 # Lambda after resolving the caller's Cognito identity against Postgres, not
 # present in any raw Cognito token claim. Surfaced on
 # req.RequestContext.Authorizer.Lambda["user_claim"].
-resource "aws_apigatewayv2_authorizer" "pennsieve_lambda_authorizer" {
+resource "aws_apigatewayv2_authorizer" "pennsieve_user_authorizer" {
   api_id                            = aws_apigatewayv2_api.notification_service_api.id
   name                              = "${var.environment_name}-${var.service_name}-pennsieve-lambda-authorizer"
   authorizer_type                   = "REQUEST"
@@ -65,6 +65,33 @@ resource "aws_apigatewayv2_authorizer" "pennsieve_lambda_authorizer" {
   enable_simple_responses           = true
   authorizer_result_ttl_in_seconds  = 300
   identity_sources                  = ["$request.header.Authorization"]
+}
+
+# Renamed from pennsieve_lambda_authorizer; this keeps the existing authorizer
+# in state rather than destroying and recreating it.
+moved {
+  from = aws_apigatewayv2_authorizer.pennsieve_lambda_authorizer
+  to   = aws_apigatewayv2_authorizer.pennsieve_user_authorizer
+}
+
+# The same Lambda, with organization_id as a second identity source. The
+# Lambda picks its WorkspaceAuthorizer strategy when organization_id is
+# present: it denies callers who aren't members of that workspace and adds an
+# "org_claim" for it, which handler.requireWorkspace checks. API Gateway
+# returns 401 without calling the Lambda when any identity source is missing,
+# so organization_id is mandatory on every route using this authorizer. The
+# identity sources are also the cache key, so a cached allow is per
+# workspace, not shared with the user-only authorizer above.
+resource "aws_apigatewayv2_authorizer" "pennsieve_workspace_authorizer" {
+  api_id                            = aws_apigatewayv2_api.notification_service_api.id
+  name                              = "${var.environment_name}-${var.service_name}-pennsieve-workspace-authorizer"
+  authorizer_type                   = "REQUEST"
+  authorizer_uri                    = data.terraform_remote_state.api_gateway.outputs.authorizer_lambda_invoke_uri
+  authorizer_credentials_arn        = data.terraform_remote_state.api_gateway.outputs.authorizer_invocation_role
+  authorizer_payload_format_version = "2.0"
+  enable_simple_responses           = true
+  authorizer_result_ttl_in_seconds  = 300
+  identity_sources                  = ["$request.header.Authorization", "$request.querystring.organization_id"]
 }
 
 resource "aws_apigatewayv2_integration" "notification_integration" {
@@ -86,7 +113,7 @@ resource "aws_apigatewayv2_route" "notification_get_topics_route" {
   route_key          = "GET /topics"
   target             = "integrations/${aws_apigatewayv2_integration.notification_integration.id}"
   authorization_type = "CUSTOM"
-  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_lambda_authorizer.id
+  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_user_authorizer.id
 }
 
 resource "aws_apigatewayv2_route" "notification_get_subscriptions_route" {
@@ -94,15 +121,16 @@ resource "aws_apigatewayv2_route" "notification_get_subscriptions_route" {
   route_key          = "GET /subscriptions"
   target             = "integrations/${aws_apigatewayv2_integration.notification_integration.id}"
   authorization_type = "CUSTOM"
-  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_lambda_authorizer.id
+  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_user_authorizer.id
 }
 
+# Subscribing uses the workspace authorizer, so it requires ?organization_id.
 resource "aws_apigatewayv2_route" "notification_subscribe_route" {
   api_id             = aws_apigatewayv2_api.notification_service_api.id
   route_key          = "POST /topic/{topicId}/subscription"
   target             = "integrations/${aws_apigatewayv2_integration.notification_integration.id}"
   authorization_type = "CUSTOM"
-  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_lambda_authorizer.id
+  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_workspace_authorizer.id
 }
 
 # Subscriptions are turned off by disabling them rather than deleting them,
@@ -113,7 +141,7 @@ resource "aws_apigatewayv2_route" "notification_update_subscription_route" {
   route_key          = "PATCH /subscription/{subscriptionId}"
   target             = "integrations/${aws_apigatewayv2_integration.notification_integration.id}"
   authorization_type = "CUSTOM"
-  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_lambda_authorizer.id
+  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_user_authorizer.id
 }
 
 resource "aws_apigatewayv2_route" "notification_get_messages_route" {
@@ -121,7 +149,7 @@ resource "aws_apigatewayv2_route" "notification_get_messages_route" {
   route_key          = "GET /messages"
   target             = "integrations/${aws_apigatewayv2_integration.notification_integration.id}"
   authorization_type = "CUSTOM"
-  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_lambda_authorizer.id
+  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_user_authorizer.id
 }
 
 # The notification preferences routes. The handler additionally checks that
@@ -137,7 +165,7 @@ resource "aws_apigatewayv2_route" "notification_get_user_last_seen_route" {
   route_key          = "GET /user/{userId}"
   target             = "integrations/${aws_apigatewayv2_integration.notification_integration.id}"
   authorization_type = "CUSTOM"
-  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_lambda_authorizer.id
+  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_user_authorizer.id
 }
 
 resource "aws_apigatewayv2_route" "notification_set_user_last_seen_route" {
@@ -145,7 +173,7 @@ resource "aws_apigatewayv2_route" "notification_set_user_last_seen_route" {
   route_key          = "POST /user/{userId}"
   target             = "integrations/${aws_apigatewayv2_integration.notification_integration.id}"
   authorization_type = "CUSTOM"
-  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_lambda_authorizer.id
+  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_user_authorizer.id
 }
 
 resource "aws_apigatewayv2_route" "notification_update_user_last_seen_route" {
@@ -153,7 +181,7 @@ resource "aws_apigatewayv2_route" "notification_update_user_last_seen_route" {
   route_key          = "PATCH /user/{userId}"
   target             = "integrations/${aws_apigatewayv2_integration.notification_integration.id}"
   authorization_type = "CUSTOM"
-  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_lambda_authorizer.id
+  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_user_authorizer.id
 }
 
 resource "aws_lambda_permission" "notification_apigateway_permission" {

@@ -371,22 +371,6 @@ func GetEmailRecipients(ctx context.Context, userIDs []int64) (map[int64]models.
 	return recipients, nil
 }
 
-// IsOrganizationMember reports whether userID belongs to organizationID, at
-// any permission level. An organization that doesn't exist has no members,
-// so it reports false rather than an error.
-func IsOrganizationMember(ctx context.Context, organizationID, userID int64) (bool, error) {
-	const q = `
-		SELECT EXISTS(
-			SELECT 1 FROM pennsieve.organization_user
-			WHERE organization_id = $1 AND user_id = $2)`
-
-	var member bool
-	if err := dbPool.QueryRowContext(ctx, q, organizationID, userID).Scan(&member); err != nil {
-		return false, fmt.Errorf("organization membership: %w", err)
-	}
-	return member, nil
-}
-
 // pqUndefinedTable is the error code Postgres reports when a query
 // references a table that doesn't exist, including one qualified by a schema
 // that doesn't exist, e.g. an organization schema for an organization id that
