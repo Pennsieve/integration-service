@@ -26,6 +26,10 @@ var ErrTopicDisabled = errors.New("topic is disabled")
 // subscription id that does not exist, or that belongs to another user.
 var ErrSubscriptionNotFound = errors.New("subscription not found")
 
+// ErrNotOrganizationMember is returned when a user tries to enable a
+// subscription scoped to an organization they are no longer a member of.
+var ErrNotOrganizationMember = errors.New("not a member of the subscription's organization")
+
 // ErrUserNotFound is returned when an operation references a user id that
 // does not exist in pennsieve.users.
 var ErrUserNotFound = errors.New("user not found")
@@ -225,21 +229,60 @@ func CreateSubscription(ctx context.Context, userID, topicID int64, subscription
 // doesn't own reports ErrSubscriptionNotFound. Disabling only stops new
 // notifications being delivered to the subscription: the row, and the
 // notifications already posted to it, are kept.
+//
+// Re-enabling a subscription scoped to an organization (its context carries
+// organizationId) also requires userID to still be a member of that
+// organization, and reports ErrNotOrganizationMember otherwise. The PATCH
+// route sits behind the user-only authorizer, so this is the only membership
+// check on it; without it a user removed from a workspace could resume a
+// disabled subscription to that workspace's notifications. The check is part
+// of the UPDATE, so membership can't change between checking and enabling.
+// Disabling never needs membership, so removed users can still turn
+// subscriptions off.
 func SetSubscriptionEnabled(ctx context.Context, subscriptionID, userID int64, enabled bool) (models.Subscription, error) {
 	const q = `
-		UPDATE notifications.subscriptions
+		UPDATE notifications.subscriptions s
 		SET enabled = $3
 		WHERE subscription_id = $1 AND user_id = $2
+		AND (NOT $3
+			OR NOT s.context ? 'organizationId'
+			OR EXISTS (
+				SELECT 1 FROM pennsieve.organization_user ou
+				WHERE ou.organization_id = (s.context->>'organizationId')::numeric
+				AND ou.user_id = s.user_id))
 		RETURNING subscription_id, user_id, topic_id, context, notification_channels, enabled, created_at`
 
 	s, err := scanSubscription(dbPool.QueryRowContext(ctx, q, subscriptionID, userID, enabled))
 	if errors.Is(err, sql.ErrNoRows) {
-		return models.Subscription{}, ErrSubscriptionNotFound
+		if !enabled {
+			return models.Subscription{}, ErrSubscriptionNotFound
+		}
+		return models.Subscription{}, enableMissReason(ctx, subscriptionID, userID)
 	}
 	if err != nil {
 		return models.Subscription{}, fmt.Errorf("set subscription enabled: %w", err)
 	}
 	return s, nil
+}
+
+// enableMissReason explains why SetSubscriptionEnabled's UPDATE matched no
+// row when enabling: userID owns the subscription, so the membership
+// condition failed (ErrNotOrganizationMember), or it doesn't
+// (ErrSubscriptionNotFound).
+func enableMissReason(ctx context.Context, subscriptionID, userID int64) error {
+	const q = `
+		SELECT EXISTS(
+			SELECT 1 FROM notifications.subscriptions
+			WHERE subscription_id = $1 AND user_id = $2)`
+
+	var owned bool
+	if err := dbPool.QueryRowContext(ctx, q, subscriptionID, userID).Scan(&owned); err != nil {
+		return fmt.Errorf("set subscription enabled: ownership: %w", err)
+	}
+	if owned {
+		return ErrNotOrganizationMember
+	}
+	return ErrSubscriptionNotFound
 }
 
 // GetTopic returns the topic identified by topicID, including the context

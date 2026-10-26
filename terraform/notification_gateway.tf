@@ -82,6 +82,16 @@ moved {
 # so organization_id is mandatory on every route using this authorizer. The
 # identity sources are also the cache key, so a cached allow is per
 # workspace, not shared with the user-only authorizer above.
+#
+# The 300s result cache is a deliberate tradeoff. The service no longer runs
+# its own organization_user query on subscribe (the old
+# validateOrganizationMembership checked live on every call), so a user
+# removed from a workspace can keep subscribing to its topics for up to 5
+# minutes, until their cached allow expires. We accept that window for fewer
+# Lambda invocations and lower latency. Lower the TTL (0 disables caching) if
+# removal has to take effect immediately. Re-enabling an existing
+# subscription isn't affected: PATCH /subscription/{subscriptionId} checks
+# membership live in db.SetSubscriptionEnabled.
 resource "aws_apigatewayv2_authorizer" "pennsieve_workspace_authorizer" {
   api_id                            = aws_apigatewayv2_api.notification_service_api.id
   name                              = "${var.environment_name}-${var.service_name}-pennsieve-workspace-authorizer"
@@ -135,7 +145,9 @@ resource "aws_apigatewayv2_route" "notification_subscribe_route" {
 
 # Subscriptions are turned off by disabling them rather than deleting them,
 # so the notification history posted to them is preserved. There is no
-# DELETE route.
+# DELETE route. It stays on the user authorizer because the caller doesn't
+# name a workspace; re-enabling an organization-scoped subscription is
+# checked against organization_user in db.SetSubscriptionEnabled instead.
 resource "aws_apigatewayv2_route" "notification_update_subscription_route" {
   api_id             = aws_apigatewayv2_api.notification_service_api.id
   route_key          = "PATCH /subscription/{subscriptionId}"

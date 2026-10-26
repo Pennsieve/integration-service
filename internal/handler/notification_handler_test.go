@@ -592,7 +592,7 @@ func TestNotificationHandler_Subscribe_InvalidDatasetReference(t *testing.T) {
 }
 
 func expectSetSubscriptionEnabled(mock sqlmock.Sqlmock, subscriptionID, userID int64, enabled bool) *sqlmock.ExpectedQuery {
-	return mock.ExpectQuery(regexp.QuoteMeta("UPDATE notifications.subscriptions SET enabled = $3 WHERE subscription_id = $1 AND user_id = $2")).
+	return mock.ExpectQuery(regexp.QuoteMeta("UPDATE notifications.subscriptions s SET enabled = $3 WHERE subscription_id = $1 AND user_id = $2")).
 		WithArgs(subscriptionID, userID, enabled)
 }
 
@@ -767,6 +767,42 @@ func TestNotificationHandler_UpdateSubscription_NoWorkspace(t *testing.T) {
 	resp, err := NotificationHandler(context.Background(), req)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode, resp.Body)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// A user removed from organization 45 still owns their disabled
+// DATASET_PUBLISHED subscription for it. Re-enabling it must be 403, not a
+// silent resume of delivery: the UPDATE's membership condition matches no
+// row, and the ownership lookup shows the subscription is theirs.
+func TestNotificationHandler_UpdateSubscription_EnableNotOrganizationMember(t *testing.T) {
+	mock := newSubscribeMock(t)
+	expectSetSubscriptionEnabled(mock, 9, 42, true).
+		WillReturnRows(sqlmock.NewRows(subscriptionColumns))
+	mock.ExpectQuery(regexp.QuoteMeta("FROM notifications.subscriptions WHERE subscription_id = $1 AND user_id = $2)")).
+		WithArgs(int64(9), int64(42)).
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+
+	resp, err := NotificationHandler(context.Background(),
+		notifReqWithBody(routeUpdateSubscription, map[string]string{"subscriptionId": "9"}, 42, `{"enabled":true}`))
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusForbidden, resp.StatusCode, resp.Body)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Enabling someone else's subscription is still 404, not 403, so the route
+// doesn't reveal that the subscription exists.
+func TestNotificationHandler_UpdateSubscription_EnableWrongUser(t *testing.T) {
+	mock := newSubscribeMock(t)
+	expectSetSubscriptionEnabled(mock, 9, 999, true).
+		WillReturnRows(sqlmock.NewRows(subscriptionColumns))
+	mock.ExpectQuery(regexp.QuoteMeta("FROM notifications.subscriptions WHERE subscription_id = $1 AND user_id = $2)")).
+		WithArgs(int64(9), int64(999)).
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
+
+	resp, err := NotificationHandler(context.Background(),
+		notifReqWithBody(routeUpdateSubscription, map[string]string{"subscriptionId": "9"}, 999, `{"enabled":true}`))
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 

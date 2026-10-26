@@ -25,12 +25,13 @@ No. It only checks new subscribe calls.
   (`internal/notification_generator/generator.go`) filters on
   `topic.Enabled && s.Enabled`. Neither looks at membership, so a subscription
   created while the user was a member keeps matching after they leave.
-- **The PATCH route has a hole.**
+- **The PATCH route had a hole (now closed).**
   `PATCH /notification/subscription/{subscriptionId}` calls
-  `db.SetSubscriptionEnabled`, which only checks that the caller owns the
-  subscription. A removed user can turn a disabled subscription back on
-  without any membership check. Re-subscribing with POST is checked, because
-  it goes through validation again.
+  `db.SetSubscriptionEnabled`, which used to check only that the caller owns
+  the subscription, so a removed user could turn a disabled subscription back
+  on. It now also requires current `organization_user` membership when
+  enabling a subscription whose context has `organizationId` (403
+  otherwise). Disabling still needs no membership.
 
 ## 2. A live check at delivery, or a cleanup job?
 
@@ -78,8 +79,8 @@ source of truth, so check it at the moment it matters.
 
 1. Add the membership condition to `MatchSubscriptions`. Then a removed user
    gets neither in-app notifications nor email.
-2. Run the same membership check in `handleUpdateSubscription` when `enabled`
-   is being set to `true`.
+2. ~~Run the same membership check in `handleUpdateSubscription` when
+   `enabled` is being set to `true`.~~ Done, in `db.SetSubscriptionEnabled`.
 3. Later, and optional: once `REMOVE_ORGANIZATION_USER` exists, add a job that
    disables those subscriptions so the user's subscription list is accurate.
    Tidy, but not needed for correctness.

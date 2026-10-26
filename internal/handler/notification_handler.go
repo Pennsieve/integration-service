@@ -197,6 +197,8 @@ func handleSubscribe(ctx context.Context, userID, workspaceOrgID int64, req even
 // unsubscribing by deleting the subscription: a disabled subscription gets
 // no new notifications, but it and the notifications already posted to it
 // are kept, so the user's history survives and they can re-enable it later.
+// Re-enabling a subscription scoped to an organization the caller has since
+// left is 403; see db.SetSubscriptionEnabled.
 func handleUpdateSubscription(ctx context.Context, userID int64, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	subscriptionID, err := pathParamInt64(req, "subscriptionId")
 	if err != nil {
@@ -215,6 +217,9 @@ func handleUpdateSubscription(ctx context.Context, userID int64, req events.APIG
 	if err != nil {
 		if errors.Is(err, db.ErrSubscriptionNotFound) {
 			return notifErrorResponse(http.StatusNotFound, "subscription not found"), nil
+		}
+		if errors.Is(err, db.ErrNotOrganizationMember) {
+			return notifErrorResponse(http.StatusForbidden, "not a member of this subscription's organization"), nil
 		}
 		log.Printf("ERROR set subscription enabled: %v", err)
 		return notifErrorResponse(http.StatusInternalServerError, "failed to update subscription"), nil
