@@ -1,0 +1,29 @@
+#!groovy
+
+timestamps {
+  node('prod-executor') {
+    try {
+      stage('Run migrations') {
+        if (params.RUN_MIGRATIONS) {
+          echo "Running PROD Postgres Integration Service Schema Migrations"
+          build job: "Migrations/prod-migrations/prod-integration-service-postgres-migrations",
+                  parameters: [
+                          string(name: 'IMAGE_TAG', value: params.IMAGE_TAG)
+                  ]
+        }
+      }
+
+      stage('Deploy') {
+        build job: "service-deploy/pennsieve-prod/us-east-1/prod-vpc-use1/prod/integration-service",
+                parameters: [
+                        string(name: 'IMAGE_TAG', value: params.IMAGE_TAG),
+                        string(name: "TERRAFORM_ACTION", value: "apply")
+                ]
+      }
+    } catch (e) {
+      slackSend(color: '#FF0000', message: "FAILED: Production Integration Service Deploy - ${params.IMAGE_TAG}")
+      throw e
+    }
+    slackSend(color: '#00FF00', message: "SUCCESS: Production Integration Service Deploy - ${params.IMAGE_TAG}")
+  }
+}

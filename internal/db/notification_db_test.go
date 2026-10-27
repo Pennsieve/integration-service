@@ -212,7 +212,7 @@ var subscriptionColumns = []string{"subscription_id", "user_id", "topic_id", "co
 // setSubscriptionEnabledQuery pins the full WHERE clause (not just the
 // UPDATE prefix) so a regression that drops the "AND user_id = $2" scope
 // would fail these tests.
-const setSubscriptionEnabledQuery = "UPDATE notifications.subscriptions SET enabled = $3 WHERE subscription_id = $1 AND user_id = $2"
+const setSubscriptionEnabledQuery = "UPDATE notifications.subscriptions s SET enabled = $3 WHERE subscription_id = $1 AND user_id = $2"
 
 func TestSetSubscriptionEnabled(t *testing.T) {
 	for _, enabled := range []bool{false, true} {
@@ -249,6 +249,85 @@ func TestSetSubscriptionEnabled_WrongUser(t *testing.T) {
 
 	_, err = SetSubscriptionEnabled(context.Background(), 9, 999, false)
 	assert.ErrorIs(t, err, ErrSubscriptionNotFound)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// The UPDATE must gate enabling on current organization membership, so a
+// regression that drops the check fails here.
+func TestSetSubscriptionEnabled_QueryChecksMembership(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	SetPoolForTest(mockDB)
+
+	mock.ExpectQuery(regexp.QuoteMeta(setSubscriptionEnabledQuery+
+		" AND (NOT $3 OR NOT s.context ? 'organizationId' OR EXISTS ( SELECT 1 FROM pennsieve.organization_user ou")).
+		WithArgs(int64(9), int64(42), true).
+		WillReturnRows(sqlmock.NewRows(subscriptionColumns).
+			AddRow(int64(9), int64(42), int64(7), []byte(`{"organizationId":45}`), nil, true, time.Now()))
+
+	_, err = SetSubscriptionEnabled(context.Background(), 9, 42, true)
+	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+const subscriptionOwnedQuery = "FROM notifications.subscriptions WHERE subscription_id = $1 AND user_id = $2)"
+
+// Enabling a subscription the caller owns but whose organization they've
+// left matches no row; the ownership lookup tells that apart from not-found.
+func TestSetSubscriptionEnabled_NotOrganizationMember(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	SetPoolForTest(mockDB)
+
+	mock.ExpectQuery(regexp.QuoteMeta(setSubscriptionEnabledQuery)).
+		WithArgs(int64(9), int64(42), true).
+		WillReturnRows(sqlmock.NewRows(subscriptionColumns))
+	mock.ExpectQuery(regexp.QuoteMeta(subscriptionOwnedQuery)).
+		WithArgs(int64(9), int64(42)).
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+
+	_, err = SetSubscriptionEnabled(context.Background(), 9, 42, true)
+	assert.ErrorIs(t, err, ErrNotOrganizationMember)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSetSubscriptionEnabled_EnableWrongUser(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	SetPoolForTest(mockDB)
+
+	mock.ExpectQuery(regexp.QuoteMeta(setSubscriptionEnabledQuery)).
+		WithArgs(int64(9), int64(999), true).
+		WillReturnRows(sqlmock.NewRows(subscriptionColumns))
+	mock.ExpectQuery(regexp.QuoteMeta(subscriptionOwnedQuery)).
+		WithArgs(int64(9), int64(999)).
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
+
+	_, err = SetSubscriptionEnabled(context.Background(), 9, 999, true)
+	assert.ErrorIs(t, err, ErrSubscriptionNotFound)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestSetSubscriptionEnabled_OwnershipDBError(t *testing.T) {
+	mockDB, mock, err := sqlmock.New()
+	require.NoError(t, err)
+	defer mockDB.Close()
+	SetPoolForTest(mockDB)
+
+	mock.ExpectQuery(regexp.QuoteMeta(setSubscriptionEnabledQuery)).
+		WithArgs(int64(9), int64(42), true).
+		WillReturnRows(sqlmock.NewRows(subscriptionColumns))
+	mock.ExpectQuery(regexp.QuoteMeta(subscriptionOwnedQuery)).
+		WithArgs(int64(9), int64(42)).
+		WillReturnError(errors.New("connection reset"))
+
+	_, err = SetSubscriptionEnabled(context.Background(), 9, 42, true)
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, ErrSubscriptionNotFound)
+	assert.NotErrorIs(t, err, ErrNotOrganizationMember)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -675,24 +754,6 @@ func TestCreateNotifications_NoSubscriptionsSkipsTheInsert(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, ids)
 	require.NoError(t, mock.ExpectationsWereMet())
-}
-
-func TestIsOrganizationMember(t *testing.T) {
-	for _, member := range []bool{true, false} {
-		mockDB, mock, err := sqlmock.New()
-		require.NoError(t, err)
-		SetPoolForTest(mockDB)
-
-		mock.ExpectQuery(regexp.QuoteMeta("FROM pennsieve.organization_user WHERE organization_id = $1 AND user_id = $2")).
-			WithArgs(int64(45), int64(42)).
-			WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(member))
-
-		got, err := IsOrganizationMember(context.Background(), 45, 42)
-		require.NoError(t, err)
-		assert.Equal(t, member, got)
-		require.NoError(t, mock.ExpectationsWereMet())
-		mockDB.Close()
-	}
 }
 
 func TestCreateSubscription_WithNotificationChannels(t *testing.T) {

@@ -17,10 +17,13 @@
 #
 # Auth assumption: unlike /webhook (shared-secret, internal-only), these
 # endpoints are user-facing and sit behind the shared Pennsieve Lambda REQUEST
-# authorizer (see aws_apigatewayv2_authorizer.pennsieve_lambda_authorizer in
+# authorizer (see aws_apigatewayv2_authorizer.pennsieve_user_authorizer in
 # notification_gateway.tf), which resolves the caller's bearer token to a Pennsieve user
 # and surfaces it as the "user_claim" context key consumed by the Lambda
-# handler.
+# handler. The subscribe operation uses the workspace variant of that
+# authorizer (pennsieve_workspace_authorizer), which also takes the required
+# organization_id query parameter and denies callers who aren't members of
+# that workspace.
 openapi: 3.0.1
 info:
   version: "3.0"
@@ -91,6 +94,16 @@ components:
         Numeric Pennsieve id of the user. Must be the caller's own id; any
         other value is rejected with 403.
       schema: { type: integer, format: int64 }
+    organizationId:
+      name: organization_id
+      in: query
+      required: true
+      description: >-
+        Node id of the workspace (organization) the request is made in, e.g.
+        N:organization:1234. The caller must be a member of it. Without it
+        API Gateway rejects the request with 401; for a workspace the caller
+        doesn't belong to, the authorizer returns 403.
+      schema: { type: string }
     subscriptionId:
       name: subscriptionId
       in: path
@@ -221,9 +234,8 @@ components:
         /notification/topics). When it carries organizationId and datasetId,
         that dataset must exist in that organization. When it carries
         subjectUserId (personal topics such as ADD_TEAM_USER), that must be the
-        caller's own user id. When it carries organizationId without datasetId
-        (workspace and personal topics such as DATASET_PUBLISHED), the caller
-        must be a member of that organization.
+        caller's own user id. Any organizationId must be the numeric id of the
+        organization_id workspace the request is made in.
 
         The one exception is the optional notification_channels field, which
         is not part of the context: it is removed before validation and
@@ -404,10 +416,10 @@ paths:
         stored: it must be a JSON object matching the topic's context JSON
         Schema, any dataset it references (organizationId + datasetId)
         must exist, a subjectUserId must be the caller's own id, and an
-        organization it is scoped to without a dataset must be one the caller
-        belongs to. An empty body is treated as {}. Calling this again with
-        the same context returns that subscription rather than creating a
-        duplicate, re-enabling it if the caller had disabled it.
+        organizationId must be the organization_id workspace. An empty
+        body is treated as {}. Calling this again with the same context
+        returns that subscription rather than creating a duplicate,
+        re-enabling it if the caller had disabled it.
 
         The body may also carry notification_channels
         ({"email": bool, "push": bool, "sms": bool}) to choose how this
@@ -420,6 +432,7 @@ paths:
         - bearer_auth: [ ]
       parameters:
         - $ref: '#/components/parameters/topicId'
+        - $ref: '#/components/parameters/organizationId'
       requestBody:
         required: false
         content:
@@ -452,9 +465,9 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           description: >-
-            The body names another user as subjectUserId, or is scoped to an
-            organization (organizationId without datasetId) the caller is not a
-            member of. Returned whether or not that organization exists.
+            The caller is not a member of the organization_id workspace, the
+            body's organizationId is not that workspace, or the body names
+            another user as subjectUserId
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }

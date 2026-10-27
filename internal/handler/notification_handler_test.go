@@ -44,8 +44,18 @@ func unauthedNotifReq(routeKey string, pathParams map[string]string) events.APIG
 	}
 }
 
+// testWorkspaceNodeID is the organization_id that authedNotifReq sends, and
+// the workspace its org_claim names.
+const testWorkspaceNodeID = "N:organization:test"
+
+// authedNotifReq builds an authenticated request for routeKey. It carries
+// what the workspace authorizer attaches (an org_claim, plus the
+// organization_id query parameter it was resolved from) as well as the
+// user_claim, so it suits the subscribe route too; the other routes ignore
+// both.
 func authedNotifReq(routeKey string, pathParams map[string]string, userID int64) events.APIGatewayV2HTTPRequest {
 	req := unauthedNotifReq(routeKey, pathParams)
+	req.QueryStringParameters = map[string]string{"organization_id": testWorkspaceNodeID}
 	req.RequestContext.Authorizer = &events.APIGatewayV2HTTPRequestContextAuthorizerDescription{
 		Lambda: map[string]interface{}{
 			"user_claim": map[string]interface{}{
@@ -53,8 +63,20 @@ func authedNotifReq(routeKey string, pathParams map[string]string, userID int64)
 				"NodeId":       "N:user:test",
 				"IsSuperAdmin": false,
 			},
+			"org_claim": map[string]interface{}{
+				"Role":   float64(16),
+				"IntId":  float64(45),
+				"NodeId": testWorkspaceNodeID,
+			},
 		},
 	}
+	return req
+}
+
+// withWorkspaceOrgID sets the numeric id of the workspace req's org_claim
+// names, for requests about an organization other than the default 45.
+func withWorkspaceOrgID(req events.APIGatewayV2HTTPRequest, orgID int64) events.APIGatewayV2HTTPRequest {
+	req.RequestContext.Authorizer.Lambda["org_claim"].(map[string]interface{})["IntId"] = float64(orgID)
 	return req
 }
 
@@ -335,9 +357,9 @@ func TestNotificationHandler_Subscribe_Base64Body(t *testing.T) {
 
 func TestNotificationHandler_Subscribe_ValidTopicContext(t *testing.T) {
 	mock := newSubscribeMock(t)
-	body := []byte(`{"organizationId": 1, "datasetId": 5}`)
+	body := []byte(`{"organizationId": 45, "datasetId": 5}`)
 	expectGetTopic(mock, 4, []byte(updateReadmeContext))
-	mock.ExpectQuery(regexp.QuoteMeta(`FROM "1".datasets`)).
+	mock.ExpectQuery(regexp.QuoteMeta(`FROM "45".datasets`)).
 		WithArgs(int64(5)).
 		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
 	expectCreateSubscription(mock, 42, 4, body, true)
@@ -356,8 +378,8 @@ func TestNotificationHandler_Subscribe_TopicContextMismatch(t *testing.T) {
 		body        string
 		wantMessage string
 	}{
-		{"missing required property", `{"organizationId": 1}`, "datasetId"},
-		{"wrong property type", `{"organizationId": 1, "datasetId": "five"}`, "datasetId"},
+		{"missing required property", `{"organizationId": 45}`, "datasetId"},
+		{"wrong property type", `{"organizationId": 45, "datasetId": "five"}`, "datasetId"},
 		{"empty body", ``, "missing properties"},
 		{"null body", `null`, "missing properties"},
 		{"whitespace-padded null body", " null\n", "missing properties"},
@@ -385,12 +407,12 @@ func TestNotificationHandler_Subscribe_TopicContextMismatch(t *testing.T) {
 func TestNotificationHandler_Subscribe_DatasetNotFound(t *testing.T) {
 	mock := newSubscribeMock(t)
 	expectGetTopic(mock, 4, []byte(updateReadmeContext))
-	mock.ExpectQuery(regexp.QuoteMeta(`FROM "1".datasets`)).
+	mock.ExpectQuery(regexp.QuoteMeta(`FROM "45".datasets`)).
 		WithArgs(int64(5)).
 		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
 
 	req := authedNotifReq(routeSubscribe, map[string]string{"topicId": "4"}, 42)
-	req.Body = `{"organizationId": 1, "datasetId": 5}`
+	req.Body = `{"organizationId": 45, "datasetId": 5}`
 	resp, err := NotificationHandler(context.Background(), req)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
@@ -405,7 +427,7 @@ func TestNotificationHandler_Subscribe_OrganizationNotFound(t *testing.T) {
 		WithArgs(int64(5)).
 		WillReturnError(&pq.Error{Code: "42P01"})
 
-	req := authedNotifReq(routeSubscribe, map[string]string{"topicId": "4"}, 42)
+	req := withWorkspaceOrgID(authedNotifReq(routeSubscribe, map[string]string{"topicId": "4"}, 42), 999)
 	req.Body = `{"organizationId": 999, "datasetId": 5}`
 	resp, err := NotificationHandler(context.Background(), req)
 	require.NoError(t, err)
@@ -526,12 +548,12 @@ func TestNotificationHandler_Subscribe_GetTopicDBError(t *testing.T) {
 func TestNotificationHandler_Subscribe_DatasetLookupDBError(t *testing.T) {
 	mock := newSubscribeMock(t)
 	expectGetTopic(mock, 4, []byte(updateReadmeContext))
-	mock.ExpectQuery(regexp.QuoteMeta(`FROM "1".datasets`)).
+	mock.ExpectQuery(regexp.QuoteMeta(`FROM "45".datasets`)).
 		WithArgs(int64(5)).
 		WillReturnError(errors.New("connection reset"))
 
 	req := authedNotifReq(routeSubscribe, map[string]string{"topicId": "4"}, 42)
-	req.Body = `{"organizationId": 1, "datasetId": 5}`
+	req.Body = `{"organizationId": 45, "datasetId": 5}`
 	resp, err := NotificationHandler(context.Background(), req)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
@@ -550,8 +572,8 @@ func TestNotificationHandler_Subscribe_InvalidDatasetReference(t *testing.T) {
 		{"dataset without organization", `{"datasetId": 5}`, "datasetId requires organizationId"},
 		{"zero organization", `{"organizationId": 0, "datasetId": 5}`, "organizationId must be a positive integer"},
 		{"non-numeric organization", `{"organizationId": "1", "datasetId": 5}`, "organizationId must be a positive integer"},
-		{"negative dataset", `{"organizationId": 1, "datasetId": -5}`, "datasetId must be a positive integer"},
-		{"fractional dataset", `{"organizationId": 1, "datasetId": 5.5}`, "datasetId must be a positive integer"},
+		{"negative dataset", `{"organizationId": 45, "datasetId": -5}`, "datasetId must be a positive integer"},
+		{"fractional dataset", `{"organizationId": 45, "datasetId": 5.5}`, "datasetId must be a positive integer"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -570,7 +592,7 @@ func TestNotificationHandler_Subscribe_InvalidDatasetReference(t *testing.T) {
 }
 
 func expectSetSubscriptionEnabled(mock sqlmock.Sqlmock, subscriptionID, userID int64, enabled bool) *sqlmock.ExpectedQuery {
-	return mock.ExpectQuery(regexp.QuoteMeta("UPDATE notifications.subscriptions SET enabled = $3 WHERE subscription_id = $1 AND user_id = $2")).
+	return mock.ExpectQuery(regexp.QuoteMeta("UPDATE notifications.subscriptions s SET enabled = $3 WHERE subscription_id = $1 AND user_id = $2")).
 		WithArgs(subscriptionID, userID, enabled)
 }
 
@@ -683,6 +705,151 @@ func TestNotificationHandler_UpdateSubscription_DBError(t *testing.T) {
 		notifReqWithBody(routeUpdateSubscription, map[string]string{"subscriptionId": "9"}, 42, `{"enabled":false}`))
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+}
+
+// The subscribe route sits behind the workspace authorizer, so it needs the
+// organization_id query parameter and the org_claim the authorizer resolves
+// from it, and may not reach the database without them.
+func TestNotificationHandler_WorkspaceRoutes(t *testing.T) {
+	routes := []struct {
+		routeKey   string
+		pathParams map[string]string
+		body       string
+	}{
+		{routeSubscribe, map[string]string{"topicId": "11"}, `{"organizationId": 45}`},
+	}
+	for _, route := range routes {
+		t.Run(route.routeKey+"/missing organization_id", func(t *testing.T) {
+			mock := newSubscribeMock(t)
+			req := notifReqWithBody(route.routeKey, route.pathParams, 42, route.body)
+			req.QueryStringParameters = nil
+
+			resp, err := NotificationHandler(context.Background(), req)
+			require.NoError(t, err)
+			assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+		t.Run(route.routeKey+"/no org_claim", func(t *testing.T) {
+			mock := newSubscribeMock(t)
+			req := notifReqWithBody(route.routeKey, route.pathParams, 42, route.body)
+			delete(req.RequestContext.Authorizer.Lambda, "org_claim")
+
+			resp, err := NotificationHandler(context.Background(), req)
+			require.NoError(t, err)
+			assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+		t.Run(route.routeKey+"/org_claim for another workspace", func(t *testing.T) {
+			mock := newSubscribeMock(t)
+			req := notifReqWithBody(route.routeKey, route.pathParams, 42, route.body)
+			req.QueryStringParameters["organization_id"] = "N:organization:other"
+
+			resp, err := NotificationHandler(context.Background(), req)
+			require.NoError(t, err)
+			assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+			assert.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}
+
+// PATCH /subscription/{subscriptionId} sits behind the user authorizer, so
+// it works without organization_id or an org_claim.
+func TestNotificationHandler_UpdateSubscription_NoWorkspace(t *testing.T) {
+	mock := newSubscribeMock(t)
+	expectSetSubscriptionEnabled(mock, 9, 42, true).
+		WillReturnRows(sqlmock.NewRows(subscriptionColumns).
+			AddRow(int64(9), int64(42), int64(7), []byte(`{"organizationId": 45}`), nil, true, time.Now()))
+
+	req := notifReqWithBody(routeUpdateSubscription, map[string]string{"subscriptionId": "9"}, 42, `{"enabled":true}`)
+	req.QueryStringParameters = nil
+	delete(req.RequestContext.Authorizer.Lambda, "org_claim")
+
+	resp, err := NotificationHandler(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode, resp.Body)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// A user removed from organization 45 still owns their disabled
+// DATASET_PUBLISHED subscription for it. Re-enabling it must be 403, not a
+// silent resume of delivery: the UPDATE's membership condition matches no
+// row, and the ownership lookup shows the subscription is theirs.
+func TestNotificationHandler_UpdateSubscription_EnableNotOrganizationMember(t *testing.T) {
+	mock := newSubscribeMock(t)
+	expectSetSubscriptionEnabled(mock, 9, 42, true).
+		WillReturnRows(sqlmock.NewRows(subscriptionColumns))
+	mock.ExpectQuery(regexp.QuoteMeta("FROM notifications.subscriptions WHERE subscription_id = $1 AND user_id = $2)")).
+		WithArgs(int64(9), int64(42)).
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
+
+	resp, err := NotificationHandler(context.Background(),
+		notifReqWithBody(routeUpdateSubscription, map[string]string{"subscriptionId": "9"}, 42, `{"enabled":true}`))
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusForbidden, resp.StatusCode, resp.Body)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Enabling someone else's subscription is still 404, not 403, so the route
+// doesn't reveal that the subscription exists.
+func TestNotificationHandler_UpdateSubscription_EnableWrongUser(t *testing.T) {
+	mock := newSubscribeMock(t)
+	expectSetSubscriptionEnabled(mock, 9, 999, true).
+		WillReturnRows(sqlmock.NewRows(subscriptionColumns))
+	mock.ExpectQuery(regexp.QuoteMeta("FROM notifications.subscriptions WHERE subscription_id = $1 AND user_id = $2)")).
+		WithArgs(int64(9), int64(999)).
+		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
+
+	resp, err := NotificationHandler(context.Background(),
+		notifReqWithBody(routeUpdateSubscription, map[string]string{"subscriptionId": "9"}, 999, `{"enabled":true}`))
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
+	assert.NoError(t, mock.ExpectationsWereMet())
+}
+
+// An organizationId in the body must be the workspace the request was
+// authorized for (org_claim IntId 45 here). Any other organization is 403,
+// before any dataset is looked up or a subscription stored.
+func TestNotificationHandler_Subscribe_OtherWorkspaceOrganization(t *testing.T) {
+	tests := []struct {
+		name         string
+		topicID      string
+		topicContext string
+		body         string
+	}{
+		{"organization-level topic", "11", datasetPublishedContext, `{"organizationId": 46}`},
+		{"dataset topic", "4", updateReadmeContext, `{"organizationId": 46, "datasetId": 5}`},
+		{"personal topic", "8", personalContext, `{"organizationId": 46, "subjectUserId": 42}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mock := newSubscribeMock(t)
+			topicID, _ := strconv.ParseInt(tt.topicID, 10, 64)
+			expectGetTopic(mock, topicID, []byte(tt.topicContext))
+
+			req := authedNotifReq(routeSubscribe, map[string]string{"topicId": tt.topicID}, 42)
+			req.Body = tt.body
+			resp, err := NotificationHandler(context.Background(), req)
+			require.NoError(t, err)
+			assert.Equal(t, http.StatusForbidden, resp.StatusCode)
+			assert.Contains(t, resp.Body, "organizationId must match the organization_id workspace")
+			assert.NoError(t, mock.ExpectationsWereMet(), "no dataset lookup or subscription should run")
+		})
+	}
+}
+
+// A body without organizationId isn't tied to a workspace, so it passes
+// whatever organization_id the request carries.
+func TestNotificationHandler_Subscribe_NoOrganizationInBody(t *testing.T) {
+	mock := newSubscribeMock(t)
+	expectGetTopic(mock, 7, nil)
+	expectCreateSubscription(mock, 42, 7, []byte(`{"filter":"critical"}`), true)
+
+	req := withWorkspaceOrgID(authedNotifReq(routeSubscribe, map[string]string{"topicId": "7"}, 42), 999)
+	req.Body = `{"filter":"critical"}`
+	resp, err := NotificationHandler(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusCreated, resp.StatusCode, resp.Body)
+	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
 // The DELETE and by-topic routes were removed in favor of disabling
@@ -1300,16 +1467,9 @@ const datasetPublishedContext = `{
 	"additionalProperties": false
 }`
 
-func expectOrganizationMember(mock sqlmock.Sqlmock, orgID, userID int64, member bool) {
-	mock.ExpectQuery(regexp.QuoteMeta("FROM pennsieve.organization_user")).
-		WithArgs(orgID, userID).
-		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(member))
-}
-
 func TestNotificationHandler_Subscribe_OrganizationLevelTopic(t *testing.T) {
 	mock := newSubscribeMock(t)
 	expectGetTopic(mock, 11, []byte(datasetPublishedContext))
-	expectOrganizationMember(mock, 45, 42, true)
 	expectCreateSubscription(mock, 42, 11, []byte(`{"organizationId": 45}`), true)
 
 	req := authedNotifReq(routeSubscribe, map[string]string{"topicId": "11"}, 42)
@@ -1318,33 +1478,6 @@ func TestNotificationHandler_Subscribe_OrganizationLevelTopic(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusCreated, resp.StatusCode)
 	assert.NoError(t, mock.ExpectationsWereMet())
-}
-
-func TestNotificationHandler_Subscribe_OrganizationLevelTopic_NotAMember(t *testing.T) {
-	mock := newSubscribeMock(t)
-	expectGetTopic(mock, 11, []byte(datasetPublishedContext))
-	expectOrganizationMember(mock, 45, 42, false)
-
-	req := authedNotifReq(routeSubscribe, map[string]string{"topicId": "11"}, 42)
-	req.Body = `{"organizationId": 45}`
-	resp, err := NotificationHandler(context.Background(), req)
-	require.NoError(t, err)
-	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
-	assert.NoError(t, mock.ExpectationsWereMet(), "no subscription should be stored")
-}
-
-func TestNotificationHandler_Subscribe_OrganizationLevelTopic_MembershipDBError(t *testing.T) {
-	mock := newSubscribeMock(t)
-	expectGetTopic(mock, 11, []byte(datasetPublishedContext))
-	mock.ExpectQuery(regexp.QuoteMeta("FROM pennsieve.organization_user")).
-		WithArgs(int64(45), int64(42)).
-		WillReturnError(errors.New("connection reset"))
-
-	req := authedNotifReq(routeSubscribe, map[string]string{"topicId": "11"}, 42)
-	req.Body = `{"organizationId": 45}`
-	resp, err := NotificationHandler(context.Background(), req)
-	require.NoError(t, err)
-	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 }
 
 // TestNotificationHandler_Subscribe_OrganizationLevelTopic_RejectsDatasetScope
@@ -1360,7 +1493,7 @@ func TestNotificationHandler_Subscribe_OrganizationLevelTopic_RejectsDatasetScop
 	resp, err := NotificationHandler(context.Background(), req)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
-	assert.NoError(t, mock.ExpectationsWereMet(), "no dataset or membership lookup should run")
+	assert.NoError(t, mock.ExpectationsWereMet(), "no dataset lookup should run")
 }
 
 // personalContext is the context JSON Schema the personal topics
@@ -1377,7 +1510,6 @@ const personalContext = `{
 func TestNotificationHandler_Subscribe_PersonalTopic(t *testing.T) {
 	mock := newSubscribeMock(t)
 	expectGetTopic(mock, 8, []byte(personalContext))
-	expectOrganizationMember(mock, 45, 42, true)
 	expectCreateSubscription(mock, 42, 8, []byte(`{"organizationId": 45, "subjectUserId": 42}`), true)
 
 	req := authedNotifReq(routeSubscribe, map[string]string{"topicId": "8"}, 42)
@@ -1400,7 +1532,7 @@ func TestNotificationHandler_Subscribe_PersonalTopic_OtherSubject(t *testing.T) 
 	resp, err := NotificationHandler(context.Background(), req)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
-	assert.NoError(t, mock.ExpectationsWereMet(), "no membership lookup or subscription should run")
+	assert.NoError(t, mock.ExpectationsWereMet(), "no subscription should be stored")
 }
 
 func TestNotificationHandler_Subscribe_PersonalTopic_RequiresSubject(t *testing.T) {
@@ -1439,7 +1571,6 @@ func expectCreateSubscriptionWithChannels(mock sqlmock.Sqlmock, userID, topicID 
 func TestNotificationHandler_Subscribe_NotificationChannels(t *testing.T) {
 	mock := newSubscribeMock(t)
 	expectGetTopic(mock, 11, []byte(datasetPublishedContext))
-	expectOrganizationMember(mock, 45, 42, true)
 	expectCreateSubscriptionWithChannels(mock, 42, 11,
 		[]byte(`{"organizationId":45}`), []byte(`{"email":false,"push":true,"sms":false}`))
 
