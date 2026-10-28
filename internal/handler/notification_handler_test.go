@@ -591,9 +591,15 @@ func TestNotificationHandler_Subscribe_InvalidDatasetReference(t *testing.T) {
 	}
 }
 
+// expectSetSubscriptionEnabled expects the update for a request authorized
+// for workspace 45, the org_claim authedNotifReq sends.
 func expectSetSubscriptionEnabled(mock sqlmock.Sqlmock, subscriptionID, userID int64, enabled bool) *sqlmock.ExpectedQuery {
+	return expectSetSubscriptionEnabledIn(mock, subscriptionID, userID, 45, enabled)
+}
+
+func expectSetSubscriptionEnabledIn(mock sqlmock.Sqlmock, subscriptionID, userID, workspaceOrgID int64, enabled bool) *sqlmock.ExpectedQuery {
 	return mock.ExpectQuery(regexp.QuoteMeta("UPDATE notifications.subscriptions s SET enabled = $3 WHERE subscription_id = $1 AND user_id = $2")).
-		WithArgs(subscriptionID, userID, enabled)
+		WithArgs(subscriptionID, userID, enabled, workspaceOrgID)
 }
 
 func TestNotificationHandler_UpdateSubscription(t *testing.T) {
@@ -707,9 +713,10 @@ func TestNotificationHandler_UpdateSubscription_DBError(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 }
 
-// The subscribe route sits behind the workspace authorizer, so it needs the
-// organization_id query parameter and the org_claim the authorizer resolves
-// from it, and may not reach the database without them.
+// The subscribe and update-subscription routes sit behind the workspace
+// authorizer, so they need the organization_id query parameter and the
+// org_claim the authorizer resolves from it, and may not reach the database
+// without them.
 func TestNotificationHandler_WorkspaceRoutes(t *testing.T) {
 	routes := []struct {
 		routeKey   string
@@ -717,6 +724,7 @@ func TestNotificationHandler_WorkspaceRoutes(t *testing.T) {
 		body       string
 	}{
 		{routeSubscribe, map[string]string{"topicId": "11"}, `{"organizationId": 45}`},
+		{routeUpdateSubscription, map[string]string{"subscriptionId": "9"}, `{"enabled":true}`},
 	}
 	for _, route := range routes {
 		t.Run(route.routeKey+"/missing organization_id", func(t *testing.T) {
@@ -752,28 +760,29 @@ func TestNotificationHandler_WorkspaceRoutes(t *testing.T) {
 	}
 }
 
-// PATCH /subscription/{subscriptionId} sits behind the user authorizer, so
-// it works without organization_id or an org_claim.
-func TestNotificationHandler_UpdateSubscription_NoWorkspace(t *testing.T) {
+// The update is made for the workspace the request was authorized for: the
+// org_claim's IntId reaches db.SetSubscriptionEnabled, whose UPDATE only
+// enables an organization-scoped subscription in that workspace.
+func TestNotificationHandler_UpdateSubscription_PassesWorkspace(t *testing.T) {
 	mock := newSubscribeMock(t)
-	expectSetSubscriptionEnabled(mock, 9, 42, true).
+	expectSetSubscriptionEnabledIn(mock, 9, 42, 46, true).
 		WillReturnRows(sqlmock.NewRows(subscriptionColumns).
-			AddRow(int64(9), int64(42), int64(7), []byte(`{"organizationId": 45}`), nil, true, time.Now()))
+			AddRow(int64(9), int64(42), int64(7), []byte(`{"organizationId": 46}`), nil, true, time.Now()))
 
-	req := notifReqWithBody(routeUpdateSubscription, map[string]string{"subscriptionId": "9"}, 42, `{"enabled":true}`)
-	req.QueryStringParameters = nil
-	delete(req.RequestContext.Authorizer.Lambda, "org_claim")
-
+	req := withWorkspaceOrgID(
+		notifReqWithBody(routeUpdateSubscription, map[string]string{"subscriptionId": "9"}, 42, `{"enabled":true}`), 46)
 	resp, err := NotificationHandler(context.Background(), req)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusOK, resp.StatusCode, resp.Body)
 	assert.NoError(t, mock.ExpectationsWereMet())
 }
 
-// A user removed from organization 45 still owns their disabled
-// DATASET_PUBLISHED subscription for it. Re-enabling it must be 403, not a
-// silent resume of delivery: the UPDATE's membership condition matches no
-// row, and the ownership lookup shows the subscription is theirs.
+// A user removed from organization 45 (but whose cached workspace allow
+// hasn't expired), or enabling from another workspace, still owns their
+// disabled DATASET_PUBLISHED subscription for it. Re-enabling it must be
+// 403, not a silent resume of delivery: the UPDATE's workspace and
+// membership condition matches no row, and the ownership lookup shows the
+// subscription is theirs.
 func TestNotificationHandler_UpdateSubscription_EnableNotOrganizationMember(t *testing.T) {
 	mock := newSubscribeMock(t)
 	expectSetSubscriptionEnabled(mock, 9, 42, true).

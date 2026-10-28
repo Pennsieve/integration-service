@@ -90,8 +90,8 @@ moved {
 # minutes, until their cached allow expires. We accept that window for fewer
 # Lambda invocations and lower latency. Lower the TTL (0 disables caching) if
 # removal has to take effect immediately. Re-enabling an existing
-# subscription isn't affected: PATCH /subscription/{subscriptionId} checks
-# membership live in db.SetSubscriptionEnabled.
+# subscription isn't affected: PATCH /subscription/{subscriptionId} also
+# checks membership live in db.SetSubscriptionEnabled.
 resource "aws_apigatewayv2_authorizer" "pennsieve_workspace_authorizer" {
   api_id                            = aws_apigatewayv2_api.notification_service_api.id
   name                              = "${var.environment_name}-${var.service_name}-pennsieve-workspace-authorizer"
@@ -145,15 +145,16 @@ resource "aws_apigatewayv2_route" "notification_subscribe_route" {
 
 # Subscriptions are turned off by disabling them rather than deleting them,
 # so the notification history posted to them is preserved. There is no
-# DELETE route. It stays on the user authorizer because the caller doesn't
-# name a workspace; re-enabling an organization-scoped subscription is
-# checked against organization_user in db.SetSubscriptionEnabled instead.
+# DELETE route. It uses the workspace authorizer, so it requires
+# ?organization_id; an organization-scoped subscription can only be
+# re-enabled in its own workspace, and db.SetSubscriptionEnabled also checks
+# organization_user live then, since this authorizer's allow is cached.
 resource "aws_apigatewayv2_route" "notification_update_subscription_route" {
   api_id             = aws_apigatewayv2_api.notification_service_api.id
   route_key          = "PATCH /subscription/{subscriptionId}"
   target             = "integrations/${aws_apigatewayv2_integration.notification_integration.id}"
   authorization_type = "CUSTOM"
-  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_user_authorizer.id
+  authorizer_id      = aws_apigatewayv2_authorizer.pennsieve_workspace_authorizer.id
 }
 
 resource "aws_apigatewayv2_route" "notification_get_messages_route" {

@@ -52,9 +52,10 @@ const (
 // surfaced here as the "user_claim" context key on
 // req.RequestContext.Authorizer.Lambda.
 //
-// The subscribe route uses the workspace variant of that authorizer instead,
-// which also takes the organization_id query parameter and denies callers
-// who aren't members of that workspace; see requireWorkspace.
+// The subscribe and update-subscription routes use the workspace variant of
+// that authorizer instead, which also takes the organization_id query
+// parameter and denies callers who aren't members of that workspace; see
+// requireWorkspace.
 func NotificationHandler(ctx context.Context, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	aws.AwsOnce.Do(func() {
 		aws.InitAWS(ctx)
@@ -83,7 +84,11 @@ func NotificationHandler(ctx context.Context, req events.APIGatewayV2HTTPRequest
 		}
 		return handleSubscribe(ctx, userID, workspaceOrgID, req)
 	case routeUpdateSubscription:
-		return handleUpdateSubscription(ctx, userID, req)
+		workspaceOrgID, errResp := requireWorkspace(req)
+		if errResp != nil {
+			return *errResp, nil
+		}
+		return handleUpdateSubscription(ctx, userID, workspaceOrgID, req)
 	case routeGetMessages:
 		return handleGetMessages(ctx, userID, req)
 	case routeGetUserPreferences:
@@ -197,9 +202,10 @@ func handleSubscribe(ctx context.Context, userID, workspaceOrgID int64, req even
 // unsubscribing by deleting the subscription: a disabled subscription gets
 // no new notifications, but it and the notifications already posted to it
 // are kept, so the user's history survives and they can re-enable it later.
-// Re-enabling a subscription scoped to an organization the caller has since
-// left is 403; see db.SetSubscriptionEnabled.
-func handleUpdateSubscription(ctx context.Context, userID int64, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
+// Re-enabling a subscription scoped to an organization is 403 unless that
+// organization is the organization_id workspace and the caller is still a
+// member of it; see db.SetSubscriptionEnabled.
+func handleUpdateSubscription(ctx context.Context, userID, workspaceOrgID int64, req events.APIGatewayV2HTTPRequest) (events.APIGatewayV2HTTPResponse, error) {
 	subscriptionID, err := pathParamInt64(req, "subscriptionId")
 	if err != nil {
 		return notifErrorResponse(http.StatusBadRequest, "invalid subscription id"), nil
@@ -213,13 +219,13 @@ func handleUpdateSubscription(ctx context.Context, userID int64, req events.APIG
 		return notifErrorResponse(http.StatusBadRequest, "enabled is required and must be a boolean"), nil
 	}
 
-	sub, err := db.SetSubscriptionEnabled(ctx, subscriptionID, userID, *body.Enabled)
+	sub, err := db.SetSubscriptionEnabled(ctx, subscriptionID, userID, workspaceOrgID, *body.Enabled)
 	if err != nil {
 		if errors.Is(err, db.ErrSubscriptionNotFound) {
 			return notifErrorResponse(http.StatusNotFound, "subscription not found"), nil
 		}
 		if errors.Is(err, db.ErrNotOrganizationMember) {
-			return notifErrorResponse(http.StatusForbidden, "not a member of this subscription's organization"), nil
+			return notifErrorResponse(http.StatusForbidden, "subscription's organization is not the organization_id workspace, or the caller is not a member of it"), nil
 		}
 		log.Printf("ERROR set subscription enabled: %v", err)
 		return notifErrorResponse(http.StatusInternalServerError, "failed to update subscription"), nil
