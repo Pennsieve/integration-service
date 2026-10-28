@@ -221,11 +221,11 @@ func TestSetSubscriptionEnabled(t *testing.T) {
 		SetPoolForTest(mockDB)
 
 		mock.ExpectQuery(regexp.QuoteMeta(setSubscriptionEnabledQuery)).
-			WithArgs(int64(9), int64(42), enabled).
+			WithArgs(int64(9), int64(42), enabled, int64(45)).
 			WillReturnRows(sqlmock.NewRows(subscriptionColumns).
 				AddRow(int64(9), int64(42), int64(7), []byte(`{"filter":"critical"}`), nil, enabled, time.Now()))
 
-		sub, err := SetSubscriptionEnabled(context.Background(), 9, 42, enabled)
+		sub, err := SetSubscriptionEnabled(context.Background(), 9, 42, 45, enabled)
 		require.NoError(t, err)
 		assert.Equal(t, int64(9), sub.SubscriptionID)
 		assert.Equal(t, enabled, sub.Enabled)
@@ -244,16 +244,17 @@ func TestSetSubscriptionEnabled_WrongUser(t *testing.T) {
 	SetPoolForTest(mockDB)
 
 	mock.ExpectQuery(regexp.QuoteMeta(setSubscriptionEnabledQuery)).
-		WithArgs(int64(9), int64(999), false).
+		WithArgs(int64(9), int64(999), false, int64(45)).
 		WillReturnRows(sqlmock.NewRows(subscriptionColumns))
 
-	_, err = SetSubscriptionEnabled(context.Background(), 9, 999, false)
+	_, err = SetSubscriptionEnabled(context.Background(), 9, 999, 45, false)
 	assert.ErrorIs(t, err, ErrSubscriptionNotFound)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-// The UPDATE must gate enabling on current organization membership, so a
-// regression that drops the check fails here.
+// The UPDATE must gate enabling on the subscription's organization being the
+// request's workspace and on current membership of it, so a regression that
+// drops either check fails here.
 func TestSetSubscriptionEnabled_QueryChecksMembership(t *testing.T) {
 	mockDB, mock, err := sqlmock.New()
 	require.NoError(t, err)
@@ -261,12 +262,13 @@ func TestSetSubscriptionEnabled_QueryChecksMembership(t *testing.T) {
 	SetPoolForTest(mockDB)
 
 	mock.ExpectQuery(regexp.QuoteMeta(setSubscriptionEnabledQuery+
-		" AND (NOT $3 OR NOT s.context ? 'organizationId' OR EXISTS ( SELECT 1 FROM pennsieve.organization_user ou")).
-		WithArgs(int64(9), int64(42), true).
+		" AND (NOT $3 OR NOT s.context ? 'organizationId' OR ((s.context->>'organizationId')::numeric = $4 AND EXISTS ("+
+		" SELECT 1 FROM pennsieve.organization_user ou WHERE ou.organization_id = $4 AND ou.user_id = s.user_id)))")).
+		WithArgs(int64(9), int64(42), true, int64(45)).
 		WillReturnRows(sqlmock.NewRows(subscriptionColumns).
 			AddRow(int64(9), int64(42), int64(7), []byte(`{"organizationId":45}`), nil, true, time.Now()))
 
-	_, err = SetSubscriptionEnabled(context.Background(), 9, 42, true)
+	_, err = SetSubscriptionEnabled(context.Background(), 9, 42, 45, true)
 	require.NoError(t, err)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
@@ -274,7 +276,8 @@ func TestSetSubscriptionEnabled_QueryChecksMembership(t *testing.T) {
 const subscriptionOwnedQuery = "FROM notifications.subscriptions WHERE subscription_id = $1 AND user_id = $2)"
 
 // Enabling a subscription the caller owns but whose organization they've
-// left matches no row; the ownership lookup tells that apart from not-found.
+// left, or that isn't the request's workspace, matches no row; the ownership
+// lookup tells that apart from not-found.
 func TestSetSubscriptionEnabled_NotOrganizationMember(t *testing.T) {
 	mockDB, mock, err := sqlmock.New()
 	require.NoError(t, err)
@@ -282,13 +285,13 @@ func TestSetSubscriptionEnabled_NotOrganizationMember(t *testing.T) {
 	SetPoolForTest(mockDB)
 
 	mock.ExpectQuery(regexp.QuoteMeta(setSubscriptionEnabledQuery)).
-		WithArgs(int64(9), int64(42), true).
+		WithArgs(int64(9), int64(42), true, int64(45)).
 		WillReturnRows(sqlmock.NewRows(subscriptionColumns))
 	mock.ExpectQuery(regexp.QuoteMeta(subscriptionOwnedQuery)).
 		WithArgs(int64(9), int64(42)).
 		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(true))
 
-	_, err = SetSubscriptionEnabled(context.Background(), 9, 42, true)
+	_, err = SetSubscriptionEnabled(context.Background(), 9, 42, 45, true)
 	assert.ErrorIs(t, err, ErrNotOrganizationMember)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
@@ -300,13 +303,13 @@ func TestSetSubscriptionEnabled_EnableWrongUser(t *testing.T) {
 	SetPoolForTest(mockDB)
 
 	mock.ExpectQuery(regexp.QuoteMeta(setSubscriptionEnabledQuery)).
-		WithArgs(int64(9), int64(999), true).
+		WithArgs(int64(9), int64(999), true, int64(45)).
 		WillReturnRows(sqlmock.NewRows(subscriptionColumns))
 	mock.ExpectQuery(regexp.QuoteMeta(subscriptionOwnedQuery)).
 		WithArgs(int64(9), int64(999)).
 		WillReturnRows(sqlmock.NewRows([]string{"exists"}).AddRow(false))
 
-	_, err = SetSubscriptionEnabled(context.Background(), 9, 999, true)
+	_, err = SetSubscriptionEnabled(context.Background(), 9, 999, 45, true)
 	assert.ErrorIs(t, err, ErrSubscriptionNotFound)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
@@ -318,13 +321,13 @@ func TestSetSubscriptionEnabled_OwnershipDBError(t *testing.T) {
 	SetPoolForTest(mockDB)
 
 	mock.ExpectQuery(regexp.QuoteMeta(setSubscriptionEnabledQuery)).
-		WithArgs(int64(9), int64(42), true).
+		WithArgs(int64(9), int64(42), true, int64(45)).
 		WillReturnRows(sqlmock.NewRows(subscriptionColumns))
 	mock.ExpectQuery(regexp.QuoteMeta(subscriptionOwnedQuery)).
 		WithArgs(int64(9), int64(42)).
 		WillReturnError(errors.New("connection reset"))
 
-	_, err = SetSubscriptionEnabled(context.Background(), 9, 42, true)
+	_, err = SetSubscriptionEnabled(context.Background(), 9, 42, 45, true)
 	require.Error(t, err)
 	assert.NotErrorIs(t, err, ErrSubscriptionNotFound)
 	assert.NotErrorIs(t, err, ErrNotOrganizationMember)
@@ -338,10 +341,10 @@ func TestSetSubscriptionEnabled_DBError(t *testing.T) {
 	SetPoolForTest(mockDB)
 
 	mock.ExpectQuery(regexp.QuoteMeta(setSubscriptionEnabledQuery)).
-		WithArgs(int64(9), int64(42), false).
+		WithArgs(int64(9), int64(42), false, int64(45)).
 		WillReturnError(errors.New("connection reset"))
 
-	_, err = SetSubscriptionEnabled(context.Background(), 9, 42, false)
+	_, err = SetSubscriptionEnabled(context.Background(), 9, 42, 45, false)
 	require.Error(t, err)
 	assert.NotErrorIs(t, err, ErrSubscriptionNotFound)
 	require.NoError(t, mock.ExpectationsWereMet())

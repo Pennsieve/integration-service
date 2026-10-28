@@ -31,7 +31,9 @@ No. It only checks new subscribe calls.
   the subscription, so a removed user could turn a disabled subscription back
   on. It now also requires current `organization_user` membership when
   enabling a subscription whose context has `organizationId` (403
-  otherwise). Disabling still needs no membership.
+  otherwise). Disabling still needs no membership. The route has since moved
+  to the workspace authorizer too: it requires `organization_id`, and a
+  subscription can only be re-enabled from its own workspace.
 
 ## 2. A live check at delivery, or a cleanup job?
 

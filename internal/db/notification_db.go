@@ -27,7 +27,8 @@ var ErrTopicDisabled = errors.New("topic is disabled")
 var ErrSubscriptionNotFound = errors.New("subscription not found")
 
 // ErrNotOrganizationMember is returned when a user tries to enable a
-// subscription scoped to an organization they are no longer a member of.
+// subscription scoped to an organization they are no longer a member of, or
+// to one other than the workspace the request was authorized for.
 var ErrNotOrganizationMember = errors.New("not a member of the subscription's organization")
 
 // ErrUserNotFound is returned when an operation references a user id that
@@ -231,28 +232,30 @@ func CreateSubscription(ctx context.Context, userID, topicID int64, subscription
 // notifications already posted to it, are kept.
 //
 // Re-enabling a subscription scoped to an organization (its context carries
-// organizationId) also requires userID to still be a member of that
-// organization, and reports ErrNotOrganizationMember otherwise. The PATCH
-// route sits behind the user-only authorizer, so this is the only membership
-// check on it; without it a user removed from a workspace could resume a
-// disabled subscription to that workspace's notifications. The check is part
-// of the UPDATE, so membership can't change between checking and enabling.
-// Disabling never needs membership, so removed users can still turn
-// subscriptions off.
-func SetSubscriptionEnabled(ctx context.Context, subscriptionID, userID int64, enabled bool) (models.Subscription, error) {
+// organizationId) also requires that organization to be workspaceOrgID, the
+// workspace the request was authorized for, and userID to still be a member
+// of it; otherwise it reports ErrNotOrganizationMember. The workspace
+// authorizer on the PATCH route caches its allow for up to 5 minutes, so the
+// live organization_user check stops a user who was just removed from a
+// workspace resuming a disabled subscription to its notifications. The check
+// is part of the UPDATE, so membership can't change between checking and
+// enabling. Disabling needs neither, so a user removed from a workspace can
+// still turn its subscriptions off from any workspace they belong to.
+func SetSubscriptionEnabled(ctx context.Context, subscriptionID, userID, workspaceOrgID int64, enabled bool) (models.Subscription, error) {
 	const q = `
 		UPDATE notifications.subscriptions s
 		SET enabled = $3
 		WHERE subscription_id = $1 AND user_id = $2
 		AND (NOT $3
 			OR NOT s.context ? 'organizationId'
-			OR EXISTS (
-				SELECT 1 FROM pennsieve.organization_user ou
-				WHERE ou.organization_id = (s.context->>'organizationId')::numeric
-				AND ou.user_id = s.user_id))
+			OR ((s.context->>'organizationId')::numeric = $4
+				AND EXISTS (
+					SELECT 1 FROM pennsieve.organization_user ou
+					WHERE ou.organization_id = $4
+					AND ou.user_id = s.user_id)))
 		RETURNING subscription_id, user_id, topic_id, context, notification_channels, enabled, created_at`
 
-	s, err := scanSubscription(dbPool.QueryRowContext(ctx, q, subscriptionID, userID, enabled))
+	s, err := scanSubscription(dbPool.QueryRowContext(ctx, q, subscriptionID, userID, enabled, workspaceOrgID))
 	if errors.Is(err, sql.ErrNoRows) {
 		if !enabled {
 			return models.Subscription{}, ErrSubscriptionNotFound
@@ -266,8 +269,8 @@ func SetSubscriptionEnabled(ctx context.Context, subscriptionID, userID int64, e
 }
 
 // enableMissReason explains why SetSubscriptionEnabled's UPDATE matched no
-// row when enabling: userID owns the subscription, so the membership
-// condition failed (ErrNotOrganizationMember), or it doesn't
+// row when enabling: userID owns the subscription, so the workspace or
+// membership condition failed (ErrNotOrganizationMember), or it doesn't
 // (ErrSubscriptionNotFound).
 func enableMissReason(ctx context.Context, subscriptionID, userID int64) error {
 	const q = `

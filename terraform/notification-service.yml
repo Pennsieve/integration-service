@@ -20,10 +20,10 @@
 # authorizer (see aws_apigatewayv2_authorizer.pennsieve_user_authorizer in
 # notification_gateway.tf), which resolves the caller's bearer token to a Pennsieve user
 # and surfaces it as the "user_claim" context key consumed by the Lambda
-# handler. The subscribe operation uses the workspace variant of that
-# authorizer (pennsieve_workspace_authorizer), which also takes the required
-# organization_id query parameter and denies callers who aren't members of
-# that workspace.
+# handler. The subscribe and update-subscription operations use the
+# workspace variant of that authorizer (pennsieve_workspace_authorizer),
+# which also takes the required organization_id query parameter and denies
+# callers who aren't members of that workspace.
 openapi: 3.0.1
 info:
   version: "3.0"
@@ -497,12 +497,19 @@ paths:
         A subscription that doesn't exist and one that belongs to another
         user both return 404, so the route can't be used to probe which
         subscription ids exist.
+
+        Re-enabling a subscription whose context has an organizationId
+        requires that organization to be the organization_id workspace and
+        the caller to still be a member of it. Disabling has no such check,
+        so a user removed from a workspace can still turn its subscriptions
+        off from any workspace they belong to.
       operationId: updateSubscription
       tags: [Notifications]
       security:
         - bearer_auth: [ ]
       parameters:
         - $ref: '#/components/parameters/subscriptionId'
+        - $ref: '#/components/parameters/organizationId'
       requestBody:
         required: true
         content:
@@ -523,6 +530,14 @@ paths:
               schema: { $ref: '#/components/schemas/Error' }
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: >-
+            The caller is not a member of the organization_id workspace, or
+            is enabling a subscription whose organizationId is not that
+            workspace or whose organization they are no longer a member of
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '404':
           $ref: '#/components/responses/NotFound'
         '5XX':
