@@ -154,22 +154,29 @@ See [docs/notification-status-flags-scope.md](docs/notification-status-flags-sco
 
 Served by its own API Gateway (`terraform/notification_gateway.tf`) under the `notification` API
 mapping key, so `GET /topics` in Terraform is `https://<api domain>/notification/topics`. Every
-route is handled by one Lambda (`internal/handler/notification_handler.go`) and sits behind the
-shared Pennsieve Lambda authorizer, which resolves the bearer token to the caller's user id. The
-full request/response schemas are in `terraform/notification-service.yml`, which
+route is handled by one Lambda (`internal/handler/notification_handler.go`) and sits behind one
+of two API Gateway authorizers, both backed by the shared Pennsieve Lambda authorizer:
+
+- **User** (`pennsieve_user_authorizer`): resolves the bearer token to the caller's user id.
+- **Workspace** (`pennsieve_workspace_authorizer`): does the same, and also requires an
+  `organization_id` query parameter (the workspace node id, e.g. `N:organization:1234`). It denies
+  callers who aren't members of that workspace. Without `organization_id`, API Gateway returns
+  `401`.
+
+The full request/response schemas are in `terraform/notification-service.yml`, which
 `.github/workflows/rdme-openapi.yml` publishes to
 [docs.pennsieve.io/reference](https://docs.pennsieve.io/reference) on every merge to `main`.
 
-| Method | Path | Description |
-| --- | --- | --- |
-| `GET` | `/notification/topics` | List every topic, including disabled ones, with its context schema. |
-| `GET` | `/notification/subscriptions` | List the caller's subscriptions, enabled and disabled. |
-| `POST` | `/notification/topic/{topicId}/subscription` | Subscribe the caller to a topic. The body is the subscription context: it must match the topic's context schema, a referenced dataset must exist, a `subjectUserId` must be the caller's own id, and an organization-scoped context requires the caller to be a member of the organization (`403` otherwise). Re-subscribing with the same context returns and re-enables the existing subscription. `409` if the topic is disabled. |
-| `PATCH` | `/notification/subscription/{subscriptionId}?organization_id=<workspace node id>` | Enable or disable one of the caller's subscriptions with `{"enabled": boolean}`. Uses the workspace authorizer, so the caller must be a member of `organization_id`. Re-enabling an organization-scoped subscription requires its organization to be that workspace (`403` otherwise). |
-| `GET` | `/notification/messages` | Page through the notifications on all of the caller's subscriptions. Query params: `limit` (default 50, max 200), `offset` (default 0), `orderDirection` (`desc`, the default, or `asc`). Returns `{limit, offset, totalCount, messages}`. |
-| `GET` | `/notification/user/{userId}` | Get the caller's `emailEnabled`, `pushEnabled`, and `notificationsLastSeen`. |
-| `POST` | `/notification/user/{userId}` | Replace the caller's `emailEnabled` and `pushEnabled`. |
-| `PATCH` | `/notification/user/{userId}` | Set only the caller's `notificationsLastSeen`. |
+| Method | Path | Authorizer | Description |
+| --- | --- | --- | --- |
+| `GET` | `/notification/topics` | User | List every topic, including disabled ones, with its context schema. |
+| `GET` | `/notification/subscriptions` | User | List the caller's subscriptions, enabled and disabled. |
+| `POST` | `/notification/topic/{topicId}/subscription?organization_id=<workspace node id>` | Workspace | Subscribe the caller to a topic. The body is the subscription context: it must match the topic's context schema, a referenced dataset must exist, a `subjectUserId` must be the caller's own id, and an `organizationId` must be the `organization_id` workspace (`403` otherwise). Re-subscribing with the same context returns and re-enables the existing subscription. `409` if the topic is disabled. |
+| `PATCH` | `/notification/subscription/{subscriptionId}?organization_id=<workspace node id>` | Workspace | Enable or disable one of the caller's subscriptions with `{"enabled": boolean}`. Re-enabling an organization-scoped subscription requires its organization to be the `organization_id` workspace and the caller to still be a member of it (`403` otherwise). Disabling has no such check. |
+| `GET` | `/notification/messages` | User | Page through the notifications on all of the caller's subscriptions. Query params: `limit` (default 50, max 200), `offset` (default 0), `orderDirection` (`desc`, the default, or `asc`). Returns `{limit, offset, totalCount, messages}`. |
+| `GET` | `/notification/user/{userId}` | User | Get the caller's `emailEnabled`, `pushEnabled`, and `notificationsLastSeen`. |
+| `POST` | `/notification/user/{userId}` | User | Replace the caller's `emailEnabled` and `pushEnabled`. |
+| `PATCH` | `/notification/user/{userId}` | User | Set only the caller's `notificationsLastSeen`. |
 
 The `/notification/user/{userId}` routes require `{userId}` to be the caller's own id and return
 `403` for any other value, whether or not that user exists. There is no `DELETE` route:
